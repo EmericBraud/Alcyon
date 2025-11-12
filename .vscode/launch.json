@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "GDB Debug (C++20 & Makefile)",
+            "type": "cppdbg",
+            "request": "launch",
+            // 🛑 L'instruction cruciale : Exécute la tâche de build nommée "build (make all)" 
+            // AVANT de démarrer le débogueur.
+            "preLaunchTask": "build (make all)",
+            // Le chemin de l'exécutable doit correspondre à ce que votre Makefile produit
+            "program": "${workspaceFolder}/chess26",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set disassembly flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
+}
