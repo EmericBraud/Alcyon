@@ -1,10 +1,12 @@
 #include "board.hpp"
 #include <iostream>
+#include <string>
 
 int main()
 {
     Board b{};
-    std::cout << b.load_fen("8/5k2/3p4/1p1Pp2p/pP2Pp1P/P4P1K/8/8 b - - 99 50") << std::endl;
+    const std::string starting_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    std::cout << b.load_fen(starting_fen) << std::endl;
     b.show();
     return 0;
 }
