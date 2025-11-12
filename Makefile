@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++20 -Wall -Wextra -Iinclude
+CXXFLAGS := -std=c++20 -Wall -Wextra -Iinclude -g
 
 # Directories
 SRC_DIR := src
@@ -12,7 +12,7 @@ SRCS := $(shell find $(SRC_DIR) -name '*.cpp')
 OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SRCS))
 
 # Default rule
-all: $(TARGET) run
+all: clean $(TARGET) run
 
 # Link all object files into the final executable
 $(TARGET): $(OBJS)
