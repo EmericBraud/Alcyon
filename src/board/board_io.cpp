@@ -1,6 +1,5 @@
 #include "board.hpp"
 
-#include <stdexcept>
 #include <iostream>
 #include <sstream>
 
@@ -217,98 +216,6 @@ bool Board::load_fen(const std::string_view fen_string)
     // Update occupancy masks
     update_occupancy();
     return true;
-}
-
-void Board::clear()
-{
-    for (auto &b : piece_bitboards)
-    {
-        b = 0;
-    }
-    occupied_white = 0;
-    occupied_black = 0;
-    occupied_all = 0;
-    castling_rights = 0;
-    en_passant_sq = 0;
-    halfmove_clock = 0;
-    fullmove_number = 0;
-    side_to_move = WHITE;
-    zobrist_key = 0;
-}
-
-inline U64 &Board::get_piece_bitboard(Color color, Piece type)
-{
-    if (type <= NO_PIECE || type > KING) // Should be disabled on prod for increased performances
-    {
-        throw std::out_of_range("Invalid piece type requested for Bitboard access.");
-    }
-    size_t zero_based_index = (color * 6) + (type - 1);
-
-    return piece_bitboards[zero_based_index];
-}
-
-inline void Board::update_square_bitboard(Color color, Piece type, int square, bool fill)
-{
-    U64 &bitboard_ref = get_piece_bitboard(color, type);
-    if (fill)
-        bitboard_ref |= (1ULL << square);
-    else
-        bitboard_ref &= ~(1ULL << square);
-}
-
-inline void Board::update_occupancy()
-{
-    // Reset
-    occupied_white = 0ULL;
-    occupied_black = 0ULL;
-
-    // White 0-5
-    for (int i = 0; i < 6; ++i)
-    {
-        occupied_white |= piece_bitboards[i];
-    }
-
-    // Black (6-12)
-    for (int i = 6; i < 12; ++i)
-    {
-        occupied_black |= piece_bitboards[i];
-    }
-
-    // Total
-    occupied_all = occupied_white | occupied_black;
-}
-
-std::pair<Color, Piece> Board::get_piece_on_square(int sq) const
-{
-
-    // Check if the square is occupied at all
-    if (!(occupied_all & (1ULL << sq)))
-    {
-        return {NO_COLOR, NO_PIECE};
-    }
-
-    // Determine color first
-    Color piece_color = (occupied_white & (1ULL << sq)) ? WHITE : BLACK;
-
-    // Determine piece type
-    for (int type = PAWN; type <= KING; ++type)
-    {
-
-        // This index mapping must be consistent with your array:
-        // WHITE: indices 0 to 5 (PAWN=1 to KING=6)
-        // BLACK: indices 6 to 11 (PAWN=1 to KING=6)
-
-        size_t index = (piece_color * 6) + (type - 1);
-
-        // Check if the piece's bitboard is set at the given square
-        if (piece_bitboards[index] & (1ULL << sq))
-        {
-            return {piece_color, (Piece)type};
-        }
-    }
-
-    // Should not be reached if occupied_all check was correct
-    throw std::logic_error("Incoherent result, square should be occupied");
 }
 
 char Board::piece_to_char(Color color, Piece type) const
