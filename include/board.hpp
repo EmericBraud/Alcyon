@@ -1,17 +1,11 @@
 #pragma once
 
-#include <cstdint>
-#include <array>
-#include <string>
 #include <stdexcept>
-#include <vector>
 
 #include "move.hpp"
 
 #define N_PIECES_TYPE 12
 #define N_PIECES_TYPE_HALF 6
-
-using U64 = std::uint64_t;
 
 enum CastlingRights : uint8_t
 {
@@ -20,24 +14,6 @@ enum CastlingRights : uint8_t
     BLACK_KINGSIDE = 0b0100,  // 4
     BLACK_QUEENSIDE = 0b1000, // 8
     ALL_CASTLING = 0b1111     // 15
-};
-
-enum Piece : uint8_t
-{
-    NO_PIECE,
-    PAWN,
-    KNIGHT,
-    BISHOP,
-    ROOK,
-    QUEEN,
-    KING
-};
-
-enum Color : uint8_t
-{
-    WHITE,
-    BLACK,
-    NO_COLOR
 };
 
 struct UndoInfo
@@ -56,12 +32,12 @@ class Board
 {
 private:
     // Bitboards for each pieces
-    std::array<U64, N_PIECES_TYPE> piece_bitboards;
+    std::array<bitboard, N_PIECES_TYPE> pieces_occ;
 
     // Bitboards for fast occupancy queries
-    U64 occupied_white;
-    U64 occupied_black;
-    U64 occupied_all;
+    bitboard occupied_white;
+    bitboard occupied_black;
+    bitboard occupied_all;
 
     // State info
     uint8_t castling_rights; // Castle rights
@@ -94,20 +70,40 @@ public:
     bool load_fen(const std::string_view fen_string);
 
     void clear();
-    inline U64 &get_piece_bitboard(Color color, Piece type)
+
+    inline bitboard &get_piece_bitboard(const Color color, const Piece type)
     {
-        if (type <= NO_PIECE || type > KING) // Should be disabled on prod for increased performances
+        if (type > KING) // Should be disabled on prod for increased performances
         {
             throw std::out_of_range("Invalid piece type requested for Bitboard access.");
         }
-        size_t zero_based_index = (color * N_PIECES_TYPE_HALF) + (type - 1);
+        size_t zero_based_index = (color * N_PIECES_TYPE_HALF) + (type);
 
-        return piece_bitboards[zero_based_index];
+        return pieces_occ[zero_based_index];
+    }
+
+    inline bitboard &get_piece_bitboard(const Color color, const int type)
+    {
+        return get_piece_bitboard(color, static_cast<Piece>(type));
+    }
+    inline const bitboard &get_piece_bitboard(const Color color, const Piece type) const
+    {
+        if (type > KING) // Should be disabled on prod for increased performances
+        {
+            throw std::out_of_range("Invalid piece type requested for Bitboard access.");
+        }
+        size_t zero_based_index = (color * N_PIECES_TYPE_HALF) + (type);
+
+        return pieces_occ[zero_based_index];
+    }
+    inline const bitboard &get_piece_bitboard(const Color color, const int type) const
+    {
+        return get_piece_bitboard(color, static_cast<Piece>(type));
     }
 
     inline void update_square_bitboard(Color color, Piece type, int square, bool fill)
     {
-        U64 &bitboard_ref = get_piece_bitboard(color, type);
+        bitboard &bitboard_ref = get_piece_bitboard(color, type);
         if (fill)
             bitboard_ref |= (1ULL << square);
         else
@@ -116,25 +112,62 @@ public:
     inline void update_occupancy()
     {
         // Reset
-        occupied_white = 0ULL;
-        occupied_black = 0ULL;
+        occupied_white = EMPTY_MASK;
+        occupied_black = EMPTY_MASK;
 
-        // White 0-5
-        for (int i = 0; i < N_PIECES_TYPE_HALF; ++i)
+        for (int i{PAWN}; i <= KING; ++i)
         {
-            occupied_white |= piece_bitboards[i];
-        }
-
-        // Black (6-12)
-        for (int i = N_PIECES_TYPE_HALF; i < N_PIECES_TYPE; ++i)
-        {
-            occupied_black |= piece_bitboards[i];
+            occupied_white |= get_piece_bitboard(WHITE, static_cast<Piece>(i));
+            occupied_black |= get_piece_bitboard(BLACK, static_cast<Piece>(i));
         }
 
         // Total
         occupied_all = occupied_white | occupied_black;
     }
     std::pair<Color, Piece> get_piece_on_square(int sq) const;
+    std::pair<Color, Piece> get_piece_on_square(Square sq) const
+    {
+        return get_piece_on_square(static_cast<int>(sq));
+    };
     char piece_to_char(Color color, Piece type) const;
     void show() const;
+
+    /// @brief Checks if specified square is being occupied
+    /// @param sq
+    /// @param piece (NO_PIECE == checks for any piece type)
+    /// @param color (NO_COLOR == checks for any color)
+    /// @return true if occupied
+    bool is_occupied(const int sq, const Piece piece, const Color color) const
+    {
+        if (piece == NO_PIECE)
+        {
+            if (color == BLACK)
+            {
+                return is_set(occupied_black, sq);
+            }
+            if (color == WHITE)
+            {
+                return is_set(occupied_white, sq);
+            }
+            return is_set(occupied_all, sq);
+        }
+
+        const U64 mask = sq_mask(sq);
+        U64 final_mask = EMPTY_MASK;
+        if (color == WHITE || color == NO_COLOR)
+        {
+            final_mask |= get_piece_bitboard(WHITE, piece) & mask;
+        }
+        if (color == BLACK || color == NO_COLOR)
+        {
+            final_mask |= get_piece_bitboard(BLACK, piece) & mask;
+        }
+        return final_mask;
+    }
+    bool is_occupied(const int sq, const int piece, const Color color) const
+    {
+        return is_occupied(sq, static_cast<Piece>(piece), color);
+    }
+
+    bool play(Move move);
 };

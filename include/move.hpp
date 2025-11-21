@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include "piece.hpp"
 
 class Move
 {
@@ -34,18 +34,22 @@ public:
     Move() : value(0) {}
 
     // Constructor to encode a move from its components
-    Move(int from_sq, int to_sq, Flags flags = NONE)
+    Move(int from_sq, int to_sq, Piece from_piece, Flags flags = NONE)
     {
         // Example encoding scheme:
         // [0..5] : From Square (6 bits)
         // [6..11]: To Square (6 bits)
         // [12..15]: Flags / Move Type (4 bits)
+        // [16..20]: From Piece (4 bits)
 
         value = (uint32_t)(from_sq) |
                 ((uint32_t)(to_sq) << 6) |
-                ((uint32_t)(flags) << 12);
+                ((uint32_t)(flags) << 12) |
+                ((uint32_t)(from_piece) << 16);
         // Add encoding for captured piece and promotion piece if needed
     }
+    explicit Move(Square from_sq, Square to_sq, Piece from_piece, Flags flags = NONE):
+        Move(static_cast<int>(from_sq), static_cast<int>(to_sq), from_piece, flags){}
 
     // --- Accessors (Read-only) ---
 
@@ -59,6 +63,11 @@ public:
     inline int get_to_sq() const
     {
         return (value >> 6) & 0x3F; // Shift 6 bits and mask
+    }
+
+    inline Piece get_from_piece() const
+    {
+        return static_cast<Piece>((value >> 16) & 0xF);
     }
 
     // Checks if the move is a castling move
