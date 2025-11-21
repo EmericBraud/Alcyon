@@ -12,3 +12,7 @@ inline U64 sq_mask(const int sq)
 {
     return (1ULL << sq);
 }
+inline U64 sq_mask(const int sq_col, const int sq_row)
+{
+    return (1ULL << (sq_col + (sq_row << 3)));
+}
