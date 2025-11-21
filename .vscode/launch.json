@@ -1,33 +1,57 @@
 {
-    "version": "0.2.0",
-    "configurations": [
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "GDB Debug (C++20 & Makefile)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/chess26",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
         {
-            "name": "GDB Debug (C++20 & Makefile)",
-            "type": "cppdbg",
-            "request": "launch",
-            // 🛑 L'instruction cruciale : Exécute la tâche de build nommée "build (make all)" 
-            // AVANT de démarrer le débogueur.
-            "preLaunchTask": "build (make all)",
-            // Le chemin de l'exécutable doit correspondre à ce que votre Makefile produit
-            "program": "${workspaceFolder}/chess26",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set disassembly flavor to Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
-                    "ignoreFailures": true
-                }
-            ]
+          "description": "Enable pretty printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Set disassembly flavor to Intel",
+          "text": "-gdb-set disassembly-flavor intel",
+          "ignoreFailures": true
         }
-    ]
+      ]
+    },
+    {
+      "name": "Debug Google Tests",
+      "type": "cppdbg",
+      "request": "launch",
+
+      // 1. Lance la construction pour s'assurer que 'chess_tests' est à jour
+      "preLaunchTask": "CMake: Build",
+
+      // 2. 🛑 CIBLE SPÉCIFIQUE : L'exécutable de test généré par CMake
+      "program": "${workspaceFolder}/build/chess_tests",
+
+      // 3. Arguments pour exécuter UN SEUL TEST (nécessaire pour le débogage ciblé)
+      // Ici, on cible le test 'BoardTest.KnightMove_Initial'
+      "args": ["--gtest_filter=BoardTest.KnightMove_Initial"],
+
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/build", // Travaillez dans le répertoire build
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
 }

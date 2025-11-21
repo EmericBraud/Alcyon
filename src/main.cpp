@@ -1,12 +1,16 @@
 #include "board.hpp"
-#include <iostream>
-#include <string>
 
 int main()
 {
     Board b{};
-    const std::string starting_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    std::cout << b.load_fen(starting_fen) << std::endl;
+    std::cout << b.load_fen(STARTING_POS_FEN) << std::endl;
     b.show();
+    Move m(Square::a2, Square::c3, Piece::KNIGHT);
+    b.play(m);
+    b.show();
+
+    PieceInfo empty_square = std::make_pair(Color::NO_COLOR, Piece::NO_PIECE);
+    PieceInfo knight_on_c3 = std::make_pair(Color::WHITE, Piece::KNIGHT);
+
     return 0;
 }

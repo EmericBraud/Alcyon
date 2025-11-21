@@ -35,4 +35,12 @@ run: $(TARGET)
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET)
 
-.PHONY: all run clean
+cmake:
+	cmake --build ./$(BUILD_DIR)
+	./$(BUILD_DIR)/$(TARGET)
+
+ctest:
+	cmake --build ./$(BUILD_DIR)
+	ctest --output-on-failure
+
+.PHONY: all run clean cmake

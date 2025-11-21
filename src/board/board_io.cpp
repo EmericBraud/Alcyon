@@ -227,7 +227,7 @@ char Board::piece_to_char(Color color, Piece type) const
 
     // Array holding piece characters (Index 1=P, 2=N, 3=B, 4=R, 5=Q, 6=K)
     // We use a simple array as the type enum matches the index
-    const char piece_chars[] = {' ', 'P', 'N', 'B', 'R', 'Q', 'K'};
+    const char piece_chars[] = {'P', 'N', 'B', 'R', 'Q', 'K', ' '};
 
     char result = piece_chars[type];
 
@@ -245,7 +245,7 @@ char Board::piece_to_char(Color color, Piece type) const
 
 void Board::show() const
 {
-    std::cout << "\n   +--------------------------------------+" << std::endl;
+    std::cout << "\n   +---------------------------------------+" << std::endl;
 
     // Iterates from rank 8 (index 7) down to rank 1 (index 0)
     for (int rank = 7; rank >= 0; --rank)
