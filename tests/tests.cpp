@@ -1,4 +1,4 @@
-#include "board.hpp"
+#include "move_generator.hpp"
 #include "gtest/gtest.h"
 
 class BoardTest : public ::testing::Test
@@ -11,42 +11,79 @@ protected:
     }
 };
 
-// 2. Utiliser la macro TEST_F pour définir le test unitaire
-// TestSuiteName: BoardTest (le nom de la Fixture)
-// TestName: KnightMove_Initial
 TEST_F(BoardTest, KnightMove_Initial)
 {
 
     b.load_fen(STARTING_POS_FEN);
 
-    Move m(Square::a2, Square::c3, Piece::KNIGHT);
+    Move m(Square::b1, Square::c3, Piece::KNIGHT);
     b.play(m);
 
     PieceInfo empty_square = std::make_pair(Color::NO_COLOR, Piece::NO_PIECE);
     PieceInfo knight_on_c3 = std::make_pair(Color::WHITE, Piece::KNIGHT);
 
-    // B. Act (Action)
-    // Ici, nous supposons que la fonction apply_move() ou play() est appelée.
-    // Votre code n'appelle pas de méthode de déplacement, mais nous allons simuler
-    // l'état post-déplacement pour valider les assertions.
-
-    // NOTE: Si le test est censé valider l'objet Move sans l'appliquer,
-    // l'objet Board n'est pas modifié et les assertions échoueront.
-    // Supposons que vous ayez une méthode pour appliquer le mouvement.
-    // b.apply_move(m);
-
-    // Pour l'exercice, si on simule l'état (le test doit être revu si l'état n'est pas modifié) :
-    // b.set_piece_on_square(Square::c3, Color::WHITE, Piece::KNIGHT);
-    // b.set_piece_on_square(Square::a2, Color::NO_COLOR, Piece::NO_PIECE);
-
-    // C. Assert (Vérification)
-    // Vérifie la pièce déplacée (supposée être appliquée à la ligne précédente)
-    // Note: Le cast statique vers int n'est pas nécessaire si vous utilisez Square directement
-    // et que get_piece_on_square est surchargée pour accepter Square.
     ASSERT_EQ(b.get_piece_on_square(Square::c3), knight_on_c3)
         << "Erreur : Le Cavalier Blanc n'est pas sur c3 après le mouvement.";
 
     // Vérifie l'ancienne case (doit être vide)
-    ASSERT_EQ(b.get_piece_on_square(Square::a2), empty_square)
+    ASSERT_EQ(b.get_piece_on_square(Square::b1), empty_square)
         << "Erreur : La case de départ a2 n'est pas vide.";
+}
+
+class MoveGenTest : public ::testing::Test
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        MoveGen::initialize_bitboard_tables();
+    }
+    void SetUp() override
+    {
+    }
+};
+
+TEST_F(MoveGenTest, MoveGenKing)
+{
+    ASSERT_EQ(MoveGen::KingAttacks[static_cast<int>(Square::d4)], 0b1110000010100000111000000000000000000ULL)
+        << "Erreur : Les mouvements du roi sont invalides";
+}
+
+TEST_F(MoveGenTest, MaskGenRook)
+{
+    ASSERT_EQ(MoveGen::RookMasks[static_cast<int>(Square::d4)], 0b1000000010000000100001110110000010000000100000000000ULL)
+        << "Erreur : Le mask de lookup de la tour est invalide";
+}
+
+TEST_F(MoveGenTest, MaskGenBishop)
+{
+    ASSERT_EQ(MoveGen::BishopMasks[static_cast<int>(Square::d4)], 0b1000000001000100001010000000000000101000010001000000000ULL)
+        << "Erreur : Le mask de lookup du fou est invalide";
+}
+
+TEST_F(MoveGenTest, MoveGenPawn)
+{
+    ASSERT_EQ(MoveGen::PawnAttacksWhite[static_cast<int>(Square::d4)], 0b1010000000000000000000000000000000000ULL)
+        << "Erreur : Le mask d'attaque du pion blanc est invalide";
+    ASSERT_EQ(MoveGen::PawnAttacksBlack[static_cast<int>(Square::d4)], 0b101000000000000000000ULL)
+        << "Erreur : Le mask d'attaque du pion noir est invalide";
+
+    ASSERT_EQ(MoveGen::PawnPushWhite[static_cast<int>(Square::d4)], 0b100000000000000000000000000000000000ULL)
+        << "Erreur : Le mask de push du pion blanc est invalide";
+    ASSERT_EQ(MoveGen::PawnPushBlack[static_cast<int>(Square::d4)], 0b10000000000000000000ULL)
+        << "Erreur : Le mask de push du pion noir est invalide";
+
+    ASSERT_EQ(MoveGen::PawnPush2White[static_cast<int>(Square::d4)], 0b0ULL)
+        << "Erreur : Le mask de double push du pion blanc est invalide";
+    ASSERT_EQ(MoveGen::PawnPush2Black[static_cast<int>(Square::d4)], 0b0ULL)
+        << "Erreur : Le mask de double push du pion noir est invalide";
+
+    ASSERT_EQ(MoveGen::PawnPush2White[static_cast<int>(Square::d2)], 0b1000000000000000000000000000ULL)
+        << "Erreur : Le mask de double push du pion blanc est invalide";
+    ASSERT_EQ(MoveGen::PawnPush2Black[static_cast<int>(Square::d2)], 0b0ULL)
+        << "Erreur : Le mask de double push du pion noir est invalide";
+
+    ASSERT_EQ(MoveGen::PawnPush2White[static_cast<int>(Square::d7)], 0b0ULL)
+        << "Erreur : Le mask de double push du pion blanc est invalide";
+    ASSERT_EQ(MoveGen::PawnPush2Black[static_cast<int>(Square::d7)], 0b100000000000000000000000000000000000ULL)
+        << "Erreur : Le mask de double push du pion noir est invalide";
 }
