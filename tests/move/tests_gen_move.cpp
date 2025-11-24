@@ -1,54 +1,6 @@
 #include "move_generator.hpp"
 #include "gtest/gtest.h"
 
-class BoardTest : public ::testing::Test
-{
-protected:
-    Board b;
-
-    void SetUp() override
-    {
-    }
-};
-
-TEST_F(BoardTest, KnightMove_Initial)
-{
-
-    b.load_fen(STARTING_POS_FEN);
-
-    Move m(Square::b1, Square::c3, Piece::KNIGHT);
-    b.play(m);
-
-    PieceInfo empty_square = std::make_pair(Color::NO_COLOR, Piece::NO_PIECE);
-    PieceInfo knight_on_c3 = std::make_pair(Color::WHITE, Piece::KNIGHT);
-
-    ASSERT_EQ(b.get_piece_on_square(Square::c3), knight_on_c3)
-        << "Erreur : Le Cavalier Blanc n'est pas sur c3 après le mouvement.";
-
-    // Vérifie l'ancienne case (doit être vide)
-    ASSERT_EQ(b.get_piece_on_square(Square::b1), empty_square)
-        << "Erreur : La case de départ a2 n'est pas vide.";
-}
-
-class MoveTest : public ::testing::Test
-{
-protected:
-    void SetUp() override
-    {
-    }
-};
-
-TEST_F(MoveTest, MoveDescriptor)
-{
-    Move m{Square::a2, Square::c3, KNIGHT};
-
-    ASSERT_EQ(m.get_from_piece(), KNIGHT);
-    ASSERT_EQ(m.get_from_sq(), static_cast<uint32_t>(Square::a2));
-    ASSERT_EQ(m.get_to_sq(), static_cast<uint32_t>(Square::c3));
-    ASSERT_EQ(m.is_castling(), false);
-    ASSERT_EQ(m.is_promotion(), false);
-}
-
 class MoveGenTest : public ::testing::Test
 {
 protected:
@@ -105,4 +57,34 @@ TEST_F(MoveGenTest, MoveGenPawn)
         << "Erreur : Le mask de double push du pion blanc est invalide";
     ASSERT_EQ(MoveGen::PawnPush2Black[static_cast<int>(Square::d7)], 0b100000000000000000000000000000000000ULL)
         << "Erreur : Le mask de double push du pion noir est invalide";
+}
+
+TEST_F(MoveGenTest, MoveGenRook)
+{
+    Board b{};
+    b.load_fen("8/1p1q4/5k2/1n1R4/8/1K2N1p1/3B4/8 w - - 0 1");
+
+    // Half legal move (can capture his own pieces)
+    const U64 bitboard_moves = MoveGen::generate_rook_moves(static_cast<int>(Square::d5), b);
+    ASSERT_EQ(bitboard_moves, 0b1000000010001111011000001000000010000000100000000000);
+}
+
+TEST_F(MoveGenTest, MoveGenRookPieceOnBorder)
+{
+    Board b{};
+    b.load_fen("8/1p1q4/5k2/1n1R3r/8/1K2N1p1/3B4/8 w - - 0 1");
+
+    // Half legal move (can capture his own pieces)
+    const U64 bitboard_moves = MoveGen::generate_rook_moves(static_cast<int>(Square::d5), b);
+    ASSERT_EQ(bitboard_moves, 0b1000000010001111011000001000000010000000100000000000);
+}
+
+TEST_F(MoveGenTest, MoveGenBishop)
+{
+    Board b{};
+    b.load_fen("8/1p1q4/5k2/1n1R4/8/1K2N1p1/3B4/8 w - - 0 1");
+
+    // Half legal move (can capture his own pieces)
+    const U64 bitboard_moves = MoveGen::generate_bishop_moves(static_cast<int>(Square::d2), b);
+    ASSERT_EQ(bitboard_moves, 0b100000010000101000000000000010100);
 }

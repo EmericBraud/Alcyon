@@ -10,6 +10,5 @@ int main()
     b.play(m);
     b.show();
 
-    MoveGen::run_magic_searcher();
     return 0;
 }

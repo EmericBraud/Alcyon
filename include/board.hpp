@@ -101,6 +101,32 @@ public:
         return get_piece_bitboard(color, static_cast<Piece>(type));
     }
 
+    inline bitboard &get_occupancy(Color c)
+    {
+        switch (c)
+        {
+        case NO_COLOR:
+            return occupied_all;
+        case WHITE:
+            return occupied_white;
+        case BLACK:
+            return occupied_black;
+        }
+    }
+    inline const bitboard &get_occupancy(Color c) const
+    {
+        switch (c)
+        {
+        case NO_COLOR:
+            return occupied_all;
+        case WHITE:
+            return occupied_white;
+        case BLACK:
+            return occupied_black;
+        }
+        throw std::logic_error("Color unsupported");
+    }
+
     inline void update_square_bitboard(Color color, Piece type, int square, bool fill)
     {
         bitboard &bitboard_ref = get_piece_bitboard(color, type);

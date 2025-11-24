@@ -40,7 +40,6 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
-set(TEST_SOURCES tests/tests.cpp)
 add_executable(chess_tests ${TEST_SOURCES})
 
 target_include_directories(chess_tests PRIVATE 
