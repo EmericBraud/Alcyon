@@ -17,6 +17,9 @@ TEST_F(MoveGenTest, MoveGenKing)
 {
     ASSERT_EQ(MoveGen::KingAttacks[static_cast<int>(Square::d4)], 0b1110000010100000111000000000000000000ULL)
         << "Erreur : Les mouvements du roi sont invalides";
+
+    const U64 bitboard_moves = MoveGen::KingAttacks[static_cast<int>(Square::b3)];
+    ASSERT_EQ(bitboard_moves, 0x7050700);
 }
 
 TEST_F(MoveGenTest, MaskGenRook)

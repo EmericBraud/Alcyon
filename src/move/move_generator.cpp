@@ -201,25 +201,56 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
         while (piece_bitboard != 0)
         {
             int from_sq = pop_lsb(piece_bitboard);
-
-            // 4. Dispatcher la logique (structure Switch/Case rapide)
             U64 target_mask;
             switch (piece_type)
             {
+            case PAWN:
+                if (color == WHITE)
+                {
+                    target_mask = PawnPushWhite[from_sq] | PawnPush2White[from_sq];
+                    target_mask |= PawnAttacksWhite[from_sq] & board.get_occupancy(BLACK);
+                }
+                else if (color == BLACK)
+                {
+                    target_mask = PawnPushBlack[from_sq] | PawnPush2Black[from_sq];
+                    target_mask |= PawnAttacksBlack[from_sq] & board.get_occupancy(WHITE);
+                }
+                else
+                {
+                    throw std::logic_error("Passed NONE color to generate pseudo legal moves");
+                }
+                break;
             case KNIGHT:
                 target_mask = KnightAttacks[from_sq];
+                break;
+            case BISHOP:
+                target_mask = generate_bishop_moves(from_sq, board);
                 break;
             case ROOK:
                 target_mask = generate_rook_moves(from_sq, board);
                 break;
-            // ... autres pièces
+            case QUEEN:
+                target_mask = generate_rook_moves(from_sq, board) | generate_bishop_moves(from_sq, board);
+                break;
+            case KING:
+                target_mask = KingAttacks[from_sq];
+                break;
             default:
-                // log error
+                throw std::logic_error("Unsupported piece type");
                 break;
             }
 
-            // 5. Filtrage et Extraction des Coups (pop_and_scan sur target_mask)
-            // ... (Convertit le target_mask en une liste de structures Move et les ajoute à 'moves')
+            U64 friendly_mask = board.get_occupancy(color);
+            target_mask &= ~friendly_mask;
+            while (target_mask != 0)
+            {
+                int target_sq = pop_lsb(target_mask);
+                moves.push_back(Move{
+                    from_sq,
+                    target_sq,
+                    static_cast<Piece>(piece_type),
+                }); // @TODO add flags
+            }
         }
     }
     return moves;

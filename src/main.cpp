@@ -6,9 +6,8 @@ int main()
     Board b{};
     std::cout << b.load_fen(STARTING_POS_FEN) << std::endl;
     b.show();
-    Move m(Square::b1, Square::c3, Piece::KNIGHT);
-    b.play(m);
-    b.show();
-
+    std::vector<Move> v{};
+    v = MoveGen::generate_pseudo_legal_moves(b, b.get_side_to_move());
+    std::cout << v.size() << std::endl;
     return 0;
 }

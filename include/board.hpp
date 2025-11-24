@@ -82,6 +82,11 @@ public:
         return pieces_occ[zero_based_index];
     }
 
+    inline Color get_side_to_move() const
+    {
+        return side_to_move;
+    }
+
     inline bitboard &get_piece_bitboard(const Color color, const int type)
     {
         return get_piece_bitboard(color, static_cast<Piece>(type));
