@@ -19,6 +19,16 @@ target_include_directories(chess_core PUBLIC include)
 add_executable(chess26 src/main.cpp)
 target_link_libraries(chess26 PRIVATE chess_core)
 
+# --- Début des modifications pour créer le dossier 'data' ---
+
+set(CHESS26_DATA_DIR "$<TARGET_FILE_DIR:chess26>/data")
+add_custom_command(
+    TARGET chess26 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CHESS26_DATA_DIR}
+)
+
+# --- Fin des modifications ---
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -30,7 +40,6 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
-set(TEST_SOURCES tests/tests.cpp)
 add_executable(chess_tests ${TEST_SOURCES})
 
 target_include_directories(chess_tests PRIVATE 
@@ -39,6 +48,16 @@ target_include_directories(chess_tests PRIVATE
 
 find_package(Threads REQUIRED)
 target_link_libraries(chess_tests PRIVATE chess_core gtest_main gtest Threads::Threads)
+
+# --- Début des modifications pour créer le dossier 'data' des tests ---
+
+set(TESTS_DATA_DIR "$<TARGET_FILE_DIR:chess_tests>/data")
+add_custom_command(
+    TARGET chess_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TESTS_DATA_DIR}
+)
+
+# --- Fin des modifications ---
 
 include(GoogleTest)
 gtest_discover_tests(chess_tests)
