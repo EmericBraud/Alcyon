@@ -9,6 +9,10 @@
 #include <cstdint>
 #include <utility>
 #include <climits>
+#include <random>
+#include <chrono>
+#include <bit>
+#include <fstream>
 
 #define BOARD_SIZE 64
 #define STARTING_POS_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
