@@ -179,17 +179,13 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
 {
     std::vector<Move> moves;
 
-    // 1. Boucle sur les 6 types de pièces (Pion à Roi)
     for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
     {
-
-        // 2. Obtention du Bitboard de cette pièce et couleur
         U64 piece_bitboard = board.get_piece_bitboard(color, piece_type);
 
-        // 3. Boucle sur chaque pièce de ce type (pop_and_scan)
         while (piece_bitboard != 0)
         {
-            int from_sq = pop_lsb(piece_bitboard); // Obtient et retire l'indice du bit LSB
+            int from_sq = pop_lsb(piece_bitboard);
 
             // 4. Dispatcher la logique (structure Switch/Case rapide)
             U64 target_mask;
@@ -199,7 +195,7 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
                 target_mask = KnightAttacks[from_sq];
                 break;
             case ROOK:
-                target_mask = generate_rook_moves(from_sq, board); // Fonction plus complexe
+                target_mask = generate_rook_moves(from_sq, board);
                 break;
             // ... autres pièces
             default:
@@ -217,4 +213,214 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
 U64 MoveGen::generate_rook_moves(int from_sq, const Board &board)
 {
     return U64();
+}
+
+// Génère l'attaque idéale pour une Tour/Fou étant donné les bloqueurs.
+// 'occupancy' ne contient que les bloqueurs pertinents, mais la fonction
+// doit le traiter comme l'occupation globale pour simuler l'arrêt.
+static U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook)
+{
+    U64 attacks = 0ULL;
+    const std::array<int, 8> shifts = is_rook ? std::array<int, 8>{8, -8, 1, -1, 0, 0, 0, 0} : // N, S, E, O
+                                          std::array<int, 8>{9, -9, 7, -7, 0, 0, 0, 0};        // NE, SO, NO, SE
+
+    for (int i = 0; i < 4; ++i)
+    {
+        int delta = shifts[i];
+        int current_sq = sq;
+
+        while (true)
+        {
+            current_sq += delta;
+
+            if (current_sq < 0 || current_sq >= 64)
+                break;
+
+            U64 target_mask = sq_mask(current_sq);
+            attacks |= target_mask;
+
+            if (occupancy & target_mask)
+            {
+                break;
+            }
+        }
+    }
+    return attacks;
+}
+
+// Génère tous les Bitboards de bloqueurs possibles pour le masque donné.
+// Stocke les Bitboards de bloqueurs dans 'occupancy_list' et les attaques idéales
+// dans 'attack_list'.
+static void generate_all_blocker_occupancies(int sq, U64 mask, bool is_rook,
+                                             std::vector<U64> &occupancy_list,
+                                             std::vector<U64> &attack_list)
+{
+    // 1. Trouver les indices de tous les bits dans le masque
+    std::vector<int> blocker_bits;
+    U64 temp_mask = mask;
+    while (temp_mask)
+    {
+        blocker_bits.push_back(pop_lsb(temp_mask));
+    }
+
+    int num_blocker_bits = blocker_bits.size();
+
+    // 2. Boucle sur les 2^N combinaisons de bloqueurs
+    // 1 << num_blocker_bits donne 2^N
+    for (int i = 0; i < (1 << num_blocker_bits); ++i)
+    {
+        U64 occupancy = 0ULL;
+        // Créer le Bitboard d'occupation pour cette configuration 'i'
+        for (int j = 0; j < num_blocker_bits; ++j)
+        {
+            // Si le j-ième bit de 'i' est positionné, inclure le bloqueur
+            if ((i >> j) & 1)
+            {
+                occupancy |= sq_mask(blocker_bits[j]);
+            }
+        }
+
+        // 3. Stocker la configuration et l'attaque idéale correspondante
+        occupancy_list.push_back(occupancy);
+        attack_list.push_back(generate_sliding_attack(sq, occupancy, is_rook));
+    }
+}
+
+static std::mt19937_64 rng(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+
+static U64 generate_magic_candidate()
+{
+    return rng() & rng() & rng();
+}
+
+static MoveGen::Magic find_magic(int sq, bool is_rook, int max_iterations, long unsigned int index_start)
+{
+    U64 mask = is_rook ? MoveGen::RookMasks[sq] : MoveGen::BishopMasks[sq];
+
+    int bits_in_mask = std::popcount(mask);
+    int shift = 64 - bits_in_mask;
+
+    std::vector<U64> occupancies, attacks;
+    generate_all_blocker_occupancies(sq, mask, is_rook, occupancies, attacks);
+    int num_occupancies = occupancies.size();
+
+    for (int iter = 0; iter < max_iterations; ++iter)
+    {
+        U64 magic_candidate = generate_magic_candidate();
+
+        if (((mask * magic_candidate) & 0xFF00000000000000ULL) == 0)
+            continue;
+
+        std::vector<U64> magic_test_table(num_occupancies, 0ULL);
+        bool collision_found = false;
+
+        for (int i = 0; i < num_occupancies; ++i)
+        {
+            U64 occupancy = occupancies[i];
+            U64 ideal_attack = attacks[i];
+
+            int index = (int)((occupancy * magic_candidate) >> shift);
+            if (index >= num_occupancies)
+            {
+                collision_found = true;
+                break;
+            }
+            if (magic_test_table[index] == 0ULL)
+            {
+                magic_test_table[index] = ideal_attack;
+            }
+            else if (magic_test_table[index] != ideal_attack)
+            {
+                collision_found = true;
+                break;
+            }
+        }
+
+        if (!collision_found)
+        {
+            std::cout << "Magic found for sq " << sq << " after " << iter << " iterations." << std::endl;
+            return {mask, magic_candidate, shift, index_start};
+        }
+    }
+
+    std::cerr << "Erreur: Magic non trouvé pour la case " << sq << std::endl;
+    return {};
+}
+
+void MoveGen::export_attack_table(std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook)
+{
+    std::vector<U64> output_v{};
+    for (int sq{0}; sq < BOARD_SIZE; ++sq)
+    {
+        const MoveGen::Magic magic = m_array[sq];
+        const U64 mask = is_rook ? MoveGen::RookMasks[sq] : MoveGen::BishopMasks[sq];
+        std::vector<U64> occupancies, attacks;
+        generate_all_blocker_occupancies(sq, mask, is_rook, occupancies, attacks);
+
+        if (magic.index_start != output_v.size())
+        {
+            throw std::logic_error("Index start and real size not matching");
+        }
+        output_v.insert(output_v.end(), 1ULL << (BOARD_SIZE - magic.shift), 0ULL);
+        for (long unsigned int i{0}; i < occupancies.size(); ++i)
+        {
+            U64 index = (occupancies[i] * magic.magic) >> magic.shift;
+            output_v[magic.index_start + index] = attacks[i];
+        }
+    }
+    std::ofstream piece_attacks(is_rook ? "data/rook_attacks.bin" : "data/bishop_attacks.bin", std::ios::binary);
+    if (!piece_attacks.is_open())
+    {
+        throw std::runtime_error("Could not write in attacks file");
+    }
+    piece_attacks.write(reinterpret_cast<const char *>(output_v.data()), output_v.size() * sizeof(U64));
+
+    std::cout << "--- Exported attack table for " << (is_rook ? "rook" : "bishop") << " piece ---" << std::endl;
+}
+
+void MoveGen::run_magic_searcher()
+{
+    std::cout << "--- Searching Magic Numbers ---" << std::endl;
+    MoveGen::initialize_rook_masks();
+    MoveGen::initialize_bishop_masks();
+
+    std::array<MoveGen::Magic, BOARD_SIZE> rook_m_array;
+    std::array<MoveGen::Magic, BOARD_SIZE> bishop_m_array;
+
+    long unsigned int index_start_bishop = 0;
+    long unsigned int index_start_rook = 0;
+
+    for (int sq = 0; sq < BOARD_SIZE; ++sq)
+    {
+        MoveGen::Magic rook_m = find_magic(sq, true, 10000000, index_start_rook);
+        MoveGen::Magic bishop_m = find_magic(sq, false, 10000000, index_start_bishop);
+
+        if (rook_m.shift == 0 || bishop_m.shift == 0) // search failed
+        {
+            std::cerr << "Error: Magic search failed for square " << sq << std::endl;
+            return;
+        }
+        index_start_bishop += 1ULL << (BOARD_SIZE - bishop_m.shift);
+        index_start_rook += 1ULL << (BOARD_SIZE - rook_m.shift);
+        rook_m_array[sq] = rook_m;
+        bishop_m_array[sq] = bishop_m;
+    }
+    std::ofstream rook_m_file("data/rook_m.bin", std::ios::binary);
+    std::ofstream bishop_m_file("data/bishop_m.bin", std::ios::binary);
+    if (!rook_m_file.is_open() || !bishop_m_file.is_open())
+    {
+        throw std::runtime_error("Magic number files could not be opened");
+    }
+
+    rook_m_file.write(
+        reinterpret_cast<const char *>(rook_m_array.data()),
+        rook_m_array.size() * sizeof(MoveGen::Magic));
+
+    bishop_m_file.write(
+        reinterpret_cast<const char *>(bishop_m_array.data()),
+        bishop_m_array.size() * sizeof(MoveGen::Magic));
+
+    std::cout << "--- Magic Numbers Exported ---" << std::endl;
+    MoveGen::export_attack_table(rook_m_array, true);
+    MoveGen::export_attack_table(bishop_m_array, false);
 }
