@@ -1,5 +1,10 @@
 #include "move_generator.hpp"
 
+constexpr const char *ROOK_ATTACKS_FILE = "../data/rook_attacks.bin";
+constexpr const char *BISHOP_ATTACKS_FILE = "../data/bishop_attacks.bin";
+constexpr const char *ROOK_MAGICS_FILE = "../data/rook_m.bin";
+constexpr const char *BISHOP_MAGICS_FILE = "../data/bishop_m.bin";
+
 namespace MoveGen
 {
     std::array<U64, BOARD_SIZE> KnightAttacks;
@@ -12,6 +17,16 @@ namespace MoveGen
     std::array<U64, BOARD_SIZE> PawnPushBlack;
     std::array<U64, BOARD_SIZE> PawnPush2White;
     std::array<U64, BOARD_SIZE> PawnPush2Black;
+
+    std::vector<U64> RookAttacksProcessing;
+    std::vector<U64> BishopAttacksProcessing;
+
+    std::array<Magic, BOARD_SIZE> RookMagics;
+    std::array<Magic, BOARD_SIZE> BishopMagics;
+
+    std::array<U64, ROOK_ATTACKS_SIZE> RookAttacks;
+    std::array<U64, BISHOP_ATTACKS_SIZE> BishopAttacks;
+
 }
 /**
  * Génère le Bitboard d'attaque pour une pièce non-glissante donnée
@@ -212,50 +227,58 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
 
 U64 MoveGen::generate_rook_moves(int from_sq, const Board &board)
 {
-    return U64();
+    const U64 occupancy = board.get_occupancy(NO_COLOR);
+    const MoveGen::Magic magic = MoveGen::RookMagics[from_sq];
+
+    const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
+
+    return MoveGen::RookAttacks[index + magic.index_start];
 }
 
-// Génère l'attaque idéale pour une Tour/Fou étant donné les bloqueurs.
-// 'occupancy' ne contient que les bloqueurs pertinents, mais la fonction
-// doit le traiter comme l'occupation globale pour simuler l'arrêt.
-static U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook)
+U64 MoveGen::generate_bishop_moves(int from_sq, const Board &board)
+{
+    const U64 occupancy = board.get_occupancy(NO_COLOR);
+    const MoveGen::Magic magic = MoveGen::BishopMagics[from_sq];
+
+    const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
+
+    return MoveGen::BishopAttacks[index + magic.index_start];
+}
+
+U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook)
 {
     U64 attacks = 0ULL;
-    const std::array<int, 8> shifts = is_rook ? std::array<int, 8>{8, -8, 1, -1, 0, 0, 0, 0} : // N, S, E, O
-                                          std::array<int, 8>{9, -9, 7, -7, 0, 0, 0, 0};        // NE, SO, NO, SE
 
-    for (int i = 0; i < 4; ++i)
+    const std::array<std::pair<int, int>, 4> dirs_rook = {{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}};     // N,S,E,W (dr,df)
+    const std::array<std::pair<int, int>, 4> dirs_bishop = {{{1, 1}, {-1, 1}, {-1, -1}, {1, -1}}}; // NE,NW,SW,SE
+
+    const auto &dirs = is_rook ? dirs_rook : dirs_bishop;
+
+    int r0 = sq / 8;
+    int f0 = sq % 8;
+
+    for (const auto &d : dirs)
     {
-        int delta = shifts[i];
-        int current_sq = sq;
-
-        while (true)
+        int r = r0 + d.first;
+        int f = f0 + d.second;
+        while (r >= 0 && r <= 7 && f >= 0 && f <= 7)
         {
-            current_sq += delta;
-
-            if (current_sq < 0 || current_sq >= 64)
-                break;
-
-            U64 target_mask = sq_mask(current_sq);
+            int target_sq = r * 8 + f;
+            U64 target_mask = sq_mask(target_sq);
             attacks |= target_mask;
-
-            if (occupancy & target_mask)
-            {
+            if (occupancy & target_mask) // bloqueur rencontré -> s'arrête
                 break;
-            }
+            r += d.first;
+            f += d.second;
         }
     }
     return attacks;
 }
 
-// Génère tous les Bitboards de bloqueurs possibles pour le masque donné.
-// Stocke les Bitboards de bloqueurs dans 'occupancy_list' et les attaques idéales
-// dans 'attack_list'.
 static void generate_all_blocker_occupancies(int sq, U64 mask, bool is_rook,
                                              std::vector<U64> &occupancy_list,
                                              std::vector<U64> &attack_list)
 {
-    // 1. Trouver les indices de tous les bits dans le masque
     std::vector<int> blocker_bits;
     U64 temp_mask = mask;
     while (temp_mask)
@@ -265,22 +288,14 @@ static void generate_all_blocker_occupancies(int sq, U64 mask, bool is_rook,
 
     int num_blocker_bits = blocker_bits.size();
 
-    // 2. Boucle sur les 2^N combinaisons de bloqueurs
-    // 1 << num_blocker_bits donne 2^N
-    for (int i = 0; i < (1 << num_blocker_bits); ++i)
+    uint64_t total = 1ULL << num_blocker_bits;
+    for (uint64_t i = 0; i < total; ++i)
     {
         U64 occupancy = 0ULL;
-        // Créer le Bitboard d'occupation pour cette configuration 'i'
         for (int j = 0; j < num_blocker_bits; ++j)
-        {
-            // Si le j-ième bit de 'i' est positionné, inclure le bloqueur
-            if ((i >> j) & 1)
-            {
+            if ((i >> j) & 1ULL) // Chekcs if jth blocker is present
                 occupancy |= sq_mask(blocker_bits[j]);
-            }
-        }
 
-        // 3. Stocker la configuration et l'attaque idéale correspondante
         occupancy_list.push_back(occupancy);
         attack_list.push_back(generate_sliding_attack(sq, occupancy, is_rook));
     }
@@ -298,7 +313,7 @@ static MoveGen::Magic find_magic(int sq, bool is_rook, int max_iterations, long 
     U64 mask = is_rook ? MoveGen::RookMasks[sq] : MoveGen::BishopMasks[sq];
 
     int bits_in_mask = std::popcount(mask);
-    int shift = 64 - bits_in_mask;
+    int shift = BOARD_SIZE - bits_in_mask;
 
     std::vector<U64> occupancies, attacks;
     generate_all_blocker_occupancies(sq, mask, is_rook, occupancies, attacks);
@@ -343,11 +358,10 @@ static MoveGen::Magic find_magic(int sq, bool is_rook, int max_iterations, long 
         }
     }
 
-    std::cerr << "Erreur: Magic non trouvé pour la case " << sq << std::endl;
-    return {};
+    throw std::runtime_error("No magic number found for square " + std::to_string(sq));
 }
 
-void MoveGen::export_attack_table(std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook)
+void MoveGen::export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook)
 {
     std::vector<U64> output_v{};
     for (int sq{0}; sq < BOARD_SIZE; ++sq)
@@ -361,14 +375,14 @@ void MoveGen::export_attack_table(std::array<MoveGen::Magic, BOARD_SIZE> m_array
         {
             throw std::logic_error("Index start and real size not matching");
         }
-        output_v.insert(output_v.end(), 1ULL << (BOARD_SIZE - magic.shift), 0ULL);
+        output_v.insert(output_v.end(), static_cast<size_t>(1ULL << (BOARD_SIZE - magic.shift)), 0ULL);
         for (long unsigned int i{0}; i < occupancies.size(); ++i)
         {
             U64 index = (occupancies[i] * magic.magic) >> magic.shift;
             output_v[magic.index_start + index] = attacks[i];
         }
     }
-    std::ofstream piece_attacks(is_rook ? "data/rook_attacks.bin" : "data/bishop_attacks.bin", std::ios::binary);
+    std::ofstream piece_attacks(is_rook ? ROOK_ATTACKS_FILE : BISHOP_ATTACKS_FILE, std::ios::binary);
     if (!piece_attacks.is_open())
     {
         throw std::runtime_error("Could not write in attacks file");
@@ -405,8 +419,8 @@ void MoveGen::run_magic_searcher()
         rook_m_array[sq] = rook_m;
         bishop_m_array[sq] = bishop_m;
     }
-    std::ofstream rook_m_file("data/rook_m.bin", std::ios::binary);
-    std::ofstream bishop_m_file("data/bishop_m.bin", std::ios::binary);
+    std::ofstream rook_m_file(ROOK_MAGICS_FILE, std::ios::binary);
+    std::ofstream bishop_m_file(BISHOP_MAGICS_FILE, std::ios::binary);
     if (!rook_m_file.is_open() || !bishop_m_file.is_open())
     {
         throw std::runtime_error("Magic number files could not be opened");
@@ -424,3 +438,87 @@ void MoveGen::run_magic_searcher()
     MoveGen::export_attack_table(rook_m_array, true);
     MoveGen::export_attack_table(bishop_m_array, false);
 }
+
+void MoveGen::get_sizes(bool is_rook)
+{
+    std::ifstream attacks_file((is_rook ? ROOK_ATTACKS_FILE : BISHOP_ATTACKS_FILE), std::ios::binary | std::ios::ate);
+
+    if (!attacks_file.is_open())
+    {
+        throw std::runtime_error("File can't be opened to check size");
+    }
+    std::streamsize attacks_file_sz = attacks_file.tellg();
+
+    if (attacks_file_sz % sizeof(U64) != 0)
+    {
+        throw std::runtime_error("Attack file size isn't a mutliple of U64 size");
+    }
+    std::cout << (is_rook ? "Rook " : "Bishop ") << "file size : " << attacks_file_sz << std::endl;
+}
+void MoveGen::load_magics(bool is_rook)
+{
+    std::ifstream file((is_rook ? ROOK_MAGICS_FILE : BISHOP_MAGICS_FILE), std::ios::binary);
+    if (!file.is_open())
+    {
+        throw std::runtime_error("Magics file couln't be opened for read operation");
+    }
+    file.read(reinterpret_cast<char *>(
+                  (is_rook ? MoveGen::RookMagics : MoveGen::BishopMagics).data()),
+              BOARD_SIZE * sizeof(MoveGen::Magic));
+}
+void MoveGen::load_magics()
+{
+    load_magics(true);
+    load_magics(false);
+}
+
+void MoveGen::load_attacks_rook()
+{
+    std::ifstream file(ROOK_ATTACKS_FILE, std::ios::binary);
+    if (!file.is_open())
+    {
+        throw std::runtime_error("Attacks file couln't be opened for read operation");
+    }
+    file.read(reinterpret_cast<char *>(
+                  MoveGen::RookAttacks.data()),
+              ROOK_ATTACKS_SIZE * sizeof(U64));
+    if (file.gcount() != ROOK_ATTACKS_SIZE * sizeof(U64))
+    {
+        throw std::runtime_error("Failed to read complete rook attacks table");
+    }
+}
+void MoveGen::load_attacks_bishop()
+{
+    std::ifstream file(BISHOP_ATTACKS_FILE, std::ios::binary);
+    if (!file.is_open())
+    {
+        throw std::runtime_error("Attacks file couln't be opened for read operation");
+    }
+    file.read(reinterpret_cast<char *>(
+                  MoveGen::BishopAttacks.data()),
+              BISHOP_ATTACKS_SIZE * sizeof(U64));
+    if (file.gcount() != BISHOP_ATTACKS_SIZE * sizeof(U64))
+    {
+        throw std::runtime_error("Failed to read complete bishop attacks table");
+    }
+}
+
+void MoveGen::load_attacks()
+{
+    load_attacks_bishop();
+    load_attacks_rook();
+}
+
+static bool perform_initial_data_loading()
+{
+    MoveGen::initialize_bitboard_tables();
+
+    MoveGen::load_magics();
+
+    MoveGen::load_attacks();
+
+    std::cout << "--- All bitboard tables loaded successfully ! ---" << std::endl;
+    return true;
+}
+
+static bool __bitboard_data_loaded = perform_initial_data_loading();

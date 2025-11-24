@@ -16,6 +16,8 @@
 
 #define BOARD_SIZE 64
 #define STARTING_POS_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+#define ROOK_ATTACKS_SIZE 102400
+#define BISHOP_ATTACKS_SIZE 5248
 
 using U64 = std::uint64_t;
 using bitboard = std::uint64_t;

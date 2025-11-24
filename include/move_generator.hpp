@@ -23,9 +23,17 @@ namespace MoveGen
         long unsigned int index_start;
     };
 
-    // 3. Déclarations des Données Magiques
-    extern std::array<Magic, 64> RookMagics;
-    extern std::array<Magic, 64> BishopMagics;
+    extern std::array<Magic, BOARD_SIZE> RookMagics;
+    extern std::array<Magic, BOARD_SIZE> BishopMagics;
+
+    extern std::array<U64, ROOK_ATTACKS_SIZE> RookAttacks;
+    extern std::array<U64, BISHOP_ATTACKS_SIZE> BishopAttacks;
+
+    /// @brief Used for processing rook attacks tables (unused on prod)
+    extern std::vector<U64>
+        RookAttacksProcessing;
+    /// @brief Used for processing bishop attacks tables (unused on prod)
+    extern std::vector<U64> BishopAttacksProcessing;
 
     void initialize_bitboard_tables();
     void initialize_rook_masks();
@@ -35,10 +43,23 @@ namespace MoveGen
     std::vector<Move> generate_pseudo_legal_moves(const Board &board, Color color);
 
     U64 generate_knight_moves(int from_sq, const Board &board);
-
     U64 generate_rook_moves(int from_sq, const Board &board);
 
-    void export_attack_table(std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook);
+    U64 generate_bishop_moves(int from_sq, const Board &board);
 
+    void export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook);
     void run_magic_searcher();
+
+    /// @brief Gets the piece attack's sizes to then write them as static in the code (unused on prod)
+    /// @param is_rook rook / bishop
+    void get_sizes(bool is_rook);
+
+    void load_magics(bool is_rook);
+
+    void load_magics();
+    void load_attacks_rook();
+    void load_attacks_bishop();
+    void load_attacks();
 }
+
+U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook);
