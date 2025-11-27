@@ -190,7 +190,7 @@ void MoveGen::initialize_bitboard_tables()
 
     std::cout << "Bitboard tables initialized." << std::endl;
 }
-inline U64 MoveGen::get_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
+inline U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
 {
     U64 target_mask;
     switch (piece_type)
@@ -235,7 +235,7 @@ inline U64 MoveGen::get_moves_mask(const Board &board, const int sq, const Color
     target_mask &= ~friendly_mask;
     return target_mask;
 }
-U64 MoveGen::get_moves_mask(const Board &board, const int sq)
+U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq)
 {
     const PieceInfo pair = board.get_piece_on_square(sq);
     const Color color = pair.first;
@@ -244,7 +244,7 @@ U64 MoveGen::get_moves_mask(const Board &board, const int sq)
     {
         return 0ULL;
     }
-    return get_moves_mask(board, sq, color, piece_type);
+    return get_pseudo_moves_mask(board, sq, color, piece_type);
 }
 std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const Color color)
 {
@@ -257,7 +257,7 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
         while (piece_bitboard != 0)
         {
             int from_sq = pop_lsb(piece_bitboard);
-            U64 target_mask = get_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type));
+            U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type));
 
             while (target_mask != 0)
             {
@@ -266,8 +266,72 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
                     from_sq,
                     target_sq,
                     static_cast<Piece>(piece_type),
-                }); // @TODO add flags
+                }); // @TODO special flags (capture already handled when processing the move)
             }
+        }
+    }
+    return moves;
+}
+
+U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
+{
+    PieceInfo info = board.get_piece_on_square(from_sq);
+    if (info.second == NO_PIECE)
+    {
+        return 0ULL;
+    }
+    U64 target_mask_pseudo = get_pseudo_moves_mask(board, from_sq, info.first, static_cast<Piece>(info.second));
+    U64 target_mask = 0ULL;
+    while (target_mask_pseudo != 0)
+    {
+        int to_sq = pop_lsb(target_mask_pseudo);
+        Move move(from_sq, to_sq, info.second);
+        board.play(move);
+        if (!is_king_attacked(board))
+        {
+            target_mask |= sq_mask(to_sq);
+        }
+        board.unplay(move);
+    }
+
+    return target_mask;
+}
+
+bool MoveGen::is_king_attacked(Board &board)
+{
+    const Color color = board.get_side_to_move();
+    const bitboard opponent_king_mask = board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING);
+    for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
+    {
+        U64 piece_bitboard = board.get_piece_bitboard(color, piece_type);
+        while (piece_bitboard != 0)
+        {
+            int from_sq = pop_lsb(piece_bitboard);
+            U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type));
+            if (opponent_king_mask & target_mask)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+std::vector<Move> MoveGen::generate_legal_moves(Board &board)
+{
+    const Color color = board.get_side_to_move();
+    std::vector<Move> moves = MoveGen::generate_pseudo_legal_moves(board, color);
+    for (auto iter = moves.begin(); iter != moves.end();)
+    {
+        const Move &move = *iter;
+        if (MoveGen::is_king_attacked(board))
+        {
+            board.unplay(move);
+            iter = moves.erase(iter);
+        }
+        else
+        {
+            board.unplay(move);
+            iter++;
         }
     }
     return moves;

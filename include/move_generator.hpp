@@ -36,13 +36,19 @@ namespace MoveGen
     extern std::vector<U64> BishopAttacksProcessing;
 
     void initialize_bitboard_tables();
-    inline U64 get_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type);
-    U64 get_moves_mask(const Board &board, const int sq);
+    inline U64 get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type);
+    U64 get_pseudo_moves_mask(const Board &board, const int sq);
     void initialize_rook_masks();
     void initialize_bishop_masks();
     void initialize_pawn_masks();
 
     std::vector<Move> generate_pseudo_legal_moves(const Board &board, Color color);
+
+    U64 get_legal_moves_mask(Board &board, int from_sq);
+
+    bool is_king_attacked(Board &board);
+
+    std::vector<Move> generate_legal_moves(Board &board);
 
     U64 generate_knight_moves(int from_sq, const Board &board);
     U64 generate_rook_moves(int from_sq, const Board &board);

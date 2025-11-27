@@ -46,7 +46,7 @@ std::pair<Color, Piece> Board::get_piece_on_square(int sq) const
     throw std::logic_error("Incoherent result, square should be occupied");
 }
 
-bool Board::play(Move move)
+bool Board::play(Move &move)
 {
     const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
     const Piece from_piece{move.get_from_piece()};
@@ -84,6 +84,7 @@ bool Board::play(Move move)
         if (get_piece_bitboard(opponent_color, i) & to_sq_mask)
         {
             get_piece_bitboard(opponent_color, i) ^= to_sq_mask;
+            move.set_capture(static_cast<Piece>(i));
             update_occupancy();
             switch_trait();
             return true;
@@ -92,4 +93,29 @@ bool Board::play(Move move)
 
     throw std::logic_error("Occupancy mask and piece bitboards out of sync");
     return false;
+}
+
+void Board::unplay(Move move)
+{
+    const Piece from_piece = move.get_from_piece();
+    const Piece to_piece = move.get_to_piece();
+    const int from_sq = move.get_from_sq();
+    const int to_sq = move.get_to_sq();
+
+    switch_trait();
+
+    const Color color = side_to_move;
+    const U64 mask_from_piece = (1ULL << to_sq) | (1ULL << from_sq);
+    U64 &from_bitboard = get_piece_bitboard(color, from_piece);
+    assert(from_bitboard & (1ULL << to_sq));
+    assert(!(from_bitboard & (1ULL << from_sq)));
+    from_bitboard ^= mask_from_piece;
+    assert(!(from_bitboard & (1ULL << to_sq)));
+    assert(from_bitboard & (1ULL << from_sq));
+    if (to_piece != NO_PIECE)
+    {
+        const Color opponent_color = color == WHITE ? BLACK : WHITE;
+        get_piece_bitboard(opponent_color, to_piece) |= 1ULL << to_sq;
+    }
+    update_occupancy();
 }

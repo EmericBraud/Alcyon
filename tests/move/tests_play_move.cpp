@@ -1,0 +1,60 @@
+#include "move_generator.hpp"
+#include "gtest/gtest.h"
+
+class MovePlayTest : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+    }
+};
+
+TEST_F(MovePlayTest, Play)
+{
+    Board b{};
+    b.load_fen("8/1p1q4/5k2/1n1R3r/8/1K2N1p1/3B4/8 w - - 0 1");
+    Move move(static_cast<int>(Square::d5), static_cast<int>(Square::d6), ROOK);
+
+    b.play(move);
+    ASSERT_EQ(b.get_occupancy(NO_COLOR), 2859288583342080);
+}
+
+TEST_F(MovePlayTest, PlayUnplay)
+{
+    Board b{};
+    b.load_fen("8/1p1q4/5k2/1n1R3r/8/1K2N1p1/3B4/8 w - - 0 1");
+    Move move(static_cast<int>(Square::d5), static_cast<int>(Square::d6), ROOK);
+    const bitboard occ_in = b.get_occupancy(NO_COLOR);
+    const bitboard occ_white_in = b.get_occupancy(WHITE);
+    const bitboard occ_white_rook_in = b.get_piece_bitboard(WHITE, ROOK);
+
+    b.play(move);
+    b.unplay(move);
+    const bitboard occ_fi = b.get_occupancy(NO_COLOR);
+    const bitboard occ_white_fi = b.get_occupancy(WHITE);
+    const bitboard occ_white_rook_fi = b.get_piece_bitboard(WHITE, ROOK);
+
+    ASSERT_EQ(occ_white_rook_in, occ_white_rook_fi);
+    ASSERT_EQ(occ_white_in, occ_white_fi);
+    ASSERT_EQ(occ_in, occ_fi);
+}
+
+TEST_F(MovePlayTest, PlayUnplayCapture)
+{
+    Board b{};
+    b.load_fen("8/1p1q4/5k2/1n1R3r/8/1K2N1p1/3B4/8 w - - 0 1");
+    Move move(static_cast<int>(Square::d5), static_cast<int>(Square::d7), ROOK);
+    const bitboard occ_in = b.get_occupancy(NO_COLOR);
+    const bitboard occ_white_in = b.get_occupancy(WHITE);
+    const bitboard occ_white_rook_in = b.get_piece_bitboard(WHITE, ROOK);
+
+    b.play(move);
+    b.unplay(move);
+    const bitboard occ_fi = b.get_occupancy(NO_COLOR);
+    const bitboard occ_white_fi = b.get_occupancy(WHITE);
+    const bitboard occ_white_rook_fi = b.get_piece_bitboard(WHITE, ROOK);
+
+    ASSERT_EQ(occ_white_rook_in, occ_white_rook_fi);
+    ASSERT_EQ(occ_white_in, occ_white_fi);
+    ASSERT_EQ(occ_in, occ_fi);
+}
