@@ -1,9 +1,9 @@
 #include "move_generator.hpp"
 
-constexpr const char *ROOK_ATTACKS_FILE = "../data/rook_attacks.bin";
-constexpr const char *BISHOP_ATTACKS_FILE = "../data/bishop_attacks.bin";
-constexpr const char *ROOK_MAGICS_FILE = "../data/rook_m.bin";
-constexpr const char *BISHOP_MAGICS_FILE = "../data/bishop_m.bin";
+constexpr const char *ROOK_ATTACKS_FILE = DATA_PATH "rook_attacks.bin";
+constexpr const char *BISHOP_ATTACKS_FILE = DATA_PATH "bishop_attacks.bin";
+constexpr const char *ROOK_MAGICS_FILE = DATA_PATH "rook_m.bin";
+constexpr const char *BISHOP_MAGICS_FILE = DATA_PATH "bishop_m.bin";
 
 namespace MoveGen
 {
@@ -190,6 +190,62 @@ void MoveGen::initialize_bitboard_tables()
 
     std::cout << "Bitboard tables initialized." << std::endl;
 }
+inline U64 MoveGen::get_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
+{
+    U64 target_mask;
+    switch (piece_type)
+    {
+    case PAWN:
+        if (color == WHITE)
+        {
+            target_mask = PawnPushWhite[sq] | PawnPush2White[sq];
+            target_mask |= PawnAttacksWhite[sq] & board.get_occupancy(BLACK);
+        }
+        else if (color == BLACK)
+        {
+            target_mask = PawnPushBlack[sq] | PawnPush2Black[sq];
+            target_mask |= PawnAttacksBlack[sq] & board.get_occupancy(WHITE);
+        }
+        else
+        {
+            throw std::logic_error("Passed NONE color to generate pseudo legal moves");
+        }
+        break;
+    case KNIGHT:
+        target_mask = KnightAttacks[sq];
+        break;
+    case BISHOP:
+        target_mask = generate_bishop_moves(sq, board);
+        break;
+    case ROOK:
+        target_mask = generate_rook_moves(sq, board);
+        break;
+    case QUEEN:
+        target_mask = generate_rook_moves(sq, board) | generate_bishop_moves(sq, board);
+        break;
+    case KING:
+        target_mask = KingAttacks[sq];
+        break;
+    default:
+        throw std::logic_error("Unsupported piece type");
+        break;
+    }
+
+    U64 friendly_mask = board.get_occupancy(color);
+    target_mask &= ~friendly_mask;
+    return target_mask;
+}
+U64 MoveGen::get_moves_mask(const Board &board, const int sq)
+{
+    const PieceInfo pair = board.get_piece_on_square(sq);
+    const Color color = pair.first;
+    const Piece piece_type = pair.second;
+    if (piece_type == NO_PIECE)
+    {
+        return 0ULL;
+    }
+    return get_moves_mask(board, sq, color, piece_type);
+}
 std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const Color color)
 {
     std::vector<Move> moves;
@@ -201,47 +257,8 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
         while (piece_bitboard != 0)
         {
             int from_sq = pop_lsb(piece_bitboard);
-            U64 target_mask;
-            switch (piece_type)
-            {
-            case PAWN:
-                if (color == WHITE)
-                {
-                    target_mask = PawnPushWhite[from_sq] | PawnPush2White[from_sq];
-                    target_mask |= PawnAttacksWhite[from_sq] & board.get_occupancy(BLACK);
-                }
-                else if (color == BLACK)
-                {
-                    target_mask = PawnPushBlack[from_sq] | PawnPush2Black[from_sq];
-                    target_mask |= PawnAttacksBlack[from_sq] & board.get_occupancy(WHITE);
-                }
-                else
-                {
-                    throw std::logic_error("Passed NONE color to generate pseudo legal moves");
-                }
-                break;
-            case KNIGHT:
-                target_mask = KnightAttacks[from_sq];
-                break;
-            case BISHOP:
-                target_mask = generate_bishop_moves(from_sq, board);
-                break;
-            case ROOK:
-                target_mask = generate_rook_moves(from_sq, board);
-                break;
-            case QUEEN:
-                target_mask = generate_rook_moves(from_sq, board) | generate_bishop_moves(from_sq, board);
-                break;
-            case KING:
-                target_mask = KingAttacks[from_sq];
-                break;
-            default:
-                throw std::logic_error("Unsupported piece type");
-                break;
-            }
+            U64 target_mask = get_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type));
 
-            U64 friendly_mask = board.get_occupancy(color);
-            target_mask &= ~friendly_mask;
             while (target_mask != 0)
             {
                 int target_sq = pop_lsb(target_mask);
