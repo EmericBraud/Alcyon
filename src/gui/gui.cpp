@@ -23,7 +23,7 @@ void GUI::run()
                 }
                 else
                 {
-                    if (is_sq_selected && MoveGen::get_moves_mask(board, last_piece) & (1ULL << selected_sq))
+                    if (is_sq_selected && MoveGen::get_legal_moves_mask(board, last_piece) & (1ULL << selected_sq))
                     {
                         PieceInfo info = board.get_piece_on_square(last_piece);
                         std::cout << last_piece << std::endl;
@@ -69,7 +69,7 @@ void GUI::draw_board()
             {
                 draw_sq(8 * row + col, SQ_SELECTED_COLOR);
             }
-            else if (is_sq_selected && (MoveGen::get_moves_mask(board, last_piece) & (1ULL << (row * 8 + col))))
+            else if (is_sq_selected && (MoveGen::get_legal_moves_mask(board, last_piece) & (1ULL << (row * 8 + col))))
             {
                 draw_sq(8 * row + col, ((row + col) % 2 == 0) ? SQ_ATTACK_COLOR : SQ_ATTACK_COLOR_2);
             }

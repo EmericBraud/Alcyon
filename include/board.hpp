@@ -162,6 +162,7 @@ public:
         occupied_all = occupied_white | occupied_black;
     }
     std::pair<Color, Piece> get_piece_on_square(int sq) const;
+    bool play(Move &move);
     std::pair<Color, Piece> get_piece_on_square(Square sq) const
     {
         return get_piece_on_square(static_cast<int>(sq));
@@ -206,5 +207,5 @@ public:
         return is_occupied(sq, static_cast<Piece>(piece), color);
     }
 
-    bool play(Move move);
+    void unplay(Move move);
 };
