@@ -71,6 +71,11 @@ public:
 
     void clear();
 
+    inline void switch_trait()
+    {
+        side_to_move = static_cast<Color>(1 - static_cast<int>(side_to_move));
+    }
+
     inline bitboard &get_piece_bitboard(const Color color, const Piece type)
     {
         if (type > KING) // Should be disabled on prod for increased performances
@@ -117,6 +122,7 @@ public:
         case BLACK:
             return occupied_black;
         }
+        throw std::logic_error("Color unsupported");
     }
     inline const bitboard &get_occupancy(Color c) const
     {
