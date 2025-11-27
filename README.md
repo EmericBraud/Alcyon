@@ -37,7 +37,11 @@ Ce moteur est entièrement développé en C++ et utilise des techniques avancée
 
 ### Prérequis
 
-Un compilateur C++ compatible C++20 ou supérieur (ici g++).
+* Un compilateur C++ compatible C++20 ou supérieur (ici g++).
+ > ⚠️ La compatibilité avec d'autres compilateurs n'est pas assurée. Si vous avez des problèmes de compatibilité, regardez du côté de la fonction "get_lsb_index(U64 bb)" du fichiers include/utils.hpp, qui utilise une fonction définie par le compilateur g++.
+
+* Une installation de CMake.
+ > ⚠️ Bien que le code ait été conçu pour fonctionner également sur une architecture 32 bits, il n'a jamais été testé sur une telle architecture.
 
 ## Instructions
 
@@ -48,15 +52,21 @@ git clone https://github.com/EmericBraud/chess26.git
 cd chess-26
 ```
 
-Créer le répertoire de build et compiler avec le Makefile :
+Créer le répertoire de build et compiler avec le CMakeList.txt :
 
 ```Bash
-make all
+cmake --build .
 ```
 Lancer le programme : L'exécutable généré se trouvera dans le répertoire principal.
 
 ```Bash
-./chess_26
+./build/chess_26
+```
+Le programme inclue une collection de tests (situés dans le dossier tests/).
+Pour lancer les tests :
+
+```Bash
+ctest
 ```
 
 # 📝 Licence
