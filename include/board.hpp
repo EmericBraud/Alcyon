@@ -6,6 +6,7 @@
 
 #define N_PIECES_TYPE 12
 #define N_PIECES_TYPE_HALF 6
+#define EN_PASSANT_SQ_NONE 255
 
 enum CastlingRights : uint8_t
 {
@@ -41,7 +42,7 @@ private:
 
     // State info
     uint8_t castling_rights; // Castle rights
-    uint8_t en_passant_sq;   // En passant capture case (0 = none)
+    uint8_t en_passant_sq;   // En passant capture case (255 = none)
     uint16_t halfmove_clock; // For 50 moves rule
     uint32_t fullmove_number;
     Color side_to_move; // White or black turn ?
@@ -213,5 +214,9 @@ public:
     inline uint8_t get_castling_rights() const
     {
         return castling_rights;
+    }
+    inline uint8_t get_en_passant_sq() const
+    {
+        return en_passant_sq;
     }
 };

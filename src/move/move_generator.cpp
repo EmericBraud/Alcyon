@@ -162,15 +162,15 @@ void MoveGen::initialize_pawn_masks()
 
 void MoveGen::initialize_bitboard_tables()
 {
-    // Déplacements du Cavalier (8 mouvements : {dr, df, dr, df, ...})
+    // Knight moves (8 moves : {dr, df, dr, df, ...})
     const std::array<int, 16> KNIGHT_SHIFTS = {
-        -2, -1, -2, 1, // Haut
-        -1, -2, -1, 2, // Côtés
-        1, -2, 1, 2,   // Côtés
-        2, -1, 2, 1    // Bas
+        -2, -1, -2, 1, // Up
+        -1, -2, -1, 2, // Sides
+        1, -2, 1, 2,   // Sides
+        2, -1, 2, 1    // Down
     };
 
-    // Déplacements du Roi (8 mouvements : {dr, df, dr, df, ...})
+    // King moves (8 moves : {dr, df, dr, df, ...})
     const std::array<int, 16> KING_SHIFTS = {
         -1, 0, -1, 1,
         0, 1, 1, 1,
@@ -193,6 +193,8 @@ void MoveGen::initialize_bitboard_tables()
 inline U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
 {
     U64 target_mask;
+    const uint8_t en_passant_sq = board.get_en_passant_sq();
+
     switch (piece_type)
     {
     case PAWN:
@@ -200,11 +202,21 @@ inline U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq, cons
         {
             target_mask = PawnPushWhite[sq] | PawnPush2White[sq];
             target_mask |= PawnAttacksWhite[sq] & board.get_occupancy(BLACK);
+
+            if (en_passant_sq != EN_PASSANT_SQ_NONE)
+            {
+                target_mask |= PawnAttacksWhite[sq] & sq_mask(en_passant_sq);
+            }
         }
         else if (color == BLACK)
         {
             target_mask = PawnPushBlack[sq] | PawnPush2Black[sq];
             target_mask |= PawnAttacksBlack[sq] & board.get_occupancy(WHITE);
+
+            if (en_passant_sq != EN_PASSANT_SQ_NONE)
+            {
+                target_mask |= PawnAttacksBlack[sq] & sq_mask(en_passant_sq);
+            }
         }
         else
         {
@@ -265,7 +277,7 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
                 moves.push_back(Move{
                     from_sq,
                     target_sq,
-                    static_cast<Piece>(piece_type)}); // @TODO special flags (capture already handled when processing the move)
+                    static_cast<Piece>(piece_type)});
             }
         }
     }

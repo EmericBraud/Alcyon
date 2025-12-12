@@ -91,3 +91,13 @@ TEST_F(MoveGenTest, MoveGenBishop)
     const U64 bitboard_moves = MoveGen::generate_bishop_moves(Square::d2, b);
     ASSERT_EQ(bitboard_moves, 0b100000010000101000000000000010100);
 }
+
+TEST_F(MoveGenTest, MoveGenEnPassant)
+{
+    Board b;
+    b.load_fen("rnbqkbnr/pppp1ppp/8/8/5p2/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    Move move(Square::e2, Square::e4, PAWN);
+    b.play(move);
+    U64 mask = MoveGen::get_legal_moves_mask(b, Square::f4);
+    ASSERT_EQ(mask, 0x300000);
+}
