@@ -61,11 +61,91 @@ bool Board::play(Move &move)
 
     const U64 to_sq_mask{sq_mask(to_sq)};
 
+    move.set_prev_castling_rights(castling_rights);
+
     get_piece_bitboard(side_to_move, from_piece) ^= sq_mask(from_sq); // Delete old position
     get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask;       // Fill new position
+    if (move.has_flag(Move::Flags::KING_CASTLE))
+    {
+        if (side_to_move == WHITE)
+        {
+            if (!(castling_rights & WHITE_KINGSIDE))
+            {
+                throw std::logic_error("Castling rights missing");
+            }
+            U64 mask = (1ULL << 7) | (1ULL << 5);
+            bitboard &rook_bit = get_piece_bitboard(WHITE, ROOK);
+            rook_bit ^= mask;
+            update_occupancy();
+            switch_trait();
+            castling_rights ^= WHITE_KINGSIDE;
+            if (castling_rights & WHITE_QUEENSIDE)
+            {
+                castling_rights ^= WHITE_QUEENSIDE;
+            }
+            return true;
+        }
+        else
+        {
+            if (!(castling_rights & BLACK_KINGSIDE))
+            {
+                throw std::logic_error("Castling rights missing");
+            }
+            U64 mask = (1ULL << 63) | (1ULL << 61);
+            bitboard &rook_bit = get_piece_bitboard(BLACK, ROOK);
+            rook_bit ^= mask;
+            update_occupancy();
+            switch_trait();
+            castling_rights ^= BLACK_KINGSIDE;
+            if (castling_rights & BLACK_QUEENSIDE)
+            {
+                castling_rights ^= BLACK_QUEENSIDE;
+            }
+            return true;
+        }
+    }
+    else if (move.has_flag(Move::Flags::QUEEN_CASTLE))
+    {
+        if (side_to_move == WHITE)
+        {
+            if (!(castling_rights & WHITE_QUEENSIDE))
+            {
+                throw std::logic_error("Castling rights missing");
+            }
+            U64 mask = (1ULL) | (1ULL << 3);
+            bitboard &rook_bit = get_piece_bitboard(WHITE, ROOK);
+            rook_bit ^= mask;
+            update_occupancy();
+            switch_trait();
+            if (castling_rights & WHITE_KINGSIDE)
+            {
+                castling_rights ^= WHITE_KINGSIDE;
+            }
+            castling_rights ^= WHITE_QUEENSIDE;
+            return true;
+        }
+        else
+        {
+            if (!(castling_rights & BLACK_QUEENSIDE))
+            {
+                throw std::logic_error("Castling rights missing");
+            }
+            U64 mask = (1ULL << 56) | (1ULL << 59);
+            bitboard &rook_bit = get_piece_bitboard(BLACK, ROOK);
+            rook_bit ^= mask;
+            update_occupancy();
+            switch_trait();
+            castling_rights ^= BLACK_QUEENSIDE;
+            if (castling_rights & BLACK_KINGSIDE)
+            {
+                castling_rights ^= BLACK_KINGSIDE;
+            }
+            return true;
+        }
+    }
 
     // Checking if an opponent square has to be updated
-    if (side_to_move == WHITE && !(occupied_black & to_sq_mask))
+    else if (side_to_move == WHITE && !(occupied_black & to_sq_mask))
     {
         update_occupancy();
         switch_trait();
@@ -112,10 +192,27 @@ void Board::unplay(Move move)
     from_bitboard ^= mask_from_piece;
     assert(!(from_bitboard & (1ULL << to_sq)));
     assert(from_bitboard & (1ULL << from_sq));
+    castling_rights = move.get_prev_castling_rights();
     if (to_piece != NO_PIECE)
     {
         const Color opponent_color = color == WHITE ? BLACK : WHITE;
         get_piece_bitboard(opponent_color, to_piece) |= 1ULL << to_sq;
+    }
+    switch (move.get_flags())
+    {
+    case Move::Flags::KING_CASTLE:
+        if (color == WHITE)
+            get_piece_bitboard(color, ROOK) ^= 0xa0;
+        else
+            get_piece_bitboard(color, ROOK) ^= 0xa000000000000000;
+        break;
+    case Move::Flags::QUEEN_CASTLE:
+        if (color == WHITE)
+            get_piece_bitboard(color, ROOK) ^= 0x9;
+        else
+            get_piece_bitboard(color, ROOK) ^= 0x900000000000000;
+    default:
+        break;
     }
     update_occupancy();
 }

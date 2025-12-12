@@ -30,7 +30,7 @@ public:
     Move() : value(0) {}
 
     // Constructor to encode a move from its components
-    Move(int from_sq, int to_sq, Piece from_piece, Flags flags = NONE, Piece to_piece = NO_PIECE)
+    Move(int from_sq, int to_sq, Piece from_piece, Flags flags = NONE, Piece to_piece = NO_PIECE, int prev_castling_rights = 0)
     {
         // Example encoding scheme:
         // [0..5] : From Square (6 bits)
@@ -38,14 +38,15 @@ public:
         // [12..15]: Flags / Move Type (4 bits)
         // [16..19]: From Piece (4 bits)
         // [20..22]: To Piece (3 bits)
+        // [23..27]: Prev castling rights (4 bits)
 
         value = (uint32_t)(from_sq) |
                 ((uint32_t)(to_sq) << 6) |
                 ((uint32_t)(flags) << 12) |
                 ((uint32_t)(from_piece) << 16) |
-                ((uint32_t)(to_piece) << 20);
+                ((uint32_t)(to_piece) << 20) |
+                ((uint32_t)(prev_castling_rights) << 23);
     }
-    explicit Move(Square from_sq, Square to_sq, Piece from_piece, Flags flags = NONE, Piece to_piece = NO_PIECE) : Move(static_cast<int>(from_sq), static_cast<int>(to_sq), from_piece, flags, to_piece) {}
 
     inline int get_from_sq() const
     {
@@ -107,5 +108,22 @@ public:
     {
         set_flags(CAPTURE);
         set_to_piece(piece);
+    }
+
+    inline bool has_flag(const Flags flags) const
+    {
+        return flags == get_flags();
+    }
+
+    inline int get_prev_castling_rights() const
+    {
+        return (value >> 23) & 0xF;
+    }
+
+    inline void set_prev_castling_rights(int val)
+    {
+        uint32_t mask = 0xF << 23;
+        value &= ~mask;
+        value |= (val << 23);
     }
 };
