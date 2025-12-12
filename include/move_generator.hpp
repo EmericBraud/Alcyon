@@ -47,6 +47,8 @@ namespace MoveGen
     U64 get_legal_moves_mask(Board &board, int from_sq);
 
     bool is_king_attacked(Board &board);
+    bool is_mask_attacked(Board &board, const U64 mask);
+    std::vector<Move> generate_castle_moves(Board &board);
 
     std::vector<Move> generate_legal_moves(Board &board);
 

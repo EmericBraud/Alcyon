@@ -265,8 +265,7 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
                 moves.push_back(Move{
                     from_sq,
                     target_sq,
-                    static_cast<Piece>(piece_type),
-                }); // @TODO special flags (capture already handled when processing the move)
+                    static_cast<Piece>(piece_type)}); // @TODO special flags (capture already handled when processing the move)
             }
         }
     }
@@ -294,6 +293,25 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
         board.unplay(move);
     }
 
+    if (info.second == KING)
+    {
+        std::vector<Move> moves = generate_castle_moves(board);
+
+        for (const auto move : moves)
+        {
+            if (move.get_flags() == Move::Flags::KING_CASTLE)
+            {
+                const U64 mask = info.first == WHITE ? (1ULL << 6) : (1ULL << 62);
+                target_mask |= mask;
+            }
+            if (move.get_flags() == Move::Flags::QUEEN_CASTLE)
+            {
+                const U64 mask = info.first == WHITE ? (1ULL << 2) : (1ULL << 58);
+                target_mask |= mask;
+            }
+        }
+    }
+
     return target_mask;
 }
 
@@ -301,6 +319,12 @@ bool MoveGen::is_king_attacked(Board &board)
 {
     const Color color = board.get_side_to_move();
     const bitboard opponent_king_mask = board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING);
+
+    return is_mask_attacked(board, opponent_king_mask);
+}
+bool MoveGen::is_mask_attacked(Board &board, const U64 mask)
+{
+    const Color color = board.get_side_to_move();
     for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
     {
         U64 piece_bitboard = board.get_piece_bitboard(color, piece_type);
@@ -308,13 +332,50 @@ bool MoveGen::is_king_attacked(Board &board)
         {
             int from_sq = pop_lsb(piece_bitboard);
             U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type));
-            if (opponent_king_mask & target_mask)
+            if (mask & target_mask)
             {
                 return true;
             }
         }
     }
     return false;
+}
+std::vector<Move> MoveGen::generate_castle_moves(Board &board)
+{
+    std::vector<Move> moves;
+    moves.reserve(2);
+    const Color color = board.get_side_to_move();
+    const uint8_t castling_rights = board.get_castling_rights();
+    const bitboard occupancy = board.get_occupancy(NO_COLOR);
+    board.switch_trait();
+    if (color == WHITE)
+    {
+        if ((castling_rights & WHITE_KINGSIDE) && !(occupancy & 0x60) && (!is_mask_attacked(board, 0x60)))
+        {
+            const Move move{4, 6, KING, Move::Flags::KING_CASTLE};
+            moves.push_back(move);
+        }
+        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0xE) && !(is_mask_attacked(board, 0xE)))
+        {
+            const Move move{4, 2, KING, Move::Flags::QUEEN_CASTLE};
+            moves.push_back(move);
+        }
+    }
+    else
+    {
+        if ((castling_rights & BLACK_KINGSIDE) && !(occupancy & 0x6000000000000000) && (!is_mask_attacked(board, 0x6000000000000000)))
+        {
+            const Move move{60, 62, KING, Move::Flags::KING_CASTLE};
+            moves.push_back(move);
+        }
+        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0xE00000000000000) && !(is_mask_attacked(board, 0xE00000000000000)))
+        {
+            const Move move{60, 58, KING, Move::Flags::QUEEN_CASTLE};
+            moves.push_back(move);
+        }
+    }
+    board.switch_trait();
+    return moves;
 }
 std::vector<Move> MoveGen::generate_legal_moves(Board &board)
 {

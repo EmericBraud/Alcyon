@@ -37,7 +37,7 @@ inline int pop_lsb(U64 &bb)
     return s;
 }
 
-enum class Square
+enum Square : int
 {
     a1,
     b1,

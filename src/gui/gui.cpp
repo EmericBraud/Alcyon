@@ -26,8 +26,22 @@ void GUI::run()
                     if (is_sq_selected && MoveGen::get_legal_moves_mask(board, last_piece) & (1ULL << selected_sq))
                     {
                         PieceInfo info = board.get_piece_on_square(last_piece);
-                        std::cout << last_piece << std::endl;
-                        Move move(last_piece, selected_sq, info.second);
+                        Move move{};
+                        if (info.second == KING && abs(last_piece - selected_sq) == 2)
+                        {                                 // Castle
+                            if (last_piece < selected_sq) // King side
+                            {
+                                move = Move(last_piece, selected_sq, info.second, Move::Flags::KING_CASTLE);
+                            }
+                            else
+                            { // Queen side
+                                move = Move(last_piece, selected_sq, info.second, Move::Flags::QUEEN_CASTLE);
+                            }
+                        }
+                        else
+                        {
+                            move = Move(last_piece, selected_sq, info.second);
+                        }
                         board.play(move);
                     }
                     is_sq_selected = false;

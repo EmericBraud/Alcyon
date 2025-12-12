@@ -92,6 +92,11 @@ public:
         return side_to_move;
     }
 
+    inline uint8_t get_castling_rights()
+    {
+        return castling_rights;
+    }
+
     inline bitboard &get_piece_bitboard(const Color color, const int type)
     {
         return get_piece_bitboard(color, static_cast<Piece>(type));
@@ -163,10 +168,6 @@ public:
     }
     std::pair<Color, Piece> get_piece_on_square(int sq) const;
     bool play(Move &move);
-    std::pair<Color, Piece> get_piece_on_square(Square sq) const
-    {
-        return get_piece_on_square(static_cast<int>(sq));
-    };
     char piece_to_char(Color color, Piece type) const;
     void show() const;
 
@@ -208,4 +209,9 @@ public:
     }
 
     void unplay(Move move);
+
+    inline uint8_t get_castling_rights() const
+    {
+        return castling_rights;
+    }
 };
