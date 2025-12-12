@@ -58,3 +58,32 @@ TEST_F(MovePlayTest, PlayUnplayCapture)
     ASSERT_EQ(occ_white_in, occ_white_fi);
     ASSERT_EQ(occ_in, occ_fi);
 }
+
+TEST_F(MovePlayTest, EnPassant)
+{
+    Board b;
+    b.load_fen("rnbqkbnr/pppp1ppp/8/8/5p2/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    Move move(Square::e2, Square::e4, PAWN);
+    b.play(move);
+    ASSERT_EQ(move.get_flags(), Move::DOUBLE_PUSH);
+    ASSERT_EQ(b.get_en_passant_sq(), Square::e3);
+    Move move2(Square::f4, Square::e3, PAWN);
+    b.play(move2);
+    ASSERT_EQ(move2.get_flags(), Move::EN_PASSANT_CAP);
+    ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0xef00);
+    ASSERT_EQ(b.get_en_passant_sq(), EN_PASSANT_SQ_NONE);
+}
+
+TEST_F(MovePlayTest, UndoEnPassant)
+{
+    Board b;
+    b.load_fen("rnbqkbnr/pppp1ppp/8/8/5p2/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    Move move(Square::e2, Square::e4, PAWN);
+    b.play(move);
+    Move move2(Square::f4, Square::e3, PAWN);
+    b.play(move2);
+    b.unplay(move2);
+    ASSERT_EQ(b.get_piece_bitboard(BLACK, PAWN), 0xef000020000000);
+    ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0x1000ef00);
+    ASSERT_EQ(b.get_en_passant_sq(), Square::e3);
+}

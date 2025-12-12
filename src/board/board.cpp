@@ -65,6 +65,22 @@ bool Board::play(Move &move)
 
     get_piece_bitboard(side_to_move, from_piece) ^= sq_mask(from_sq); // Delete old position
     get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask;       // Fill new position
+
+    // Delete castling rights flags if rook is moved / captured
+    const std::array<std::pair<Square, CastlingRights>, 4> castling_rooks_checker = {
+        std::make_pair(Square::a1, WHITE_QUEENSIDE),
+        std::make_pair(Square::h1, WHITE_KINGSIDE),
+        std::make_pair(Square::a8, BLACK_QUEENSIDE),
+        std::make_pair(Square::h8, BLACK_KINGSIDE),
+    };
+    for (const std::pair<Square, CastlingRights> &p : castling_rooks_checker)
+    {
+        if ((from_sq == p.first || to_sq == p.first) && castling_rights & p.second)
+        {
+            const uint8_t mask = ~p.second;
+            castling_rights &= mask;
+        }
+    }
     if (move.has_flag(Move::Flags::KING_CASTLE))
     {
         if (side_to_move == WHITE)
@@ -76,14 +92,12 @@ bool Board::play(Move &move)
             U64 mask = (1ULL << 7) | (1ULL << 5);
             bitboard &rook_bit = get_piece_bitboard(WHITE, ROOK);
             rook_bit ^= mask;
-            update_occupancy();
-            switch_trait();
             castling_rights ^= WHITE_KINGSIDE;
             if (castling_rights & WHITE_QUEENSIDE)
             {
                 castling_rights ^= WHITE_QUEENSIDE;
             }
-            return true;
+            goto play_normal_exit;
         }
         else
         {
@@ -94,14 +108,12 @@ bool Board::play(Move &move)
             U64 mask = (1ULL << 63) | (1ULL << 61);
             bitboard &rook_bit = get_piece_bitboard(BLACK, ROOK);
             rook_bit ^= mask;
-            update_occupancy();
-            switch_trait();
             castling_rights ^= BLACK_KINGSIDE;
             if (castling_rights & BLACK_QUEENSIDE)
             {
                 castling_rights ^= BLACK_QUEENSIDE;
             }
-            return true;
+            goto play_normal_exit;
         }
     }
     else if (move.has_flag(Move::Flags::QUEEN_CASTLE))
@@ -115,14 +127,12 @@ bool Board::play(Move &move)
             U64 mask = (1ULL) | (1ULL << 3);
             bitboard &rook_bit = get_piece_bitboard(WHITE, ROOK);
             rook_bit ^= mask;
-            update_occupancy();
-            switch_trait();
             if (castling_rights & WHITE_KINGSIDE)
             {
                 castling_rights ^= WHITE_KINGSIDE;
             }
             castling_rights ^= WHITE_QUEENSIDE;
-            return true;
+            goto play_normal_exit;
         }
         else
         {
@@ -133,30 +143,42 @@ bool Board::play(Move &move)
             U64 mask = (1ULL << 56) | (1ULL << 59);
             bitboard &rook_bit = get_piece_bitboard(BLACK, ROOK);
             rook_bit ^= mask;
-            update_occupancy();
-            switch_trait();
             castling_rights ^= BLACK_QUEENSIDE;
             if (castling_rights & BLACK_KINGSIDE)
             {
                 castling_rights ^= BLACK_KINGSIDE;
             }
-            return true;
+            goto play_normal_exit;
+        }
+    }
+
+    // Checking if en passant
+    else if (from_piece == PAWN && to_sq == en_passant_sq)
+    {
+        move.set_flags(Move::EN_PASSANT_CAP);
+
+        // Captures passed pawn
+        if (side_to_move == WHITE)
+        {
+            U64 cap_mask = sq_mask(to_sq - 8);
+            get_piece_bitboard(BLACK, PAWN) ^= cap_mask;
+        }
+        else
+        {
+            U64 cap_mask = sq_mask(to_sq + 8);
+            get_piece_bitboard(WHITE, PAWN) ^= cap_mask;
         }
     }
 
     // Checking if an opponent square has to be updated
     else if (side_to_move == WHITE && !(occupied_black & to_sq_mask))
     {
-        update_occupancy();
-        switch_trait();
-        return true;
+        goto play_normal_exit;
     }
 
     if (side_to_move == BLACK && !(occupied_white & to_sq_mask))
     {
-        update_occupancy();
-        switch_trait();
-        return true;
+        goto play_normal_exit;
     }
 
     for (int i{PAWN}; i <= KING; ++i)
@@ -165,14 +187,26 @@ bool Board::play(Move &move)
         {
             get_piece_bitboard(opponent_color, i) ^= to_sq_mask;
             move.set_capture(static_cast<Piece>(i));
-            update_occupancy();
-            switch_trait();
-            return true;
+            goto play_normal_exit;
         }
     }
 
     throw std::logic_error("Occupancy mask and piece bitboards out of sync");
     return false;
+play_normal_exit:
+    // Checking if move is pawn double push (if so sets flag)
+    if (from_piece == PAWN && abs(from_sq - to_sq) == 16)
+    {
+        move.set_flags(Move::DOUBLE_PUSH);
+        en_passant_sq = (side_to_move == WHITE) ? from_sq + 8 : from_sq - 8;
+    }
+    else
+    {
+        en_passant_sq = EN_PASSANT_SQ_NONE;
+    }
+    update_occupancy();
+    switch_trait();
+    return true;
 }
 
 void Board::unplay(Move move)
@@ -211,6 +245,14 @@ void Board::unplay(Move move)
             get_piece_bitboard(color, ROOK) ^= 0x9;
         else
             get_piece_bitboard(color, ROOK) ^= 0x900000000000000;
+        break;
+    case Move::EN_PASSANT_CAP:
+        if (color == WHITE)
+            get_piece_bitboard(BLACK, PAWN) ^= sq_mask(to_sq - 8);
+        else
+            get_piece_bitboard(WHITE, PAWN) ^= sq_mask(to_sq + 8);
+        en_passant_sq = to_sq;
+        break;
     default:
         break;
     }
