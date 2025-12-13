@@ -110,7 +110,6 @@ public:
 
     inline void set_capture(Piece piece)
     {
-        set_flags(CAPTURE);
         set_to_piece(piece);
     }
 

@@ -49,7 +49,7 @@ std::pair<Color, Piece> Board::get_piece_on_square(int sq) const
 bool Board::play(Move &move)
 {
     const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
-    const Piece from_piece{move.get_from_piece()};
+    Piece from_piece{move.get_from_piece()};
     if (from_piece == NO_PIECE)
     {
         std::cerr << "No piece found on square" << from_sq << std::endl;
@@ -65,7 +65,21 @@ bool Board::play(Move &move)
     move.set_prev_en_passant(en_passant_sq);
 
     get_piece_bitboard(side_to_move, from_piece) ^= sq_mask(from_sq); // Delete old position
-    get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask;       // Fill new position
+                                                                      // Checks if it is a promotion
+    if (from_piece == PAWN)
+    {
+        if (side_to_move == WHITE && to_sq / 8 == 7)
+        {
+            move.set_flags(Move::PROMOTION_MASK);
+            from_piece = QUEEN;
+        }
+        if (side_to_move == BLACK && to_sq / 8 == 0)
+        {
+            move.set_flags(Move::PROMOTION_MASK);
+            from_piece = QUEEN;
+        }
+    }
+    get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask; // Fill new position
 
     // Delete castling rights flags if rook is moved / captured
     const std::array<std::pair<Square, CastlingRights>, 4> castling_rooks_checker = {
@@ -82,6 +96,7 @@ bool Board::play(Move &move)
             castling_rights &= mask;
         }
     }
+
     if (move.has_flag(Move::Flags::KING_CASTLE))
     {
         if (side_to_move == WHITE)
@@ -213,7 +228,7 @@ play_normal_exit:
 
 void Board::unplay(Move move)
 {
-    const Piece from_piece = move.get_from_piece();
+    const Piece from_piece = (move.get_flags() == Move::PROMOTION_MASK) ? QUEEN : move.get_from_piece();
     const Piece to_piece = move.get_to_piece();
     const int from_sq = move.get_from_sq();
     const int to_sq = move.get_to_sq();
@@ -255,6 +270,10 @@ void Board::unplay(Move move)
         else
             get_piece_bitboard(WHITE, PAWN) ^= sq_mask(to_sq + 8);
         en_passant_sq = to_sq;
+        break;
+    case Move::PROMOTION_MASK:
+        get_piece_bitboard(color, PAWN) ^= sq_mask(from_sq);
+        get_piece_bitboard(color, QUEEN) ^= sq_mask(from_sq);
         break;
     default:
         break;
