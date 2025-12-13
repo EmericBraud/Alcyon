@@ -87,3 +87,16 @@ TEST_F(MovePlayTest, UndoEnPassant)
     ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0x1000ef00);
     ASSERT_EQ(b.get_en_passant_sq(), Square::e3);
 }
+
+TEST_F(MovePlayTest, QueenPromotionDoAndUndo)
+{
+    Board b;
+    b.load_fen("4k3/2P5/8/8/8/8/8/4K3 w - - 0 1");
+    Move move(Square::c7, Square::c8, PAWN);
+    b.play(move);
+    ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0ULL);
+    ASSERT_EQ(b.get_piece_bitboard(WHITE, QUEEN), sq_mask(Square::c8));
+    b.unplay(move);
+    ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), sq_mask(Square::c7));
+    ASSERT_EQ(b.get_piece_bitboard(WHITE, QUEEN), 0ULL);
+}
