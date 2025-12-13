@@ -1,7 +1,6 @@
 #include "board.hpp"
 
 #include <iostream>
-#include <cassert>
 #include <stdexcept>
 
 void Board::clear()
