@@ -159,4 +159,35 @@ public:
         uint32_t mask = ~(0x07 << 29);
         value = (mask & value) | (static_cast<uint32_t>(en_passant_sq % 8) << 29);
     }
+
+    inline bool set_en_passant(const int en_passant_sq)
+    {
+        const Piece from_piece = get_from_piece();
+        const int to_sq = get_to_sq();
+        if (from_piece == PAWN && to_sq == en_passant_sq)
+        {
+            set_flags(Move::EN_PASSANT_CAP);
+            return true;
+        }
+        return false;
+    }
+
+    inline bool set_promotion(const Color side_to_move)
+    {
+        const Piece from_piece = get_from_piece();
+        const int to_sq = get_to_sq();
+        if (!from_piece == PAWN)
+            return false;
+        if (side_to_move == WHITE && to_sq / 8 == 7)
+        {
+            set_flags(Move::PROMOTION_MASK);
+            return true;
+        }
+        if (side_to_move == BLACK && to_sq / 8 == 0)
+        {
+            set_flags(Move::PROMOTION_MASK);
+            return true;
+        }
+        return false;
+    }
 };

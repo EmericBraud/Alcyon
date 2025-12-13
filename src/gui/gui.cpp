@@ -53,6 +53,11 @@ void GUI::run()
                 const int score{computer.eval_position()};
                 std::cout << "Position score : " << score << std::endl;
             }
+            else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::P)
+            {
+                std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
+                computer.play();
+            }
         }
         window.clear(BG_COLOR);
         draw_board();

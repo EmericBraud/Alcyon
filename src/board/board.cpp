@@ -65,18 +65,9 @@ bool Board::play(Move &move)
 
     get_piece_bitboard(side_to_move, from_piece) ^= sq_mask(from_sq); // Delete old position
                                                                       // Checks if it is a promotion
-    if (from_piece == PAWN)
+    if (move.set_promotion(side_to_move))
     {
-        if (side_to_move == WHITE && to_sq / 8 == 7)
-        {
-            move.set_flags(Move::PROMOTION_MASK);
-            from_piece = QUEEN;
-        }
-        if (side_to_move == BLACK && to_sq / 8 == 0)
-        {
-            move.set_flags(Move::PROMOTION_MASK);
-            from_piece = QUEEN;
-        }
+        from_piece = QUEEN;
     }
     get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask; // Fill new position
 
@@ -168,9 +159,8 @@ bool Board::play(Move &move)
     }
 
     // Checking if en passant
-    else if (from_piece == PAWN && to_sq == en_passant_sq)
+    else if (move.set_en_passant(get_en_passant_sq()))
     {
-        move.set_flags(Move::EN_PASSANT_CAP);
 
         // Captures passed pawn
         if (side_to_move == WHITE)
