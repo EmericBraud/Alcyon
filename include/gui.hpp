@@ -2,7 +2,7 @@
 
 #include <SFML/Graphics.hpp>
 
-#include "move_generator.hpp"
+#include "computer.hpp"
 
 #define W_HEIGHT 600
 #define W_WIDTH 600
@@ -19,7 +19,7 @@
 class GUI
 {
 public:
-    GUI(Board &inital_board) : board(inital_board), window(sf::RenderWindow(sf::VideoMode(W_WIDTH, W_HEIGHT), "Chess 26", sf::Style::Titlebar | sf::Style::Close)), is_sq_selected(false), selected_sq(0), last_piece(0)
+    GUI(Board &initial_board) : board(initial_board), computer(Computer(initial_board)), window(sf::RenderWindow(sf::VideoMode(W_WIDTH, W_HEIGHT), "Chess 26", sf::Style::Titlebar | sf::Style::Close)), is_sq_selected(false), selected_sq(0), last_piece(0)
     {
         window.setFramerateLimit(60);
         const std::array<std::array<const char *, N_PIECES_TYPE_HALF>, 2> PIECE_IMAGE_PATHS = {
@@ -60,6 +60,7 @@ public:
 
 private:
     Board &board;
+    Computer computer;
     sf::RenderWindow window;
     std::array<std::array<sf::Texture, N_PIECES_TYPE_HALF>, 2> m_piece_textures;
     bool is_sq_selected;

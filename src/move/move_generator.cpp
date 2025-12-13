@@ -334,10 +334,43 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
 
 bool MoveGen::is_king_attacked(Board &board)
 {
-    const Color color = board.get_side_to_move();
-    const bitboard opponent_king_mask = board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING);
+    const Color color = (board.get_side_to_move() == WHITE ? BLACK : WHITE);
+    const Color opponent_color = (color == WHITE) ? BLACK : WHITE;
+    bitboard king_mask = board.get_piece_bitboard(color, KING);
+    assert(king_mask);
+    bitboard king_mask_cpy = king_mask;
+    const int king_sq{pop_lsb(king_mask_cpy)};
+    assert(king_sq >= 0 && king_sq <= 63);
 
-    return is_mask_attacked(board, opponent_king_mask);
+    const U64 rook_check = generate_rook_moves(king_sq, board);
+    if (rook_check & (board.get_piece_bitboard(opponent_color, QUEEN) | board.get_piece_bitboard(opponent_color, ROOK)))
+    {
+        return true;
+    }
+    const U64 bishop_check = generate_bishop_moves(king_sq, board);
+    if (bishop_check & (board.get_piece_bitboard(opponent_color, QUEEN) | board.get_piece_bitboard(opponent_color, BISHOP)))
+    {
+        return true;
+    }
+
+    const U64 knight_check = KnightAttacks[king_sq];
+    if (knight_check & board.get_piece_bitboard(opponent_color, KNIGHT))
+    {
+        return true;
+    }
+
+    const U64 king_check = KingAttacks[king_sq];
+    if (king_check & board.get_piece_bitboard(opponent_color, KING))
+    {
+        return true;
+    }
+
+    const U64 pawn_check = (color == WHITE) ? PawnAttacksWhite[king_sq] : PawnAttacksBlack[king_sq];
+    if (pawn_check & board.get_piece_bitboard(opponent_color, PAWN))
+    {
+        return true;
+    }
+    return false;
 }
 bool MoveGen::is_mask_attacked(Board &board, const U64 mask)
 {
@@ -400,7 +433,8 @@ std::vector<Move> MoveGen::generate_legal_moves(Board &board)
     std::vector<Move> moves = MoveGen::generate_pseudo_legal_moves(board, color);
     for (auto iter = moves.begin(); iter != moves.end();)
     {
-        const Move &move = *iter;
+        Move &move = *iter;
+        board.play(move);
         if (MoveGen::is_king_attacked(board))
         {
             board.unplay(move);

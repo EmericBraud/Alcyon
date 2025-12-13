@@ -47,6 +47,12 @@ void GUI::run()
                     is_sq_selected = false;
                 }
             }
+            else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::E)
+            {
+                std::cout << "Evaluating position with depth " << MAX_DEPTH << " ..." << std::endl;
+                const int score{computer.eval_position()};
+                std::cout << "Position score : " << score << std::endl;
+            }
         }
         window.clear(BG_COLOR);
         draw_board();
