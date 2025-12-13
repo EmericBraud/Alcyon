@@ -6,7 +6,6 @@
 
 #define N_PIECES_TYPE 12
 #define N_PIECES_TYPE_HALF 6
-#define EN_PASSANT_SQ_NONE 255
 
 enum CastlingRights : uint8_t
 {

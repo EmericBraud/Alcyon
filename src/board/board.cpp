@@ -62,6 +62,7 @@ bool Board::play(Move &move)
     const U64 to_sq_mask{sq_mask(to_sq)};
 
     move.set_prev_castling_rights(castling_rights);
+    move.set_prev_en_passant(en_passant_sq);
 
     get_piece_bitboard(side_to_move, from_piece) ^= sq_mask(from_sq); // Delete old position
     get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask;       // Fill new position
@@ -168,6 +169,7 @@ bool Board::play(Move &move)
             U64 cap_mask = sq_mask(to_sq + 8);
             get_piece_bitboard(WHITE, PAWN) ^= cap_mask;
         }
+        goto play_normal_exit;
     }
 
     // Checking if an opponent square has to be updated
@@ -227,6 +229,7 @@ void Board::unplay(Move move)
     assert(!(from_bitboard & (1ULL << to_sq)));
     assert(from_bitboard & (1ULL << from_sq));
     castling_rights = move.get_prev_castling_rights();
+    en_passant_sq = move.get_prev_en_passant(color);
     if (to_piece != NO_PIECE)
     {
         const Color opponent_color = color == WHITE ? BLACK : WHITE;

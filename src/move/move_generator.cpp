@@ -193,6 +193,7 @@ void MoveGen::initialize_bitboard_tables()
 inline U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
 {
     U64 target_mask;
+    U64 temp_mask;
     const uint8_t en_passant_sq = board.get_en_passant_sq();
 
     switch (piece_type)
@@ -200,7 +201,9 @@ inline U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq, cons
     case PAWN:
         if (color == WHITE)
         {
-            target_mask = PawnPushWhite[sq] | PawnPush2White[sq];
+            // We use rook move generation to limit push
+            temp_mask = generate_rook_moves(sq, board) & (~board.get_occupancy(NO_COLOR));
+            target_mask = (PawnPushWhite[sq] | PawnPush2White[sq]) & temp_mask;
             target_mask |= PawnAttacksWhite[sq] & board.get_occupancy(BLACK);
 
             if (en_passant_sq != EN_PASSANT_SQ_NONE)
@@ -210,7 +213,9 @@ inline U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq, cons
         }
         else if (color == BLACK)
         {
-            target_mask = PawnPushBlack[sq] | PawnPush2Black[sq];
+            // We use rook move generation to limit push
+            temp_mask = generate_rook_moves(sq, board) & (~board.get_occupancy(NO_COLOR));
+            target_mask = (PawnPushBlack[sq] | PawnPush2Black[sq]) & temp_mask;
             target_mask |= PawnAttacksBlack[sq] & board.get_occupancy(WHITE);
 
             if (en_passant_sq != EN_PASSANT_SQ_NONE)
