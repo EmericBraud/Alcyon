@@ -165,7 +165,7 @@ bool Board::load_fen(const std::string_view fen_string)
     }
     if (token == "-")
     {
-        en_passant_sq = 0;
+        en_passant_sq = EN_PASSANT_SQ_NONE;
     }
     else if (token.length() == 2)
     {

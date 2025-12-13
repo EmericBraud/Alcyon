@@ -101,3 +101,51 @@ TEST_F(MoveGenTest, MoveGenEnPassant)
     U64 mask = MoveGen::get_legal_moves_mask(b, Square::f4);
     ASSERT_EQ(mask, 0x300000);
 }
+
+TEST_F(MoveGenTest, PawnCantPushThrought)
+{
+    Board b;
+    b.load_fen("rnbqkbnr/pppp1ppp/8/8/8/4p3/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    U64 mask = MoveGen::get_legal_moves_mask(b, Square::e2);
+    ASSERT_EQ(mask, 0ULL);
+}
+
+TEST_F(MoveGenTest, PawnCanPush)
+{
+    Board b{};
+    b.load_fen("rnbqkbnr/pppp1ppp/8/8/5p2/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    Move move(Square::e2, Square::e4, PAWN);
+    b.play(move);
+
+    Move move2(Square::f4, Square::e3, PAWN);
+    b.play(move2);
+    U64 mask = MoveGen::get_legal_moves_mask(b, Square::d2);
+    ASSERT_EQ(mask, 0x8180000);
+}
+
+TEST_F(MoveGenTest, EnPassantAfterCheckTest)
+{
+    Board b{};
+    b.load_fen("rnbqkbnr/ppppp1pp/8/8/5p2/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    U64 valid_mask = MoveGen::get_legal_moves_mask(b, Square::e2);
+    ASSERT_EQ(valid_mask, 0x10100000);
+    Move m{Square::e2, Square::e4, PAWN};
+    b.play(m);
+    ASSERT_EQ(b.get_en_passant_sq(), Square::e3);
+    valid_mask = MoveGen::get_legal_moves_mask(b, Square::f4);
+    ASSERT_EQ(valid_mask, 0x300000);
+    ASSERT_EQ(b.get_en_passant_sq(), Square::e3);
+    /**
+     * Here it needs a little explaination.
+     * When we "get_legal_moves_mask",
+     * under the hood we perform the move, get the opponent attack mask
+     * then check if it collides with our king,
+     * then undo the move. That is why we need to check if en_passant_sq
+     * is still unchanged.
+     */
+    Move m2{Square::f4, Square::e3, PAWN};
+    b.play(m2);
+    ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0xef00);
+    ASSERT_EQ(b.get_piece_bitboard(BLACK, PAWN), 0xdf000000100000);
+    ASSERT_EQ(b.get_en_passant_sq(), EN_PASSANT_SQ_NONE);
+}

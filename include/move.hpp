@@ -30,7 +30,7 @@ public:
     Move() : value(0) {}
 
     // Constructor to encode a move from its components
-    Move(int from_sq, int to_sq, Piece from_piece, Flags flags = NONE, Piece to_piece = NO_PIECE, int prev_castling_rights = 0)
+    Move(int from_sq, int to_sq, Piece from_piece, Flags flags = NONE, Piece to_piece = NO_PIECE, int prev_castling_rights = 0, bool prev_en_passant_flag = false, int prev_en_passant_file = 0)
     {
         // Example encoding scheme:
         // [0..5] : From Square (6 bits)
@@ -39,13 +39,17 @@ public:
         // [16..19]: From Piece (4 bits)
         // [20..22]: To Piece (3 bits)
         // [23..27]: Prev castling rights (4 bits)
+        // [28..29]: Prev en passant flag (1 bit)
+        // [29..32]: Prev En Passant File (3 bits) (> Usefull if En passant flag set to 1)
 
         value = (uint32_t)(from_sq) |
                 ((uint32_t)(to_sq) << 6) |
                 ((uint32_t)(flags) << 12) |
                 ((uint32_t)(from_piece) << 16) |
                 ((uint32_t)(to_piece) << 20) |
-                ((uint32_t)(prev_castling_rights) << 23);
+                ((uint32_t)(prev_castling_rights) << 23) |
+                ((uint32_t)(prev_en_passant_flag)) << 28 |
+                ((uint32_t)(prev_en_passant_file)) << 29;
     }
 
     inline int get_from_sq() const
@@ -125,5 +129,35 @@ public:
         uint32_t mask = 0xF << 23;
         value &= ~mask;
         value |= (val << 23);
+    }
+
+    inline int get_prev_en_passant(const Color move_side) const
+    {
+        const bool prev_en_passant_flag = (value >> 28) & 0x01;
+        if (!prev_en_passant_flag)
+        {
+            return EN_PASSANT_SQ_NONE;
+        }
+        const int en_passant_file = (value >> 29) & 0x7;
+        if (move_side == WHITE)
+        {
+            return Square::a6 + en_passant_file; // Previous black double push
+        }
+        if (move_side == BLACK)
+        {
+            return Square::a3 + en_passant_file; // Previous white double push
+        }
+        throw std::logic_error("Move side can't be NONE when getting en passant sq");
+    }
+    inline void set_prev_en_passant(const int en_passant_sq)
+    {
+        if (en_passant_sq == EN_PASSANT_SQ_NONE)
+        {
+            value &= ~(1ULL << 28); // Set en passant flag to 0
+            return;
+        }
+        value |= (1ULL << 28); // Set en passant flag to 1
+        uint32_t mask = ~(0x07 << 29);
+        value = (mask & value) | (static_cast<uint32_t>(en_passant_sq % 8) << 29);
     }
 };

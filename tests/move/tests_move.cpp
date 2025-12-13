@@ -19,3 +19,10 @@ TEST_F(MoveTest, MoveDescriptor)
     ASSERT_EQ(m.is_castling(), false);
     ASSERT_EQ(m.is_promotion(), false);
 }
+
+TEST_F(MoveTest, EnPassantFile)
+{
+    Move m{Square::a2, Square::c3, KNIGHT};
+    m.set_prev_en_passant(Square::e6 % 8);
+    ASSERT_EQ(m.get_prev_en_passant(WHITE), Square::e6);
+}

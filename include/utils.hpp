@@ -21,6 +21,7 @@
 #define ROOK_ATTACKS_SIZE 102400
 #define BISHOP_ATTACKS_SIZE 5248
 #define DATA_PATH "../data/"
+#define EN_PASSANT_SQ_NONE 255
 
 using U64 = std::uint64_t;
 using bitboard = std::uint64_t;
