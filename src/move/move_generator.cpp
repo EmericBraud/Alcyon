@@ -266,6 +266,7 @@ U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq)
 std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const Color color)
 {
     std::vector<Move> moves;
+    const bitboard opponent_king_mask{~board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING)};
 
     for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
     {
@@ -274,7 +275,35 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
         while (piece_bitboard != 0)
         {
             int from_sq = pop_lsb(piece_bitboard);
-            U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type));
+            U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type)) & opponent_king_mask;
+
+            while (target_mask != 0)
+            {
+                int target_sq = pop_lsb(target_mask);
+                moves.push_back(Move{
+                    from_sq,
+                    target_sq,
+                    static_cast<Piece>(piece_type)});
+            }
+        }
+    }
+    return moves;
+}
+
+std::vector<Move> MoveGen::generate_pseudo_legal_captures(const Board &board, Color color)
+{
+    std::vector<Move> moves;
+    const bitboard opponent_king_mask{~board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING)};
+    const bitboard opponent_occ = board.get_occupancy(color == WHITE ? BLACK : WHITE) & opponent_king_mask;
+
+    for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
+    {
+        U64 piece_bitboard = board.get_piece_bitboard(color, piece_type);
+
+        while (piece_bitboard != 0)
+        {
+            int from_sq = pop_lsb(piece_bitboard);
+            U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type)) & opponent_occ;
 
             while (target_mask != 0)
             {
@@ -302,8 +331,9 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
     {
         int to_sq = pop_lsb(target_mask_pseudo);
         Move move(from_sq, to_sq, info.second);
+        const Color player = board.get_side_to_move();
         board.play(move);
-        if (!is_king_attacked(board))
+        if (!is_king_attacked(board, player))
         {
             target_mask |= sq_mask(to_sq);
         }
@@ -332,46 +362,40 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
     return target_mask;
 }
 
-bool MoveGen::is_king_attacked(Board &board)
+bool MoveGen::is_king_attacked(const Board &board, Color us)
 {
-    const Color color = (board.get_side_to_move() == WHITE ? BLACK : WHITE);
-    const Color opponent_color = (color == WHITE) ? BLACK : WHITE;
-    bitboard king_mask = board.get_piece_bitboard(color, KING);
+    const Color opponent = (us == WHITE) ? BLACK : WHITE;
+
+    bitboard king_mask = board.get_piece_bitboard(us, KING);
     assert(king_mask);
-    bitboard king_mask_cpy = king_mask;
-    const int king_sq{pop_lsb(king_mask_cpy)};
+
+    int king_sq = pop_lsb(king_mask);
+
     assert(king_sq >= 0 && king_sq <= 63);
 
     const U64 rook_check = generate_rook_moves(king_sq, board);
-    if (rook_check & (board.get_piece_bitboard(opponent_color, QUEEN) | board.get_piece_bitboard(opponent_color, ROOK)))
-    {
+    if (rook_check & (board.get_piece_bitboard(opponent, ROOK) | board.get_piece_bitboard(opponent, QUEEN)))
         return true;
-    }
+
     const U64 bishop_check = generate_bishop_moves(king_sq, board);
-    if (bishop_check & (board.get_piece_bitboard(opponent_color, QUEEN) | board.get_piece_bitboard(opponent_color, BISHOP)))
-    {
+    if (bishop_check & (board.get_piece_bitboard(opponent, BISHOP) | board.get_piece_bitboard(opponent, QUEEN)))
         return true;
-    }
 
     const U64 knight_check = KnightAttacks[king_sq];
-    if (knight_check & board.get_piece_bitboard(opponent_color, KNIGHT))
-    {
+    if (knight_check & board.get_piece_bitboard(opponent, KNIGHT))
         return true;
-    }
 
     const U64 king_check = KingAttacks[king_sq];
-    if (king_check & board.get_piece_bitboard(opponent_color, KING))
-    {
+    if (king_check & board.get_piece_bitboard(opponent, KING))
         return true;
-    }
 
-    const U64 pawn_check = (color == WHITE) ? PawnAttacksWhite[king_sq] : PawnAttacksBlack[king_sq];
-    if (pawn_check & board.get_piece_bitboard(opponent_color, PAWN))
-    {
+    const U64 pawn_check = (us == WHITE) ? PawnAttacksWhite[king_sq] : PawnAttacksBlack[king_sq];
+    if (pawn_check & board.get_piece_bitboard(opponent, PAWN))
         return true;
-    }
+
     return false;
 }
+
 bool MoveGen::is_mask_attacked(Board &board, const U64 mask)
 {
     const Color color = board.get_side_to_move();
@@ -434,8 +458,9 @@ std::vector<Move> MoveGen::generate_legal_moves(Board &board)
     for (auto iter = moves.begin(); iter != moves.end();)
     {
         Move &move = *iter;
+        const Color player = board.get_side_to_move();
         board.play(move);
-        if (MoveGen::is_king_attacked(board))
+        if (MoveGen::is_king_attacked(board, player))
         {
             board.unplay(move);
             iter = moves.erase(iter);

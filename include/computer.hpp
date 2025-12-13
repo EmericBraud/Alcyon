@@ -1,7 +1,9 @@
 #pragma once
 #include "move_generator.hpp"
 
-#define MAX_DEPTH 8
+#define MAX_DEPTH 5
+constexpr int INF = 1000000;
+constexpr int MATE_SCORE = 100000;
 
 class Computer
 {
@@ -26,57 +28,109 @@ class Computer
         }
         return score;
     }
-
-    int alpha_beta_search(int depth, int alpha, int beta)
+    int eval_relative(Color side_to_move) const
     {
-        if (depth == MAX_DEPTH)
+        int score = eval();
+        return (side_to_move == WHITE) ? score : -score;
+    }
+
+public:
+    int negamax(int depth, int alpha, int beta, int ply)
+    {
+        if (depth == 0)
         {
-            return eval();
+            return eval_relative(board.get_side_to_move());
         }
-        const Color player{board.get_side_to_move()};
+
+        const Color player = board.get_side_to_move();
         std::vector<Move> v = MoveGen::generate_pseudo_legal_moves(board, player);
-        int best_score;
-        if (player == WHITE)
+
+        int legal_moves_count = 0;
+        int best_score = -INF;
+
+        for (Move &m : v)
         {
-            best_score = std::numeric_limits<int>::min();
-            for (Move &m : v)
+            board.play(m);
+
+            if (MoveGen::is_king_attacked(board, player))
             {
-                board.play(m);
-                if (MoveGen::is_king_attacked(board))
-                {
-                    board.unplay(m);
-                    continue;
-                }
-                best_score = std::max(best_score, alpha_beta_search(depth + 1, alpha, beta));
                 board.unplay(m);
-                if (best_score >= beta)
+                continue;
+            }
+
+            legal_moves_count++;
+
+            int score = -negamax(depth - 1, -beta, -alpha, ply + 1);
+
+            board.unplay(m);
+
+            if (score >= beta)
+            {
+                return score;
+            }
+
+            if (score > best_score)
+            {
+                best_score = score;
+                if (score > alpha)
                 {
-                    return best_score;
+                    alpha = score;
                 }
-                alpha = std::max(alpha, best_score);
             }
         }
-        else
+
+        if (legal_moves_count == 0)
         {
-            best_score = std::numeric_limits<int>::max();
-            for (Move &m : v)
+            if (MoveGen::is_king_attacked(board, player)) // Échec et Mat
             {
-                board.play(m);
-                if (MoveGen::is_king_attacked(board))
-                {
-                    board.unplay(m);
-                    continue;
-                }
-                best_score = std::min(best_score, alpha_beta_search(depth + 1, alpha, beta));
-                board.unplay(m);
-                if (best_score <= alpha)
-                {
-                    return best_score;
-                }
-                beta = std::min(beta, best_score);
+                return -MATE_SCORE + ply;
+            }
+            else
+            {
+                return 0;
             }
         }
+
         return best_score;
+    }
+
+    void play()
+    {
+        int depth = 5;
+        int alpha = -INF;
+        int beta = INF;
+
+        int best_score = -INF;
+        Move best_move;
+
+        const Color player = board.get_side_to_move();
+        std::vector<Move> v = MoveGen::generate_pseudo_legal_moves(board, player);
+
+        for (Move &m : v)
+        {
+            board.play(m);
+            if (MoveGen::is_king_attacked(board, player))
+            {
+                board.unplay(m);
+                continue;
+            }
+
+            int score = -negamax(depth - 1, -beta, -alpha, 1);
+
+            board.unplay(m);
+
+            if (score > best_score)
+            {
+                best_score = score;
+                best_move = m;
+            }
+
+            if (score > alpha)
+            {
+                alpha = score;
+            }
+        }
+        board.play(best_move);
     }
 
 public:
@@ -86,6 +140,6 @@ public:
 
     int eval_position()
     {
-        return alpha_beta_search(0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+        return negamax(MAX_DEPTH, -INF, INF, 0);
     }
 };
