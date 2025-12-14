@@ -2,10 +2,7 @@
 
 #include <stdexcept>
 
-#include "move.hpp"
-
-#define N_PIECES_TYPE 12
-#define N_PIECES_TYPE_HALF 6
+#include "zobrist.hpp"
 
 enum CastlingRights : uint8_t
 {
@@ -47,6 +44,7 @@ private:
     Color side_to_move; // White or black turn ?
 
     std::vector<UndoInfo> move_stack;
+    std::vector<U64> history;
 
     U64 zobrist_key;
 
@@ -210,6 +208,8 @@ public:
 
     void unplay(Move move);
 
+    bool is_repetition() const;
+
     inline uint8_t get_castling_rights() const
     {
         return castling_rights;
@@ -217,5 +217,37 @@ public:
     inline uint8_t get_en_passant_sq() const
     {
         return en_passant_sq;
+    }
+
+    inline U64 get_hash() const
+    {
+        return zobrist_key;
+    }
+
+    void compute_full_hash();
+
+    inline void play_null_move(int &stored_ep_sq)
+    {
+        if (en_passant_sq != EN_PASSANT_SQ_NONE)
+            zobrist_key ^= zobrist_en_passant[en_passant_sq % 8];
+        else
+            zobrist_key ^= zobrist_en_passant[8];
+        stored_ep_sq = en_passant_sq;
+        en_passant_sq = EN_PASSANT_SQ_NONE;
+        zobrist_key ^= zobrist_en_passant[8];
+
+        zobrist_key ^= zobrist_black_to_move;
+        switch_trait();
+    }
+    inline void unplay_null_move(int stored_ep_sq)
+    {
+        switch_trait();
+        zobrist_key ^= zobrist_black_to_move;
+        zobrist_key ^= zobrist_en_passant[8];
+        en_passant_sq = stored_ep_sq;
+        if (en_passant_sq != EN_PASSANT_SQ_NONE)
+            zobrist_key ^= zobrist_en_passant[en_passant_sq % 8];
+        else
+            zobrist_key ^= zobrist_en_passant[8];
     }
 };

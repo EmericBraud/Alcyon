@@ -42,7 +42,7 @@ namespace MoveGen
     void initialize_bishop_masks();
     void initialize_pawn_masks();
 
-    std::vector<Move> generate_pseudo_legal_moves(const Board &board, Color color);
+    std::vector<Move> generate_pseudo_legal_moves(Board &board, Color color);
     std::vector<Move> generate_pseudo_legal_captures(const Board &board, Color color);
     U64 get_legal_moves_mask(Board &board, int from_sq);
 

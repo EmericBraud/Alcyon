@@ -263,7 +263,7 @@ U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq)
     }
     return get_pseudo_moves_mask(board, sq, color, piece_type);
 }
-std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const Color color)
+std::vector<Move> MoveGen::generate_pseudo_legal_moves(Board &board, const Color color)
 {
     std::vector<Move> moves;
     const bitboard opponent_king_mask{~board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING)};
@@ -287,6 +287,8 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(const Board &board, const
             }
         }
     }
+    std::vector<Move> castling_moves = generate_castle_moves(board);
+    moves.insert(moves.end(), castling_moves.begin(), castling_moves.end());
     return moves;
 }
 
@@ -471,6 +473,8 @@ std::vector<Move> MoveGen::generate_legal_moves(Board &board)
             iter++;
         }
     }
+    std::vector<Move> castling_moves = generate_castle_moves(board);
+    moves.insert(moves.end(), castling_moves.begin(), castling_moves.end());
     return moves;
 }
 
