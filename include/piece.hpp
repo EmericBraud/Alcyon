@@ -21,3 +21,8 @@ enum Color : uint8_t
 };
 
 using PieceInfo = std::pair<Color, Piece>;
+
+inline int get_piece_index(const Piece p, const Color c)
+{
+    return p + N_PIECES_TYPE_HALF * c;
+}

@@ -215,6 +215,7 @@ bool Board::load_fen(const std::string_view fen_string)
 
     // Update occupancy masks
     update_occupancy();
+    compute_full_hash();
     return true;
 }
 
@@ -295,4 +296,35 @@ void Board::show() const
 
     // Display en passant square
     std::cout << "En Passant Square: " << (en_passant_sq == 0 ? "-" : std::to_string(en_passant_sq)) << std::endl;
+}
+
+void Board::compute_full_hash()
+{
+    zobrist_key = 0;
+
+    for (int sq = 0; sq < 64; ++sq)
+    {
+        PieceInfo p = get_piece_on_square(sq);
+        if (p.second != NO_PIECE)
+        {
+            int piece_index = p.second + N_PIECES_TYPE_HALF * p.first;
+            zobrist_key ^= zobrist_table[piece_index][sq];
+        }
+    }
+
+    if (get_side_to_move() == BLACK)
+    {
+        zobrist_key ^= zobrist_black_to_move;
+    }
+
+    zobrist_key ^= zobrist_castling[get_castling_rights()];
+
+    if (get_en_passant_sq() != EN_PASSANT_SQ_NONE)
+    {
+        zobrist_key ^= zobrist_en_passant[get_en_passant_sq() % 8];
+    }
+    else
+    {
+        zobrist_key ^= zobrist_en_passant[8];
+    }
 }
