@@ -28,7 +28,7 @@ private:
     int score_to_tt(int score, int ply)
     {
         if (score > MATE_SCORE - 1000)
-            return score + ply;
+            return score + ply; // On ajoute le ply pour "neutraliser" la distance à la racine
         if (score < -MATE_SCORE + 1000)
             return score - ply;
         return score;
@@ -37,7 +37,7 @@ private:
     int score_from_tt(int score, int ply)
     {
         if (score > MATE_SCORE - 1000)
-            return score - ply;
+            return score - ply; // On retire le ply actuel pour retrouver la distance réelle depuis la racine
         if (score < -MATE_SCORE + 1000)
             return score + ply;
         return score;

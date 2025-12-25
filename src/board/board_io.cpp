@@ -6,6 +6,7 @@
 bool Board::load_fen(const std::string_view fen_string)
 {
     clear();
+    init_zobrist();
 
     std::string fen(fen_string);
     std::istringstream ss(fen);
@@ -327,4 +328,12 @@ void Board::compute_full_hash()
     {
         zobrist_key ^= zobrist_en_passant[8];
     }
+}
+
+void Board::undo_last_move()
+{
+    if (history.empty())
+        return;
+    const UndoInfo last_info = history.back();
+    unplay(last_info.move);
 }

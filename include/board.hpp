@@ -16,13 +16,9 @@ enum CastlingRights : uint8_t
 struct UndoInfo
 {
     U64 zobrist_key;
-    uint8_t castling_rights;
-    uint8_t en_passant_sq;
     uint16_t halfmove_clock;
-    // We specify which piece has been captured
-    Piece captured_piece;
-    Color side_to_move;
-    Move move; // Full move number (uint32_t)
+    int last_irreversible_move_index;
+    Move move;
 };
 
 class Board
@@ -37,16 +33,17 @@ private:
     bitboard occupied_all;
 
     // State info
-    uint8_t castling_rights; // Castle rights
-    uint8_t en_passant_sq;   // En passant capture case (255 = none)
-    uint16_t halfmove_clock; // For 50 moves rule
+    uint8_t castling_rights;     // Castle rights
+    uint8_t en_passant_sq;       // En passant capture case (255 = none)
+    uint16_t halfmove_clock = 0; // For 50 moves rule
     uint32_t fullmove_number;
     Color side_to_move; // White or black turn ?
 
-    std::vector<UndoInfo> move_stack;
-    std::vector<U64> history;
+    std::vector<UndoInfo> history;
 
     U64 zobrist_key;
+
+    int last_irreversible_move_index = 0;
 
 public:
     // Rule of five
@@ -71,6 +68,7 @@ public:
 
     inline void switch_trait()
     {
+        zobrist_key ^= zobrist_black_to_move;
         side_to_move = static_cast<Color>(1 - static_cast<int>(side_to_move));
     }
 
@@ -165,7 +163,7 @@ public:
         occupied_all = occupied_white | occupied_black;
     }
     std::pair<Color, Piece> get_piece_on_square(int sq) const;
-    bool play(Move &move);
+    bool play(const Move &move);
     char piece_to_char(Color color, Piece type) const;
     void show() const;
 
@@ -206,7 +204,7 @@ public:
         return is_occupied(sq, static_cast<Piece>(piece), color);
     }
 
-    void unplay(Move move);
+    void unplay(const Move move);
 
     bool is_repetition() const;
 
@@ -236,13 +234,11 @@ public:
         en_passant_sq = EN_PASSANT_SQ_NONE;
         zobrist_key ^= zobrist_en_passant[8];
 
-        zobrist_key ^= zobrist_black_to_move;
         switch_trait();
     }
     inline void unplay_null_move(int stored_ep_sq)
     {
         switch_trait();
-        zobrist_key ^= zobrist_black_to_move;
         zobrist_key ^= zobrist_en_passant[8];
         en_passant_sq = stored_ep_sq;
         if (en_passant_sq != EN_PASSANT_SQ_NONE)
@@ -250,4 +246,6 @@ public:
         else
             zobrist_key ^= zobrist_en_passant[8];
     }
+
+    void undo_last_move();
 };

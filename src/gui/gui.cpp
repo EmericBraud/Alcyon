@@ -41,6 +41,7 @@ void GUI::run()
                         else
                         {
                             move = Move(last_piece, selected_sq, info.second);
+                            MoveGen::init_move_flags(board, move);
                         }
                         board.play(move);
                     }
@@ -57,6 +58,11 @@ void GUI::run()
             {
                 std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
                 computer.play();
+            }
+            else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::U)
+            {
+                board.undo_last_move();
+                std::cout << "Move undone" << std::endl;
             }
         }
         window.clear(BG_COLOR);

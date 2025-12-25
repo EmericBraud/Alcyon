@@ -280,10 +280,12 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(Board &board, const Color
             while (target_mask != 0)
             {
                 int target_sq = pop_lsb(target_mask);
-                moves.push_back(Move{
+                Move m{
                     from_sq,
                     target_sq,
-                    static_cast<Piece>(piece_type)});
+                    static_cast<Piece>(piece_type)};
+                MoveGen::init_move_flags(board, m);
+                moves.push_back(m);
             }
         }
     }
@@ -310,10 +312,12 @@ std::vector<Move> MoveGen::generate_pseudo_legal_captures(const Board &board, Co
             while (target_mask != 0)
             {
                 int target_sq = pop_lsb(target_mask);
-                moves.push_back(Move{
+                Move m{
                     from_sq,
                     target_sq,
-                    static_cast<Piece>(piece_type)});
+                    static_cast<Piece>(piece_type)};
+                MoveGen::init_move_flags(board, m);
+                moves.push_back(m);
             }
         }
     }
@@ -333,6 +337,7 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
     {
         int to_sq = pop_lsb(target_mask_pseudo);
         Move move(from_sq, to_sq, info.second);
+        MoveGen::init_move_flags(board, move);
         const Color player = board.get_side_to_move();
         board.play(move);
         if (!is_king_attacked(board, player))
@@ -424,29 +429,67 @@ std::vector<Move> MoveGen::generate_castle_moves(Board &board)
     const uint8_t castling_rights = board.get_castling_rights();
     const bitboard occupancy = board.get_occupancy(NO_COLOR);
     board.switch_trait();
+    const bool prev_en_passant_flag = board.get_en_passant_sq() != EN_PASSANT_SQ_NONE;
+    const int prev_en_passant_file = board.get_en_passant_sq() == EN_PASSANT_SQ_NONE ? 0 : board.get_en_passant_sq() % 8;
     if (color == WHITE)
     {
-        if ((castling_rights & WHITE_KINGSIDE) && !(occupancy & 0x60) && (!is_mask_attacked(board, 0x60)))
+        if ((castling_rights & WHITE_KINGSIDE) && !(occupancy & 0x70) && (!is_mask_attacked(board, 0x70)))
         {
-            const Move move{4, 6, KING, Move::Flags::KING_CASTLE};
+            const Move move{
+                4,
+                6,
+                KING,
+                Move::Flags::KING_CASTLE,
+                NO_PIECE,
+                castling_rights,
+                prev_en_passant_flag,
+                prev_en_passant_file,
+            };
             moves.push_back(move);
         }
-        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0xE) && !(is_mask_attacked(board, 0xE)))
+        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0x1c) && !(is_mask_attacked(board, 0x1c)))
         {
-            const Move move{4, 2, KING, Move::Flags::QUEEN_CASTLE};
+            const Move move{
+                4,
+                2,
+                KING,
+                Move::Flags::QUEEN_CASTLE,
+                NO_PIECE,
+                castling_rights,
+                prev_en_passant_flag,
+                prev_en_passant_file,
+            };
             moves.push_back(move);
         }
     }
     else
     {
-        if ((castling_rights & BLACK_KINGSIDE) && !(occupancy & 0x6000000000000000) && (!is_mask_attacked(board, 0x6000000000000000)))
+        if ((castling_rights & BLACK_KINGSIDE) && !(occupancy & 0x7000000000000000) && (!is_mask_attacked(board, 0x7000000000000000)))
         {
-            const Move move{60, 62, KING, Move::Flags::KING_CASTLE};
+            const Move move{
+                60,
+                62,
+                KING,
+                Move::Flags::KING_CASTLE,
+                NO_PIECE,
+                castling_rights,
+                prev_en_passant_flag,
+                prev_en_passant_file,
+            };
             moves.push_back(move);
         }
-        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0xE00000000000000) && !(is_mask_attacked(board, 0xE00000000000000)))
+        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0x1c00000000000000) && !(is_mask_attacked(board, 0x1c00000000000000)))
         {
-            const Move move{60, 58, KING, Move::Flags::QUEEN_CASTLE};
+            const Move move{
+                60,
+                58,
+                KING,
+                Move::Flags::QUEEN_CASTLE,
+                NO_PIECE,
+                castling_rights,
+                prev_en_passant_flag,
+                prev_en_passant_file,
+            };
             moves.push_back(move);
         }
     }
@@ -457,10 +500,11 @@ std::vector<Move> MoveGen::generate_legal_moves(Board &board)
 {
     const Color color = board.get_side_to_move();
     std::vector<Move> moves = MoveGen::generate_pseudo_legal_moves(board, color);
+    const Color player = board.get_side_to_move();
+    // const bool is_king_atck = is_king_attacked(board, player);
     for (auto iter = moves.begin(); iter != moves.end();)
     {
         Move &move = *iter;
-        const Color player = board.get_side_to_move();
         board.play(move);
         if (MoveGen::is_king_attacked(board, player))
         {
@@ -473,8 +517,6 @@ std::vector<Move> MoveGen::generate_legal_moves(Board &board)
             iter++;
         }
     }
-    std::vector<Move> castling_moves = generate_castle_moves(board);
-    moves.insert(moves.end(), castling_moves.begin(), castling_moves.end());
     return moves;
 }
 
@@ -760,6 +802,41 @@ void MoveGen::load_attacks()
 {
     load_attacks_bishop();
     load_attacks_rook();
+}
+
+void MoveGen::init_move_flags(const Board &board, Move &move)
+{
+    const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
+    const Piece from_piece{move.get_from_piece()};
+    const PieceInfo to_piece_info{board.get_piece_on_square(to_sq)};
+
+    move.set_prev_castling_rights(board.get_castling_rights());
+    move.set_prev_en_passant(board.get_en_passant_sq());
+
+    move.set_to_piece(to_piece_info.second);
+    if (to_piece_info.second != NO_PIECE)
+    {
+        move.set_flags(Move::Flags::CAPTURE);
+    }
+
+    if (from_piece == PAWN)
+    {
+        if (abs(from_sq - to_sq) == 16)
+        {
+            move.set_flags(Move::Flags::DOUBLE_PUSH);
+            return;
+        }
+        else if (to_sq == board.get_en_passant_sq())
+        {
+            move.set_flags(Move::Flags::EN_PASSANT_CAP);
+            return;
+        }
+        else if (to_sq / 8 % 7 == 0) // First or last row
+        {
+            move.set_flags(Move::Flags::PROMOTION_MASK);
+            return;
+        }
+    }
 }
 
 static bool perform_initial_data_loading()

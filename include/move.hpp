@@ -190,4 +190,39 @@ public:
         }
         return false;
     }
+    std::string to_uci() const
+    {
+        if (value == 0)
+            return "0000"; // Cas d'un coup nul (null move)
+
+        std::string uci = "";
+
+        int from = get_from_sq();
+        int to = get_to_sq();
+
+        // Conversion des coordonnées en caractères (file: a-h, rank: 1-8)
+        uci += (char)('a' + (from % 8));
+        uci += (char)('1' + (from / 8));
+        uci += (char)('a' + (to % 8));
+        uci += (char)('1' + (to / 8));
+
+        // Gestion de la promotion (UCI exige d'indiquer la pièce de promotion en minuscule)
+        if (is_promotion())
+        {
+            // Note: Selon ton encodage, tu devras peut-être stocker quelle pièce est choisie.
+            // Si ton moteur promeut par défaut en Dame (Queen) :
+            uci += 'q';
+
+            /* Si tu gères plusieurs types de promotion, il faudra extraire l'info de tes flags :
+            switch (get_promotion_piece()) {
+                case KNIGHT: uci += 'n'; break;
+                case BISHOP: uci += 'b'; break;
+                case ROOK:   uci += 'r'; break;
+                default:     uci += 'q'; break;
+            }
+            */
+        }
+
+        return uci;
+    }
 };

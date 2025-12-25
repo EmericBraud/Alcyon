@@ -18,7 +18,6 @@ void Board::clear()
     side_to_move = WHITE;
     zobrist_key = 0;
     fullmove_number = 0;
-    move_stack.clear();
     history.clear();
 }
 
@@ -46,11 +45,26 @@ std::pair<Color, Piece> Board::get_piece_on_square(int sq) const
     throw std::logic_error("Incoherent result, square should be occupied");
 }
 
-bool Board::play(Move &move)
+bool Board::play(const Move &move)
 {
-    history.push_back(zobrist_key);
+    if (move.get_from_piece() == PAWN || move.get_to_piece() != NO_PIECE)
+    {
+        last_irreversible_move_index = history.size(); // On marque ce point
+        halfmove_clock = 0;                            // On reset les 50 coups
+    }
+    else
+    {
+        halfmove_clock++;
+    }
+    const UndoInfo info{
+        zobrist_key,
+        halfmove_clock,
+        last_irreversible_move_index,
+        move};
+    history.push_back(info);
     const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
     Piece from_piece{move.get_from_piece()};
+    const Piece to_piece{move.get_to_piece()};
     if (from_piece == NO_PIECE)
     {
         std::cerr << "No piece found on square" << from_sq << std::endl;
@@ -62,24 +76,15 @@ bool Board::play(Move &move)
 
     const U64 to_sq_mask{sq_mask(to_sq)};
 
-    move.set_prev_castling_rights(castling_rights);
-    move.set_prev_en_passant(en_passant_sq);
     zobrist_key ^= zobrist_castling[castling_rights];
     if (en_passant_sq != EN_PASSANT_SQ_NONE)
         zobrist_key ^= zobrist_en_passant[en_passant_sq % 8];
     else
         zobrist_key ^= zobrist_en_passant[8];
 
+    en_passant_sq = EN_PASSANT_SQ_NONE;
     get_piece_bitboard(side_to_move, from_piece) ^= sq_mask(from_sq); // Delete old position
     HASH_PIECE(side_to_move, from_piece, from_sq);
-
-    // Checks if it is a promotion
-    if (move.set_promotion(side_to_move))
-    {
-        from_piece = QUEEN;
-    }
-    get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask; // Fill new position
-    HASH_PIECE(side_to_move, from_piece, to_sq);
 
     // Delete castling rights flags if rook is moved / captured
     const std::array<std::pair<Square, CastlingRights>, 4> castling_rooks_checker = {
@@ -96,135 +101,70 @@ bool Board::play(Move &move)
             castling_rights &= mask;
         }
     }
-    if (move.has_flag(Move::Flags::KING_CASTLE))
+
+    uint8_t required_rights, optional_rights;
+    int rook_from_sq, rook_to_sq;
+    // Checks if it is a promotion
+    switch (move.get_flags())
     {
+    case Move::Flags::PROMOTION_MASK:
+        from_piece = QUEEN;
+        break;
+    case Move::Flags::KING_CASTLE:
+        required_rights = side_to_move == WHITE ? WHITE_KINGSIDE : BLACK_KINGSIDE;
+        optional_rights = side_to_move == WHITE ? WHITE_QUEENSIDE : BLACK_QUEENSIDE;
+        rook_from_sq = side_to_move == WHITE ? Square::h1 : Square::h8;
+        rook_to_sq = side_to_move == WHITE ? Square::f1 : Square::f8;
+        if (!(castling_rights & required_rights))
+        {
+            throw std::logic_error("Castling rights missing");
+        }
+
+        get_piece_bitboard(side_to_move, ROOK) ^= (1ULL << rook_from_sq) | (1ULL << rook_to_sq);
+        HASH_PIECE(side_to_move, ROOK, rook_from_sq);
+        HASH_PIECE(side_to_move, ROOK, rook_to_sq);
+        castling_rights ^= required_rights;
+        if (optional_rights & castling_rights)
+        {
+            castling_rights ^= optional_rights;
+        }
+        break;
+    case Move::Flags::QUEEN_CASTLE:
+        required_rights = side_to_move == WHITE ? WHITE_QUEENSIDE : BLACK_QUEENSIDE;
+        optional_rights = side_to_move == WHITE ? WHITE_KINGSIDE : BLACK_KINGSIDE;
+        rook_from_sq = side_to_move == WHITE ? Square::a1 : Square::a8;
+        rook_to_sq = side_to_move == WHITE ? Square::d1 : Square::d8;
+        if (!(castling_rights & required_rights))
+        {
+            throw std::logic_error("Castling rights missing");
+        }
+
+        get_piece_bitboard(side_to_move, ROOK) ^= (1ULL << rook_from_sq) | (1ULL << rook_to_sq);
+        HASH_PIECE(side_to_move, ROOK, rook_from_sq);
+        HASH_PIECE(side_to_move, ROOK, rook_to_sq);
+        castling_rights ^= required_rights;
+        if (optional_rights & castling_rights)
+        {
+            castling_rights ^= optional_rights;
+        }
+        break;
+    case Move::Flags::EN_PASSANT_CAP:
         if (side_to_move == WHITE)
         {
-            if (!(castling_rights & WHITE_KINGSIDE))
-            {
-                throw std::logic_error("Castling rights missing");
-            }
-            U64 mask = (1ULL << Square::h1) | (1ULL << Square::f1);
-            bitboard &rook_bit = get_piece_bitboard(WHITE, ROOK);
-            rook_bit ^= mask;
-
-            HASH_PIECE(WHITE, ROOK, Square::h1);
-            HASH_PIECE(WHITE, ROOK, Square::f1);
-            castling_rights ^= WHITE_KINGSIDE;
-            if (castling_rights & WHITE_QUEENSIDE)
-            {
-                castling_rights ^= WHITE_QUEENSIDE;
-            }
-            goto play_normal_exit;
-        }
-        else
-        {
-            if (!(castling_rights & BLACK_KINGSIDE))
-            {
-                throw std::logic_error("Castling rights missing");
-            }
-            U64 mask = (1ULL << Square::h8) | (1ULL << Square::f8);
-            bitboard &rook_bit = get_piece_bitboard(BLACK, ROOK);
-            rook_bit ^= mask;
-            castling_rights ^= BLACK_KINGSIDE;
-
-            HASH_PIECE(BLACK, ROOK, Square::h8);
-            HASH_PIECE(BLACK, ROOK, Square::f8);
-            if (castling_rights & BLACK_QUEENSIDE)
-            {
-                castling_rights ^= BLACK_QUEENSIDE;
-            }
-            goto play_normal_exit;
-        }
-    }
-    else if (move.has_flag(Move::Flags::QUEEN_CASTLE))
-    {
-        if (side_to_move == WHITE)
-        {
-            if (!(castling_rights & WHITE_QUEENSIDE))
-            {
-                throw std::logic_error("Castling rights missing");
-            }
-            U64 mask = (1ULL) | (1ULL << Square::d1);
-            bitboard &rook_bit = get_piece_bitboard(WHITE, ROOK);
-            rook_bit ^= mask;
-
-            HASH_PIECE(WHITE, ROOK, Square::a1);
-            HASH_PIECE(WHITE, ROOK, Square::d1);
-            if (castling_rights & WHITE_KINGSIDE)
-            {
-                castling_rights ^= WHITE_KINGSIDE;
-            }
-            castling_rights ^= WHITE_QUEENSIDE;
-            goto play_normal_exit;
-        }
-        else
-        {
-            if (!(castling_rights & BLACK_QUEENSIDE))
-            {
-                throw std::logic_error("Castling rights missing");
-            }
-            U64 mask = (1ULL << Square::a8) | (1ULL << Square::d8);
-            bitboard &rook_bit = get_piece_bitboard(BLACK, ROOK);
-            rook_bit ^= mask;
-
-            HASH_PIECE(BLACK, ROOK, Square::a8);
-            HASH_PIECE(BLACK, ROOK, Square::d8);
-            castling_rights ^= BLACK_QUEENSIDE;
-            if (castling_rights & BLACK_KINGSIDE)
-            {
-                castling_rights ^= BLACK_KINGSIDE;
-            }
-            goto play_normal_exit;
-        }
-    }
-
-    // Checking if en passant
-    else if (move.set_en_passant(get_en_passant_sq()))
-    {
-
-        // Captures passed pawn
-        if (side_to_move == WHITE)
-        {
-            U64 cap_mask = sq_mask(to_sq - 8);
-            get_piece_bitboard(BLACK, PAWN) ^= cap_mask;
+            get_piece_bitboard(BLACK, PAWN) ^= sq_mask(to_sq - 8);
             HASH_PIECE(BLACK, PAWN, to_sq - 8);
         }
         else
         {
-            U64 cap_mask = sq_mask(to_sq + 8);
-            get_piece_bitboard(WHITE, PAWN) ^= cap_mask;
+            get_piece_bitboard(WHITE, PAWN) ^= sq_mask(to_sq + 8);
             HASH_PIECE(WHITE, PAWN, to_sq + 8);
         }
-        goto play_normal_exit;
+        break;
+    case Move::Flags::DOUBLE_PUSH:
+        en_passant_sq = (to_sq + from_sq) >> 1; // Avg of from_sq and to_sq gives the en_passant sq
     }
 
-    // Checking if an opponent square has to be updated
-    else if (side_to_move == WHITE && !(occupied_black & to_sq_mask))
-    {
-        goto play_normal_exit;
-    }
-
-    if (side_to_move == BLACK && !(occupied_white & to_sq_mask))
-    {
-        goto play_normal_exit;
-    }
-
-    for (int i{PAWN}; i <= KING; ++i)
-    {
-        if (get_piece_bitboard(opponent_color, i) & to_sq_mask)
-        {
-            get_piece_bitboard(opponent_color, i) ^= to_sq_mask;
-            move.set_capture(static_cast<Piece>(i));
-            HASH_PIECE(opponent_color, i, to_sq);
-            goto play_normal_exit;
-        }
-    }
-
-    throw std::logic_error("Occupancy mask and piece bitboards out of sync");
-    return false;
-play_normal_exit:
-    // Checking if move is pawn double push (if so sets flag)
+    // If king moves, delete the castling rights
     if (from_piece == KING) // get rid of castling rights if king moved
     {
         if (side_to_move == WHITE)
@@ -238,43 +178,36 @@ play_normal_exit:
             castling_rights &= (~BLACK_QUEENSIDE);
         }
     }
-    if (from_piece == PAWN && abs(from_sq - to_sq) == 16)
+
+    get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask; // Fill new position
+    HASH_PIECE(side_to_move, from_piece, to_sq);
+
+    // Checking if an opponent square has to be updated
+    if (to_piece != NO_PIECE)
     {
-        move.set_flags(Move::DOUBLE_PUSH);
-        en_passant_sq = (side_to_move == WHITE) ? from_sq + 8 : from_sq - 8;
+        get_piece_bitboard(opponent_color, to_piece) ^= to_sq_mask;
+        HASH_PIECE(opponent_color, to_piece, to_sq);
     }
-    else
-    {
-        en_passant_sq = EN_PASSANT_SQ_NONE;
-    }
+
     zobrist_key ^= zobrist_castling[castling_rights];
     if (en_passant_sq != EN_PASSANT_SQ_NONE)
         zobrist_key ^= zobrist_en_passant[en_passant_sq % 8];
     else
         zobrist_key ^= zobrist_en_passant[8];
 
-    // On inverse le trait (side to move)
-    zobrist_key ^= zobrist_black_to_move;
     update_occupancy();
     switch_trait();
     return true;
 }
 
-void Board::unplay(Move move)
+void Board::unplay(const Move move)
 {
     const Piece from_piece = (move.get_flags() == Move::PROMOTION_MASK) ? QUEEN : move.get_from_piece();
     const Piece to_piece = move.get_to_piece();
     const int from_sq = move.get_from_sq();
     const int to_sq = move.get_to_sq();
 
-    zobrist_key ^= zobrist_black_to_move;
-
     switch_trait();
-    zobrist_key ^= zobrist_castling[castling_rights];
-    if (en_passant_sq != EN_PASSANT_SQ_NONE)
-        zobrist_key ^= zobrist_en_passant[en_passant_sq % 8];
-    else
-        zobrist_key ^= zobrist_en_passant[8];
 
     const Color color = side_to_move;
     const U64 mask_from_piece = (1ULL << to_sq) | (1ULL << from_sq);
@@ -282,23 +215,15 @@ void Board::unplay(Move move)
     assert(from_bitboard & (1ULL << to_sq));
     assert(!(from_bitboard & (1ULL << from_sq)));
     from_bitboard ^= mask_from_piece;
-    HASH_PIECE(color, from_piece, to_sq);
-    HASH_PIECE(color, from_piece, from_sq);
     assert(!(from_bitboard & (1ULL << to_sq)));
     assert(from_bitboard & (1ULL << from_sq));
     castling_rights = move.get_prev_castling_rights();
     en_passant_sq = move.get_prev_en_passant(color);
-    zobrist_key ^= zobrist_castling[castling_rights];
-    if (en_passant_sq != EN_PASSANT_SQ_NONE)
-        zobrist_key ^= zobrist_en_passant[en_passant_sq % 8];
-    else
-        zobrist_key ^= zobrist_en_passant[8];
 
     if (to_piece != NO_PIECE)
     {
         const Color opponent_color = color == WHITE ? BLACK : WHITE;
         get_piece_bitboard(opponent_color, to_piece) |= 1ULL << to_sq;
-        HASH_PIECE(opponent_color, to_piece, to_sq);
     }
     switch (move.get_flags())
     {
@@ -306,52 +231,44 @@ void Board::unplay(Move move)
         if (color == WHITE)
         {
             get_piece_bitboard(color, ROOK) ^= 0xa0;
-            HASH_PIECE(color, ROOK, Square::f1);
-            HASH_PIECE(color, ROOK, Square::h1);
         }
         else
         {
             get_piece_bitboard(color, ROOK) ^= 0xa000000000000000;
-            HASH_PIECE(color, ROOK, Square::f8);
-            HASH_PIECE(color, ROOK, Square::h8);
         }
         break;
     case Move::Flags::QUEEN_CASTLE:
         if (color == WHITE)
         {
             get_piece_bitboard(color, ROOK) ^= 0x9;
-            HASH_PIECE(color, ROOK, Square::d1);
-            HASH_PIECE(color, ROOK, Square::a1);
         }
         else
         {
             get_piece_bitboard(color, ROOK) ^= 0x900000000000000;
-            HASH_PIECE(color, ROOK, Square::d8);
-            HASH_PIECE(color, ROOK, Square::a8);
         }
         break;
     case Move::EN_PASSANT_CAP:
         if (color == WHITE)
         {
             get_piece_bitboard(BLACK, PAWN) ^= sq_mask(to_sq - 8);
-            HASH_PIECE(BLACK, PAWN, to_sq - 8);
         }
         else
         {
             get_piece_bitboard(WHITE, PAWN) ^= sq_mask(to_sq + 8);
-            HASH_PIECE(WHITE, PAWN, to_sq + 8);
         }
         break;
     case Move::PROMOTION_MASK:
         get_piece_bitboard(color, PAWN) ^= sq_mask(from_sq);
         get_piece_bitboard(color, QUEEN) ^= sq_mask(from_sq);
-        HASH_PIECE(color, QUEEN, from_sq);
-        HASH_PIECE(color, PAWN, from_sq);
         break;
     default:
         break;
     }
     update_occupancy();
+    const UndoInfo info = history.back();
+    zobrist_key = info.zobrist_key;
+    halfmove_clock = info.halfmove_clock;
+    last_irreversible_move_index = info.last_irreversible_move_index;
     history.pop_back();
 }
 
@@ -360,9 +277,11 @@ bool Board::is_repetition() const
 
     int n = history.size();
 
-    for (int i = n - 2; i >= 0; i -= 2)
+    int stop = std::max(0, last_irreversible_move_index);
+
+    for (int i = n - 2; i >= stop; i -= 2)
     {
-        if (history[i] == zobrist_key)
+        if (history[i].zobrist_key == zobrist_key)
         {
             return true;
         }
