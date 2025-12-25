@@ -1,7 +1,7 @@
 #pragma once
 #include "move_generator.hpp"
 
-#define MAX_DEPTH 12
+#define MAX_DEPTH 25
 constexpr int INF = 1000000;
 
 struct MoveScorer
@@ -9,6 +9,15 @@ struct MoveScorer
     Move m;
     int score;
 };
+
+using Clock = std::chrono::steady_clock;
+
+const int pawnPhase = 0;
+const int knightPhase = 1;
+const int bishopPhase = 1;
+const int rookPhase = 2;
+const int queenPhase = 4;
+const int totalPhase = 24; // 16 pions(0) + 4 cavaliers(4) + 4 fous(4) + 4 tours(8) + 2 dames(8)
 
 constexpr int mg_pawn_table[64] = {
     0, 0, 0, 0, 0, 0, 0, 0,
@@ -101,83 +110,88 @@ class Computer
     long long q_nodes = 0;
 
     Move killer_moves[MAX_DEPTH][2];
+    Clock::time_point start_time;
+    int time_limit_ms = 0;
+    bool time_up = false;
 
     inline int eval() const
     {
-        int score{0};
+        int mg[2] = {0, 0}; // Score Midgame pour [White, Black]
+        int eg[2] = {0, 0}; // Score Endgame pour [White, Black]
+        int gamePhase = 0;
 
-        bool is_endgame = (std::popcount(board.get_piece_bitboard(WHITE, QUEEN)) == 0 &&
-                           std::popcount(board.get_piece_bitboard(BLACK, QUEEN)) == 0);
-
-        for (int piece{PAWN}; piece <= KING; ++piece)
+        for (int color = WHITE; color <= BLACK; ++color)
         {
-            bitboard wb = board.get_piece_bitboard(WHITE, piece);
-            while (wb)
+            for (int piece = PAWN; piece <= KING; ++piece)
             {
-                int sq = std::countr_zero(wb);
+                bitboard bb = board.get_piece_bitboard((Color)color, piece);
 
-                score += pieces_score[piece];
-
-                switch (piece)
+                while (bb)
                 {
-                case PAWN:
-                    score += mg_pawn_table[sq];
-                    break;
-                case KNIGHT:
-                    score += mg_knight_table[sq];
-                    break;
-                case BISHOP:
-                    score += mg_bishop_table[sq];
-                    break;
-                case ROOK:
-                    score += mg_rook_table[sq];
-                    break;
-                case QUEEN:
-                    score += mg_queen_table[sq];
-                    break;
-                case KING:
-                    score += (is_endgame ? eg_king_table[sq] : mg_king_table[sq]);
-                    break;
-                }
+                    int sq = std::countr_zero(bb);
+                    int mirror_sq = (color == WHITE) ? sq : sq ^ 56;
 
-                wb &= (wb - 1);
+                    // 1. Matériel et PST de base
+                    mg[color] += pieces_score[piece] + mg_pawn_table[mirror_sq]; // Utilise tes tables actuelles
+                    eg[color] += pieces_score[piece] + (piece == KING ? eg_king_table[mirror_sq] : mg_pawn_table[mirror_sq]);
+
+                    // 2. Calcul de la phase
+                    if (piece != PAWN && piece != KING)
+                    {
+                        gamePhase += (piece == KNIGHT) ? knightPhase : (piece == BISHOP) ? bishopPhase
+                                                                   : (piece == ROOK)     ? rookPhase
+                                                                                         : queenPhase;
+                    }
+
+                    // 3. Sécurité du Roi (Simplifiée)
+                    if (piece == KING)
+                    {
+                        mg[color] += evaluate_king_safety((Color)color, sq);
+                    }
+
+                    bb &= (bb - 1);
+                }
             }
 
-            bitboard bb = board.get_piece_bitboard(BLACK, piece);
-            while (bb)
-            {
-                int sq = std::countr_zero(bb);
-
-                score -= pieces_score[piece];
-
-                int mirror_sq = sq ^ 56;
-
-                switch (piece)
-                {
-                case PAWN:
-                    score -= mg_pawn_table[mirror_sq];
-                    break;
-                case KNIGHT:
-                    score -= mg_knight_table[mirror_sq];
-                    break;
-                case BISHOP:
-                    score -= mg_bishop_table[mirror_sq];
-                    break;
-                case ROOK:
-                    score -= mg_rook_table[mirror_sq];
-                    break;
-                case QUEEN:
-                    score -= mg_queen_table[mirror_sq];
-                    break;
-                case KING:
-                    score -= (is_endgame ? eg_king_table[mirror_sq] : mg_king_table[mirror_sq]);
-                    break;
-                }
-
-                bb &= (bb - 1);
-            }
+            // 4. Structure de pions
+            mg[color] += evaluate_pawn_structure((Color)color);
         }
 
+        // Calcul final avec interpolation (Tapered Eval)
+        int mgScore = mg[WHITE] - mg[BLACK];
+        int egScore = eg[WHITE] - eg[BLACK];
+
+        // On s'assure que gamePhase ne dépasse pas totalPhase
+        int phase = std::min(gamePhase, totalPhase);
+
+        return (mgScore * phase + egScore * (totalPhase - phase)) / totalPhase;
+    }
+    int evaluate_king_safety(Color color, int king_sq) const
+    {
+        int penalty = 0;
+        bitboard pawns = board.get_piece_bitboard(color, PAWN);
+
+        // On définit une zone devant le roi (ex: 3 cases)
+        bitboard shield_area = (color == WHITE) ? (1ULL << (king_sq + 7) | 1ULL << (king_sq + 8) | 1ULL << (king_sq + 9)) : (1ULL << (king_sq - 7) | 1ULL << (king_sq - 8) | 1ULL << (king_sq - 9));
+
+        int pawn_count = std::popcount(pawns & shield_area);
+        if (pawn_count == 0)
+            penalty -= 50; // Roi tout nu !
+
+        return penalty;
+    }
+    int evaluate_pawn_structure(Color color) const
+    {
+        int score = 0;
+        bitboard pawns = board.get_piece_bitboard(color, PAWN);
+
+        for (int i = 0; i < 8; ++i)
+        {
+            bitboard file_mask = 0x0101010101010101ULL << i;
+            int count = std::popcount(pawns & file_mask);
+            if (count > 1)
+                score -= 20; // Pénalité pion doublé
+        }
         return score;
     }
     int eval_relative(Color side_to_move) const
@@ -188,50 +202,63 @@ class Computer
 
     int qsearch(int alpha, int beta)
     {
+        check_time();
+        if (time_up)
+            return eval_relative(board.get_side_to_move());
         q_nodes++;
         total_nodes++; // On compte aussi ces noeuds
 
         // 1. Standing Pat (On suppose qu'on ne fait rien)
         // Si on ne capture pas, quel est le score ?
         // Cela sert de "borne inférieure" (Lower Bound).
-        int stand_pat = eval_relative(board.get_side_to_move());
+
+        int tt_score;
+        Move tt_move;
+        bool tt_hit = tt.probe(board.get_hash(), 0, 0, alpha, beta, tt_score, tt_move);
+        if (tt_hit)
+        {
+            return tt_score;
+        }
+
+        int alpha_orig = alpha;
 
         // Coupure Beta "Lazy" : Si la position actuelle est déjà trop forte, on coupe.
+        int stand_pat = eval_relative(board.get_side_to_move());
         if (stand_pat >= beta)
             return beta;
-        const int BIG_DELTA = 975;
-        if (stand_pat < alpha - BIG_DELTA)
-        {
-            // Même si je capture une Dame, je suis encore en dessous d'alpha ?
-            // Alors cette position est désespérée, inutile de chercher les captures.
-            // (Attention : ne pas faire ça en finale où la promotion change tout)
-            return alpha;
-        }
-        // Alpha peut augmenter si la position statique est bonne
         if (stand_pat > alpha)
             alpha = stand_pat;
+
+        const int BIG_DELTA = 975;
+        if (stand_pat < alpha - BIG_DELTA)
+            return alpha;
 
         const Color player = board.get_side_to_move();
         std::vector<Move> v = MoveGen::generate_pseudo_legal_captures(board, player);
 
-        // Tri simple : MVV-LVA est vital ici !
-        // Tu peux réutiliser ton score_move, mais une version simplifiée suffit
-        // TODO: Trier v par score (Capture la plus forte en premier)
         std::vector<MoveScorer> scored_moves;
         scored_moves.reserve(v.size());
 
-        for (Move &m : v)
+        for (const Move &m : v)
         {
-            m.set_to_piece(board.get_piece_on_square(m.get_to_sq()).second);
-            scored_moves.push_back({m, score_capture(m, board)});
+            int score = score_capture(m);
+            // Bonus si c'est le coup suggéré par la TT
+            if (tt_move.get_value() != 0 && m.get_value() == tt_move.get_value())
+                score += 2000000;
+            scored_moves.push_back({m, score});
         }
         std::sort(scored_moves.begin(), scored_moves.end(),
                   [](const MoveScorer &a, const MoveScorer &b)
                   {
                       return a.score > b.score;
                   });
+        int best_score = stand_pat;
+        Move best_move;
         for (MoveScorer &ele : scored_moves)
         {
+            check_time();
+            if (time_up)
+                break;
             auto &m = ele.m;
             int victim_val = 0;
             if (m.get_flags() == Move::EN_PASSANT_CAP)
@@ -273,13 +300,36 @@ class Computer
             board.unplay(m);
 
             if (score >= beta)
+            {
+                tt.store(board.get_hash(), 0, 0, beta, TT_BETA, m);
                 return beta;
+            }
 
             if (score > alpha)
+            {
                 alpha = score;
+                best_score = score;
+                best_move = m;
+            }
         }
 
+        TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
+        tt.store(board.get_hash(), 0, 0, best_score, flag, best_move);
+
         return alpha;
+    }
+    inline void check_time()
+    {
+        if (time_up)
+            return;
+
+        auto now = Clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+
+        if (elapsed >= time_limit_ms)
+        {
+            time_up = true;
+        }
     }
 
 public:
@@ -299,6 +349,9 @@ public:
             tt_cuts++;
             return tt_score;
         }
+        check_time();
+        if (time_up)
+            return eval_relative(board.get_side_to_move());
         if (depth <= 0)
         {
             return qsearch(alpha, beta);
@@ -321,15 +374,14 @@ public:
         }
 
         const Color player = board.get_side_to_move();
-        std::vector<Move> v = MoveGen::generate_pseudo_legal_moves(board, player);
+        std::vector<Move> v = MoveGen::generate_legal_moves(board);
 
         std::vector<MoveScorer> scored_moves;
         scored_moves.reserve(v.size());
 
-        for (Move &m : v)
+        for (const Move &m : v)
         {
-            m.set_to_piece(board.get_piece_on_square(m.get_to_sq()).second);
-            scored_moves.push_back({m, score_move(m, board, tt_move, depth)});
+            scored_moves.push_back({m, score_move(m, board, tt_move, ply)});
         }
 
         std::sort(scored_moves.begin(), scored_moves.end(),
@@ -346,14 +398,11 @@ public:
         int moves_searched = 0;
         for (auto &ele : scored_moves)
         {
+            check_time();
+            if (time_up)
+                break;
             Move &m = ele.m;
             board.play(m);
-
-            if (MoveGen::is_king_attacked(board, player))
-            {
-                board.unplay(m);
-                continue;
-            }
 
             legal_moves_count++;
             moves_searched++;
@@ -390,6 +439,7 @@ public:
             // B) Ou si le LMR a échoué (le coup semblait trop beau pour être vrai)
             if (needs_full_search)
             {
+
                 score = -negamax(depth - 1, -beta, -alpha, ply + 1);
             }
 
@@ -398,15 +448,15 @@ public:
             if (score >= beta)
             {
                 beta_cutoffs++;
-                tt.store(board.get_hash(), depth, ply, beta, TT_BETA, m);
+                tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
                 if (m.get_to_piece() == NO_PIECE && m.get_flags() != Move::EN_PASSANT_CAP)
                 {
                     int bonus = depth * depth;
                     history_moves[board.get_side_to_move()][m.get_from_sq()][m.get_to_sq()] += bonus;
-                    if (!(m.get_value() == killer_moves[depth][0].get_value()))
+                    if (!(m.get_value() == killer_moves[ply][0].get_value()))
                     {
-                        killer_moves[depth][1] = killer_moves[depth][0];
-                        killer_moves[depth][0] = m;
+                        killer_moves[ply][1] = killer_moves[ply][0];
+                        killer_moves[ply][0] = m;
                     }
                 }
                 return score;
@@ -445,10 +495,13 @@ public:
         return best_score;
     }
 
-    void play()
+    void play(int time_ms = 5000)
     {
+        time_limit_ms = time_ms;
+        time_up = false;
+        start_time = Clock::now();
+
         Move best_move;
-        long long nodes_previous_iter = 0;
         total_nodes = 0;
         tt_cuts = 0;
         beta_cutoffs = 0;
@@ -457,51 +510,42 @@ public:
 
         for (int current_depth = 1; current_depth <= MAX_DEPTH; ++current_depth)
         {
+            if (time_up)
+                break;
+
             int alpha = -INF;
             int beta = INF;
-            long long nodes_start = total_nodes;
-            q_nodes = 0;
 
             int score = negamax(current_depth, alpha, beta, 0);
 
-            long long nodes_this_iter = total_nodes - nodes_start;
-
-            double ebf = 0.0;
-            if (nodes_previous_iter > 0)
+            if (!time_up)
             {
-                ebf = (double)nodes_this_iter / (double)nodes_previous_iter;
+                // On garde le dernier résultat COMPLET
+                best_move = tt.get_move(board.get_hash());
+
+                std::cout << "Depth " << current_depth
+                          << " | Score " << score
+                          << " | Nodes " << total_nodes
+                          << std::endl;
             }
-            nodes_previous_iter = nodes_this_iter;
-
-            best_move = tt.get_move(board.get_hash());
-
-            double beta_rate = (total_nodes > 0) ? (double)beta_cutoffs / total_nodes * 100.0 : 0.0;
-
-            std::cout << "Prof: " << current_depth
-                      << " | Score: " << score
-                      << " | Noeuds: " << nodes_this_iter
-                      << " (QSearch: " << q_nodes << ")"
-                      << " | EBF: " << ebf
-                      << " | TT Hits: " << (double)tt_cuts / total_nodes * 100.0 << "%"
-                      << " | Beta Cuts: " << beta_rate << "%"
-                      << std::endl;
         }
+
         board.play(best_move);
     }
 
-    int score_move(Move &move, const Board &board, const Move &tt_move, int depth)
+    int score_move(const Move &move, const Board &board, const Move &tt_move, int ply)
     {
-        if (move.get_value() == tt_move.get_value())
+        if (tt_move.get_value() != 0 && move.get_value() == tt_move.get_value())
         {
             return 2000000;
         }
 
         const Piece from_piece{move.get_from_piece()};
 
-        const Piece to_piece{board.get_piece_on_square(move.get_to_sq()).second};
-        move.set_to_piece(to_piece);
+        const Piece to_piece{move.get_to_piece()};
+        const uint32_t flags{move.get_flags()};
 
-        if (move.set_promotion(board.get_side_to_move()))
+        if (flags == Move::Flags::PROMOTION_MASK)
         {
             return 1000000 + (pieces_score[QUEEN] * 10);
         }
@@ -512,18 +556,18 @@ public:
             int attacker_val = pieces_score[from_piece];
             return 1000000 + (victim_val * 10 - attacker_val);
         }
-        if (move.set_en_passant(board.get_en_passant_sq()))
+        if (flags == Move::Flags::EN_PASSANT_CAP)
         {
             int victim_val = pieces_score[PAWN];
             int attacker_val = pieces_score[from_piece];
             return 1000000 + (victim_val * 10 - attacker_val);
         }
-        if (move.get_value() == killer_moves[depth][0].get_value())
+        if (move.get_value() == killer_moves[ply][0].get_value())
             return 900000;
-        if (move.get_value() == killer_moves[depth][1].get_value())
+        if (move.get_value() == killer_moves[ply][1].get_value())
             return 800000;
 
-        if (move.get_to_piece() == NO_PIECE)
+        if (to_piece == NO_PIECE)
         {
             return history_moves[board.get_side_to_move()][move.get_from_sq()][move.get_to_sq()];
         }
@@ -531,7 +575,7 @@ public:
         return 0;
     }
     // Score uniquement pour le Quiescence Search (MVV-LVA)
-    int score_capture(Move &move, const Board &board) const
+    int score_capture(const Move &move) const
     {
         int attacker = move.get_from_piece();
 
@@ -545,8 +589,7 @@ public:
         else
         {
             // On regarde sur la case d'arrivée
-            int victim = board.get_piece_on_square(move.get_to_sq()).second;
-            move.set_to_piece(static_cast<Piece>(victim));
+            const int victim = move.get_to_piece();
             if (victim != NO_PIECE)
             {
                 victim_val = pieces_score[victim];
@@ -560,7 +603,7 @@ public:
         int score = 1000000 + (victim_val * 10 - attacker_val);
 
         // Bonus Promotion
-        if (move.get_flags() & Move::PROMOTION_MASK)
+        if (move.get_flags() == Move::PROMOTION_MASK)
         {
             score += pieces_score[QUEEN];
         }
@@ -579,7 +622,7 @@ public:
     Computer(Board &board) : board(board)
     {
         init_zobrist();
-        tt.resize(64);
+        tt.resize(256);
         clear_killers();
         clear_history();
     }

@@ -97,6 +97,7 @@ TEST_F(MoveGenTest, MoveGenEnPassant)
     Board b;
     b.load_fen("rnbqkbnr/pppp1ppp/8/8/5p2/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     Move move(Square::e2, Square::e4, PAWN);
+    MoveGen::init_move_flags(b, move);
     b.play(move);
     U64 mask = MoveGen::get_legal_moves_mask(b, Square::f4);
     ASSERT_EQ(mask, 0x300000);
@@ -130,6 +131,7 @@ TEST_F(MoveGenTest, EnPassantAfterCheckTest)
     U64 valid_mask = MoveGen::get_legal_moves_mask(b, Square::e2);
     ASSERT_EQ(valid_mask, 0x10100000);
     Move m{Square::e2, Square::e4, PAWN};
+    MoveGen::init_move_flags(b, m);
     b.play(m);
     ASSERT_EQ(b.get_en_passant_sq(), Square::e3);
     valid_mask = MoveGen::get_legal_moves_mask(b, Square::f4);
@@ -144,8 +146,38 @@ TEST_F(MoveGenTest, EnPassantAfterCheckTest)
      * is still unchanged.
      */
     Move m2{Square::f4, Square::e3, PAWN};
+    MoveGen::init_move_flags(b, m2);
     b.play(m2);
     ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0xef00);
     ASSERT_EQ(b.get_piece_bitboard(BLACK, PAWN), 0xdf000000100000);
     ASSERT_EQ(b.get_en_passant_sq(), EN_PASSANT_SQ_NONE);
+}
+
+U64 Perft(Board &b, int depth)
+{
+    U64 nodes = 0;
+    std::vector<Move> leg_moves = MoveGen::generate_legal_moves(b);
+    if (depth == 1)
+        return leg_moves.size();
+
+    for (const Move &m : leg_moves)
+    {
+        b.play(m);
+        nodes += Perft(b, depth - 1);
+        b.unplay(m);
+    }
+    return nodes;
+}
+
+TEST_F(MoveGenTest, perft_test)
+{
+    Board b{};
+    b.load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0");
+    std::array<U64, 5> known_n_nodes = {48, 2039, 97862, 4085603, 193690690};
+
+    for (int i{0}; i < 5; ++i)
+    {
+        const U64 n{Perft(b, i + 1)};
+        ASSERT_EQ(n, known_n_nodes[i]);
+    }
 }

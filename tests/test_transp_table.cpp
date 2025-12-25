@@ -1,0 +1,75 @@
+#include "computer.hpp"
+#include "gtest/gtest.h"
+
+class TTTest : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+    }
+};
+TEST_F(TTTest, MateScoreConsistency)
+{
+    TranspositionTable tt;
+    tt.resize(1);
+    uint64_t key = 12345ULL;
+
+    // Si on est au ply 5 et qu'on voit un mat dans 3 coups (score = MATE - 8)
+    int score_found_at_ply_5 = MATE_SCORE - 8;
+    int ply_found = 5;
+
+    tt.store(key, 10, ply_found, score_found_at_ply_5, TT_EXACT, Move());
+
+    int retrieved_score;
+    Move m;
+    // On sonde à la racine (ply 0)
+    bool hit = tt.probe(key, 10, 0, -1000000, 1000000, retrieved_score, m);
+
+    ASSERT_TRUE(hit);
+
+    // CORRECTION :
+    // Le mat était à 3 coups de distance du ply 5 (8 - 5 = 3).
+    // À la racine (ply 0), il est donc toujours à 3 coups de distance.
+    // Le score attendu est MATE_SCORE - 3.
+    ASSERT_EQ(retrieved_score, MATE_SCORE - 3);
+}
+TEST_F(TTTest, DepthReplacement)
+{
+    TranspositionTable tt;
+    tt.resize(1);
+    uint64_t key = 0xABC;
+
+    // 1. Stocke profondeur 5
+    tt.store(key, 5, 0, 100, TT_EXACT, Move());
+
+    // 2. Tente de stocker profondeur 3 sur la même clé
+    tt.store(key, 3, 0, 200, TT_EXACT, Move());
+
+    int score;
+    Move m;
+    tt.probe(key, 5, 0, -INF, INF, score, m);
+    ASSERT_EQ(score, 100); // La profondeur 5 doit avoir été conservée car 5 > 3
+}
+
+TEST_F(TTTest, AlphaBetaCuts)
+{
+    TranspositionTable tt;
+    tt.resize(1);
+    uint64_t key = 0x1;
+    int score;
+    Move m;
+
+    // Stocke une borne ALPHA (Upper Bound) de 50
+    tt.store(key, 10, 0, 50, TT_ALPHA, Move());
+
+    // Test 1 : Alpha actuel est 60. On sait que score <= 50.
+    // Donc score < alpha, on peut renvoyer alpha.
+    bool hit = tt.probe(key, 10, 0, 60, 80, score, m);
+    ASSERT_TRUE(hit);
+    ASSERT_EQ(score, 60);
+
+    // Test 2 : Beta actuel est 40. On sait que score <= 50.
+    // On ne peut pas conclure si le score est > 40 ou non.
+    hit = tt.probe(key, 10, 0, 30, 40, score, m);
+    ASSERT_FALSE(hit);
+}
