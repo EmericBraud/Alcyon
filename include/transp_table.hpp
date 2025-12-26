@@ -98,12 +98,12 @@ public:
                 }
                 if (entry.flag == TT_ALPHA && score <= alpha)
                 {
-                    return_score = alpha;
+                    return_score = score;
                     return true;
                 }
                 if (entry.flag == TT_BETA && score >= beta)
                 {
-                    return_score = beta;
+                    return_score = score;
                     return true;
                 }
             }
