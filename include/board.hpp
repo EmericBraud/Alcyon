@@ -248,4 +248,14 @@ public:
     }
 
     void undo_last_move();
+
+    uint16_t get_halfmove_clock()
+    {
+        return halfmove_clock;
+    }
+
+    inline int get_history_size()
+    {
+        return history.size();
+    }
 };

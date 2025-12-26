@@ -5,7 +5,7 @@ project(Chess26 VERSION 1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_compile_options(-Wall -Wextra -g -O3 -march=native)
+add_compile_options(-Wall -Wextra -g -flto -O3 -march=native)
 
 # -------------------------------------------------------------------
 # Threads (needed for Threads::Threads)

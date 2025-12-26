@@ -160,9 +160,16 @@ class Computer
 public:
     int negamax(int depth, int alpha, int beta, int ply)
     {
-        if (ply > 0 && board.is_repetition())
+        if (ply > 0)
         {
-            return 0;
+            if (board.is_repetition() || board.get_halfmove_clock() >= 100)
+            {
+                if (board.get_history_size() < 20)
+                {
+                    return -25;
+                }
+                return 0;
+            }
         }
         int tt_score;
         Move tt_move;
@@ -312,44 +319,87 @@ public:
 
         return best_score;
     }
-
-    void play(int time_ms = 5000)
+    void play(int time_ms = 20000)
     {
         time_limit_ms = time_ms;
         time_up = false;
         start_time = Clock::now();
 
         Move best_move;
+        int last_score = 0; // On commence à 0
+        int window = 30;    // Taille de la fenêtre (environ 1/3 de pion)
+
         total_nodes = 0;
         tt_cuts = 0;
         beta_cutoffs = 0;
         clear_killers();
         age_history();
 
+        // ... clear history/killers ...
+
         for (int current_depth = 1; current_depth <= MAX_DEPTH; ++current_depth)
         {
             if (time_up)
                 break;
 
-            int alpha = -INF;
-            int beta = INF;
+            int alpha = last_score - window;
+            int beta = last_score + window;
 
-            int score = negamax(current_depth, alpha, beta, 0);
+            // Si on est à faible profondeur, on garde INF pour la stabilité
+            if (current_depth < 3)
+            {
+                alpha = -INF;
+                beta = INF;
+            }
+
+            while (true)
+            {
+                int score = negamax(current_depth, alpha, beta, 0);
+
+                if (time_up)
+                    break;
+
+                if (score <= alpha)
+                {
+                    // FAIL LOW : On est moins bon que prévu, on descend alpha
+                    alpha -= window;
+                    window *= 2; // On élargit pour la prochaine fois
+                }
+                else if (score >= beta)
+                {
+                    // FAIL HIGH : On est meilleur que prévu, on monte beta
+                    beta += window;
+                    window *= 2;
+                }
+                else
+                {
+                    // SUCCESS : Le score est dans la fenêtre
+                    last_score = score;
+                    // On réduit un peu la fenêtre pour la profondeur suivante
+                    window = 30 + std::abs(last_score) / 10;
+                    break;
+                }
+
+                // Sécurité : si la fenêtre devient trop large, on passe en INF
+                if (alpha < -900000)
+                    alpha = -INF;
+                if (beta > 900000)
+                    beta = INF;
+            }
 
             if (!time_up)
             {
-                // On garde le dernier résultat COMPLET
                 best_move = tt.get_move(board.get_hash());
-
                 std::cout << "Depth " << current_depth
-                          << " | Score " << score
+                          << " | Score " << last_score
                           << " | Nodes " << total_nodes
                           << " | PV: " << get_pv_line(current_depth)
                           << std::endl;
             }
         }
 
-        board.play(best_move);
+        if (best_move.get_value() != 0)
+            board.play(best_move);
     }
 
     int score_move(const Move &move, const Board &board, const Move &tt_move, int ply)

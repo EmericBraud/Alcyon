@@ -276,6 +276,8 @@ bool Board::is_repetition() const
 {
 
     int n = history.size();
+    if (n < 4)
+        return false;
 
     int stop = std::max(0, last_irreversible_move_index);
 
