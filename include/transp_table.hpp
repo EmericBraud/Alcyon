@@ -1,5 +1,5 @@
 #pragma once
-#include "move.hpp"
+#include "move_list.hpp"
 
 // Drapeaux pour savoir quel type de score nous avons stocké
 enum TTFlag : uint8_t

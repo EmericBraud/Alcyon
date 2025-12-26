@@ -75,10 +75,11 @@ TEST_F(ZorbistTest, ZobristIntegrityDeep)
     // On joue 5 coups légaux au hasard
     for (int i = 0; i < 5; ++i)
     {
-        auto moves = MoveGen::generate_legal_moves(b);
-        if (moves.empty())
+        MoveList list;
+        MoveGen::generate_legal_moves(b, list);
+        if (list.count == 0)
             break;
-        Move m = moves[0];
+        Move m = list[0];
         b.play(m);
         history.push_back(m);
     }

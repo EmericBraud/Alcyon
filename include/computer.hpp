@@ -1,5 +1,5 @@
 #pragma once
-#include "move_generator.hpp"
+#include "pos_eval.hpp"
 
 #define MAX_DEPTH 25
 constexpr int INF = 1000000;
@@ -12,83 +12,6 @@ struct MoveScorer
 
 using Clock = std::chrono::steady_clock;
 
-const int pawnPhase = 0;
-const int knightPhase = 1;
-const int bishopPhase = 1;
-const int rookPhase = 2;
-const int queenPhase = 4;
-const int totalPhase = 24; // 16 pions(0) + 4 cavaliers(4) + 4 fous(4) + 4 tours(8) + 2 dames(8)
-
-constexpr int mg_pawn_table[64] = {
-    0, 0, 0, 0, 0, 0, 0, 0,
-    50, 50, 50, 50, 50, 50, 50, 50,
-    10, 10, 20, 30, 30, 20, 10, 10,
-    5, 5, 10, 25, 25, 10, 5, 5,
-    0, 0, 0, 20, 20, 0, 0, 0,
-    5, -5, -10, 0, 0, -10, -5, 5,
-    5, 10, 10, -20, -20, 10, 10, 5,
-    0, 0, 0, 0, 0, 0, 0, 0};
-
-constexpr int mg_knight_table[64] = {
-    -50, -40, -30, -30, -30, -30, -40, -50,
-    -40, -20, 0, 0, 0, 0, -20, -40,
-    -30, 0, 10, 15, 15, 10, 0, -30,
-    -30, 5, 15, 20, 20, 15, 5, -30,
-    -30, 0, 15, 20, 20, 15, 0, -30,
-    -30, 5, 10, 15, 15, 10, 5, -30,
-    -40, -20, 0, 5, 5, 0, -20, -40,
-    -50, -40, -30, -30, -30, -30, -40, -50};
-
-constexpr int mg_bishop_table[64] = {
-    -20, -10, -10, -10, -10, -10, -10, -20,
-    -10, 0, 0, 0, 0, 0, 0, -10,
-    -10, 0, 5, 10, 10, 5, 0, -10,
-    -10, 5, 5, 10, 10, 5, 5, -10,
-    -10, 0, 10, 10, 10, 10, 0, -10,
-    -10, 10, 10, 10, 10, 10, 10, -10,
-    -10, 5, 0, 0, 0, 0, 5, -10,
-    -20, -10, -10, -10, -10, -10, -10, -20};
-
-constexpr int mg_rook_table[64] = {
-    0, 0, 0, 0, 0, 0, 0, 0,
-    5, 10, 10, 10, 10, 10, 10, 5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    0, 0, 0, 5, 5, 0, 0, 0};
-
-constexpr int mg_queen_table[64] = {
-    -20, -10, -10, -5, -5, -10, -10, -20,
-    -10, 0, 0, 0, 0, 0, 0, -10,
-    -10, 0, 5, 5, 5, 5, 0, -10,
-    -5, 0, 5, 5, 5, 5, 0, -5,
-    0, 0, 5, 5, 5, 5, 0, -5,
-    -10, 5, 5, 5, 5, 5, 0, -10,
-    -10, 0, 5, 0, 0, 0, 0, -10,
-    -20, -10, -10, -5, -5, -10, -10, -20};
-
-constexpr int mg_king_table[64] = {
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -20, -30, -30, -40, -40, -30, -30, -20,
-    -10, -20, -20, -20, -20, -20, -20, -10,
-    20, 20, 0, 0, 0, 0, 20, 20,
-    20, 30, 5, 0, 0, 5, 30, 20};
-
-constexpr int eg_king_table[64] = {
-    -50, -40, -30, -20, -20, -30, -40, -50,
-    -30, -20, -10, 0, 0, -10, -20, -30,
-    -30, -10, 20, 30, 30, 20, -10, -30,
-    -30, -10, 30, 40, 40, 30, -10, -30,
-    -30, -10, 30, 40, 40, 30, -10, -30,
-    -30, -10, 20, 30, 30, 20, -10, -30,
-    -30, -30, 0, 0, 0, 0, -30, -30,
-    -50, -30, -30, -30, -30, -30, -30, -50};
-
 class Computer
 {
     Board &board;
@@ -96,14 +19,7 @@ class Computer
     std::array<Move, MAX_DEPTH> move_stack;
     // [Color] [From sq] [To sq]
     int history_moves[2][64][64];
-    std::array<int, N_PIECES_TYPE_HALF> pieces_score = {
-        100,   // Pawn
-        300,   // Knight
-        300,   // Bishop
-        500,   // Tower
-        900,   // Queen
-        10000, // King
-    };
+
     long long total_nodes = 0;
     long long tt_cuts = 0;
     long long beta_cutoffs = 0;
@@ -114,97 +30,11 @@ class Computer
     int time_limit_ms = 0;
     bool time_up = false;
 
-    inline int eval() const
-    {
-        int mg[2] = {0, 0}; // Score Midgame pour [White, Black]
-        int eg[2] = {0, 0}; // Score Endgame pour [White, Black]
-        int gamePhase = 0;
-
-        for (int color = WHITE; color <= BLACK; ++color)
-        {
-            for (int piece = PAWN; piece <= KING; ++piece)
-            {
-                bitboard bb = board.get_piece_bitboard((Color)color, piece);
-
-                while (bb)
-                {
-                    int sq = std::countr_zero(bb);
-                    int mirror_sq = (color == WHITE) ? sq : sq ^ 56;
-
-                    // 1. Matériel et PST de base
-                    mg[color] += pieces_score[piece] + mg_pawn_table[mirror_sq]; // Utilise tes tables actuelles
-                    eg[color] += pieces_score[piece] + (piece == KING ? eg_king_table[mirror_sq] : mg_pawn_table[mirror_sq]);
-
-                    // 2. Calcul de la phase
-                    if (piece != PAWN && piece != KING)
-                    {
-                        gamePhase += (piece == KNIGHT) ? knightPhase : (piece == BISHOP) ? bishopPhase
-                                                                   : (piece == ROOK)     ? rookPhase
-                                                                                         : queenPhase;
-                    }
-
-                    // 3. Sécurité du Roi (Simplifiée)
-                    if (piece == KING)
-                    {
-                        mg[color] += evaluate_king_safety((Color)color, sq);
-                    }
-
-                    bb &= (bb - 1);
-                }
-            }
-
-            // 4. Structure de pions
-            mg[color] += evaluate_pawn_structure((Color)color);
-        }
-
-        // Calcul final avec interpolation (Tapered Eval)
-        int mgScore = mg[WHITE] - mg[BLACK];
-        int egScore = eg[WHITE] - eg[BLACK];
-
-        // On s'assure que gamePhase ne dépasse pas totalPhase
-        int phase = std::min(gamePhase, totalPhase);
-
-        return (mgScore * phase + egScore * (totalPhase - phase)) / totalPhase;
-    }
-    int evaluate_king_safety(Color color, int king_sq) const
-    {
-        int penalty = 0;
-        bitboard pawns = board.get_piece_bitboard(color, PAWN);
-
-        // On définit une zone devant le roi (ex: 3 cases)
-        bitboard shield_area = (color == WHITE) ? (1ULL << (king_sq + 7) | 1ULL << (king_sq + 8) | 1ULL << (king_sq + 9)) : (1ULL << (king_sq - 7) | 1ULL << (king_sq - 8) | 1ULL << (king_sq - 9));
-
-        int pawn_count = std::popcount(pawns & shield_area);
-        if (pawn_count == 0)
-            penalty -= 50; // Roi tout nu !
-
-        return penalty;
-    }
-    int evaluate_pawn_structure(Color color) const
-    {
-        int score = 0;
-        bitboard pawns = board.get_piece_bitboard(color, PAWN);
-
-        for (int i = 0; i < 8; ++i)
-        {
-            bitboard file_mask = 0x0101010101010101ULL << i;
-            int count = std::popcount(pawns & file_mask);
-            if (count > 1)
-                score -= 20; // Pénalité pion doublé
-        }
-        return score;
-    }
-    int eval_relative(Color side_to_move) const
-    {
-        int score = eval();
-        return (side_to_move == WHITE) ? score : -score;
-    }
-
     int qsearch(int alpha, int beta)
     {
         check_time();
         if (time_up)
-            return eval_relative(board.get_side_to_move());
+            return eval::eval_relative(board.get_side_to_move(), board);
         q_nodes++;
         total_nodes++; // On compte aussi ces noeuds
 
@@ -223,7 +53,7 @@ class Computer
         int alpha_orig = alpha;
 
         // Coupure Beta "Lazy" : Si la position actuelle est déjà trop forte, on coupe.
-        int stand_pat = eval_relative(board.get_side_to_move());
+        int stand_pat = eval::eval_relative(board.get_side_to_move(), board);
         if (stand_pat >= beta)
             return beta;
         if (stand_pat > alpha)
@@ -234,47 +64,42 @@ class Computer
             return alpha;
 
         const Color player = board.get_side_to_move();
-        std::vector<Move> v = MoveGen::generate_pseudo_legal_captures(board, player);
+        MoveList list;
+        MoveGen::generate_pseudo_legal_captures(board, player, list);
 
-        std::vector<MoveScorer> scored_moves;
-        scored_moves.reserve(v.size());
-
-        for (const Move &m : v)
+        for (int i = 0; i < list.count; ++i)
         {
-            int score = score_capture(m);
+            int score = score_capture(list[i]);
             // Bonus si c'est le coup suggéré par la TT
-            if (tt_move.get_value() != 0 && m.get_value() == tt_move.get_value())
+            if (tt_move.get_value() != 0 && list[i].get_value() == tt_move.get_value() && (list[i].get_flags() == Move::Flags::CAPTURE || list[i].get_flags() == Move::Flags::EN_PASSANT_CAP || list[i].get_flags() == Move::Flags::PROMOTION_MASK))
+            {
                 score += 2000000;
-            scored_moves.push_back({m, score});
+            }
+            list.scores[i] = score;
         }
-        std::sort(scored_moves.begin(), scored_moves.end(),
-                  [](const MoveScorer &a, const MoveScorer &b)
-                  {
-                      return a.score > b.score;
-                  });
+
         int best_score = stand_pat;
         Move best_move;
-        for (MoveScorer &ele : scored_moves)
+        for (int i = 0; i < list.count; ++i)
         {
+            Move &m = list.pick_best_move(i);
             check_time();
             if (time_up)
                 break;
-            auto &m = ele.m;
             int victim_val = 0;
             if (m.get_flags() == Move::EN_PASSANT_CAP)
             {
-                victim_val = pieces_score[PAWN];
+                victim_val = eval::get_piece_score(PAWN);
             }
             else
             {
-                int victim = board.get_piece_on_square(m.get_to_sq()).second;
+                int victim = m.get_to_piece();
                 if (victim != NO_PIECE)
-                    victim_val = pieces_score[victim];
-                m.set_to_piece(static_cast<Piece>(victim));
+                    victim_val = eval::get_piece_score(victim);
             }
-            int attacker_val = pieces_score[m.get_from_piece()];
+            int attacker_val = eval::get_piece_score(m.get_from_piece());
             if (attacker_val == 0)
-                attacker_val = pieces_score[board.get_piece_on_square(m.get_from_sq()).second];
+                attacker_val = eval::get_piece_score(board.get_piece_on_square(m.get_from_sq()).second);
 
             if (attacker_val > victim_val)
             {
@@ -351,7 +176,7 @@ public:
         }
         check_time();
         if (time_up)
-            return eval_relative(board.get_side_to_move());
+            return eval::eval_relative(board.get_side_to_move(), board);
         if (depth <= 0)
         {
             return qsearch(alpha, beta);
@@ -374,21 +199,13 @@ public:
         }
 
         const Color player = board.get_side_to_move();
-        std::vector<Move> v = MoveGen::generate_legal_moves(board);
+        MoveList list;
+        MoveGen::generate_legal_moves(board, list);
 
-        std::vector<MoveScorer> scored_moves;
-        scored_moves.reserve(v.size());
-
-        for (const Move &m : v)
+        for (int i = 0; i < list.count; ++i)
         {
-            scored_moves.push_back({m, score_move(m, board, tt_move, ply)});
+            list.scores[i] = score_move(list.moves[i], board, tt_move, ply);
         }
-
-        std::sort(scored_moves.begin(), scored_moves.end(),
-                  [](const MoveScorer &a, const MoveScorer &b)
-                  {
-                      return a.score > b.score;
-                  });
 
         int legal_moves_count = 0;
         int best_score = -INF;
@@ -396,12 +213,13 @@ public:
         int alpha_orig = alpha;
 
         int moves_searched = 0;
-        for (auto &ele : scored_moves)
+        for (int i = 0; i < list.count; ++i)
         {
             check_time();
             if (time_up)
                 break;
-            Move &m = ele.m;
+            Move &m = list.pick_best_move(i);
+            const int m_score = list.scores[i];
             board.play(m);
 
             legal_moves_count++;
@@ -409,7 +227,7 @@ public:
 
             int score;
             bool needs_full_search = true;
-            bool is_tactical = (ele.score >= 900000);
+            bool is_tactical = (m_score >= 900000);
             // LMR (Late Move Reduction)
             // Conditions :
             // 1. Profondeur suffisante (> 2)
@@ -526,6 +344,7 @@ public:
                 std::cout << "Depth " << current_depth
                           << " | Score " << score
                           << " | Nodes " << total_nodes
+                          << " | PV: " << get_pv_line(current_depth)
                           << std::endl;
             }
         }
@@ -547,19 +366,19 @@ public:
 
         if (flags == Move::Flags::PROMOTION_MASK)
         {
-            return 1000000 + (pieces_score[QUEEN] * 10);
+            return 1000000 + (eval::get_piece_score(QUEEN) * 10);
         }
 
         if (to_piece != NO_PIECE)
         {
-            int victim_val = pieces_score[to_piece];
-            int attacker_val = pieces_score[from_piece];
+            int victim_val = eval::get_piece_score(to_piece);
+            int attacker_val = eval::get_piece_score(from_piece);
             return 1000000 + (victim_val * 10 - attacker_val);
         }
         if (flags == Move::Flags::EN_PASSANT_CAP)
         {
-            int victim_val = pieces_score[PAWN];
-            int attacker_val = pieces_score[from_piece];
+            int victim_val = eval::get_piece_score(PAWN);
+            int attacker_val = eval::get_piece_score(from_piece);
             return 1000000 + (victim_val * 10 - attacker_val);
         }
         if (move.get_value() == killer_moves[ply][0].get_value())
@@ -584,7 +403,7 @@ public:
 
         if (move.get_flags() == Move::EN_PASSANT_CAP)
         {
-            victim_val = pieces_score[PAWN];
+            victim_val = eval::get_piece_score(PAWN);
         }
         else
         {
@@ -592,12 +411,12 @@ public:
             const int victim = move.get_to_piece();
             if (victim != NO_PIECE)
             {
-                victim_val = pieces_score[victim];
+                victim_val = eval::get_piece_score(victim);
             }
         }
 
         // 3. Calcul du score
-        int attacker_val = pieces_score[attacker];
+        int attacker_val = eval::get_piece_score(attacker);
 
         // Formule MVV-LVA standard
         int score = 1000000 + (victim_val * 10 - attacker_val);
@@ -605,7 +424,7 @@ public:
         // Bonus Promotion
         if (move.get_flags() == Move::PROMOTION_MASK)
         {
-            score += pieces_score[QUEEN];
+            score += eval::get_piece_score(QUEEN);
         }
 
         return score;
@@ -618,11 +437,28 @@ public:
                     history_moves[c][f][t] /= 8;
     }
 
+    std::string get_pv_line(int depth)
+    {
+        std::string pv_line = "";
+        Board temp_board = board; // Copie locale pour ne pas corrompre le plateau réel
+
+        for (int i = 0; i < depth; i++)
+        {
+            Move m = tt.get_move(temp_board.get_hash());
+            if (m.get_value() == 0)
+                break; // Plus de coup en cache
+
+            pv_line += m.to_uci() + " ";
+            temp_board.play(m);
+        }
+        return pv_line;
+    }
+
 public:
     Computer(Board &board) : board(board)
     {
         init_zobrist();
-        tt.resize(256);
+        tt.resize(1024);
         clear_killers();
         clear_history();
     }
