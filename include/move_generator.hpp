@@ -42,16 +42,16 @@ namespace MoveGen
     void initialize_bishop_masks();
     void initialize_pawn_masks();
 
-    std::vector<Move> generate_pseudo_legal_moves(Board &board, Color color);
-    std::vector<Move> generate_pseudo_legal_captures(const Board &board, Color color);
+    void generate_pseudo_legal_moves(Board &board, Color color, MoveList &list);
+    void generate_pseudo_legal_captures(const Board &board, Color color, MoveList &list);
     U64 get_legal_moves_mask(Board &board, int from_sq);
 
     bool is_king_attacked(const Board &board, Color us);
 
     bool is_mask_attacked(Board &board, const U64 mask);
-    std::vector<Move> generate_castle_moves(Board &board);
+    void generate_castle_moves(Board &board, MoveList &list);
 
-    std::vector<Move> generate_legal_moves(Board &board);
+    void generate_legal_moves(Board &board, MoveList &list);
 
     U64 generate_knight_moves(int from_sq, const Board &board);
     U64 generate_rook_moves(int from_sq, const Board &board);

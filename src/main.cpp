@@ -4,7 +4,7 @@ int main()
 {
     MoveGen::initialize_bitboard_tables();
     Board b{};
-    b.load_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    b.load_fen(FEN_INIT_POS);
 
     GUI gui{b};
     gui.run();

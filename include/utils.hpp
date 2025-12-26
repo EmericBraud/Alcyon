@@ -27,6 +27,7 @@
 #define EN_PASSANT_SQ_NONE 255
 #define N_PIECES_TYPE 12
 #define N_PIECES_TYPE_HALF 6
+#define FEN_INIT_POS "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 constexpr int MATE_SCORE = 100000;
 

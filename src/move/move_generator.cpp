@@ -190,6 +190,12 @@ void MoveGen::initialize_bitboard_tables()
 
     std::cout << "Bitboard tables initialized." << std::endl;
 }
+/// @brief Generates pseudo legal moves mask !! does not include castling moves
+/// @param board
+/// @param sq
+/// @param color
+/// @param piece_type
+/// @return
 inline U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
 {
     U64 target_mask;
@@ -263,9 +269,8 @@ U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq)
     }
     return get_pseudo_moves_mask(board, sq, color, piece_type);
 }
-std::vector<Move> MoveGen::generate_pseudo_legal_moves(Board &board, const Color color)
+void MoveGen::generate_pseudo_legal_moves(Board &board, const Color color, MoveList &list)
 {
-    std::vector<Move> moves;
     const bitboard opponent_king_mask{~board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING)};
 
     for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
@@ -285,18 +290,15 @@ std::vector<Move> MoveGen::generate_pseudo_legal_moves(Board &board, const Color
                     target_sq,
                     static_cast<Piece>(piece_type)};
                 MoveGen::init_move_flags(board, m);
-                moves.push_back(m);
+                list.push(m);
             }
         }
     }
-    std::vector<Move> castling_moves = generate_castle_moves(board);
-    moves.insert(moves.end(), castling_moves.begin(), castling_moves.end());
-    return moves;
+    generate_castle_moves(board, list);
 }
 
-std::vector<Move> MoveGen::generate_pseudo_legal_captures(const Board &board, Color color)
+void MoveGen::generate_pseudo_legal_captures(const Board &board, Color color, MoveList &list)
 {
-    std::vector<Move> moves;
     const bitboard opponent_king_mask{~board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING)};
     const bitboard opponent_occ = board.get_occupancy(color == WHITE ? BLACK : WHITE) & opponent_king_mask;
 
@@ -317,15 +319,19 @@ std::vector<Move> MoveGen::generate_pseudo_legal_captures(const Board &board, Co
                     target_sq,
                     static_cast<Piece>(piece_type)};
                 MoveGen::init_move_flags(board, m);
-                moves.push_back(m);
+                list.push(m);
             }
         }
     }
-    return moves;
 }
 
+/// @brief For GUI only (doesn't need high perfs)
+/// @param board
+/// @param from_sq
+/// @return
 U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
 {
+    MoveList list;
     PieceInfo info = board.get_piece_on_square(from_sq);
     if (info.second == NO_PIECE)
     {
@@ -349,9 +355,9 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
 
     if (info.second == KING)
     {
-        std::vector<Move> moves = generate_castle_moves(board);
+        generate_castle_moves(board, list);
 
-        for (const auto move : moves)
+        for (const auto move : list)
         {
             if (move.get_flags() == Move::Flags::KING_CASTLE)
             {
@@ -421,10 +427,8 @@ bool MoveGen::is_mask_attacked(Board &board, const U64 mask)
     }
     return false;
 }
-std::vector<Move> MoveGen::generate_castle_moves(Board &board)
+void MoveGen::generate_castle_moves(Board &board, MoveList &list)
 {
-    std::vector<Move> moves;
-    moves.reserve(2);
     const Color color = board.get_side_to_move();
     const uint8_t castling_rights = board.get_castling_rights();
     const bitboard occupancy = board.get_occupancy(NO_COLOR);
@@ -433,7 +437,7 @@ std::vector<Move> MoveGen::generate_castle_moves(Board &board)
     const int prev_en_passant_file = board.get_en_passant_sq() == EN_PASSANT_SQ_NONE ? 0 : board.get_en_passant_sq() % 8;
     if (color == WHITE)
     {
-        if ((castling_rights & WHITE_KINGSIDE) && !(occupancy & 0x70) && (!is_mask_attacked(board, 0x70)))
+        if ((castling_rights & WHITE_KINGSIDE) && !(occupancy & 0x60) && (!is_mask_attacked(board, 0x70)))
         {
             const Move move{
                 4,
@@ -445,9 +449,9 @@ std::vector<Move> MoveGen::generate_castle_moves(Board &board)
                 prev_en_passant_flag,
                 prev_en_passant_file,
             };
-            moves.push_back(move);
+            list.push(move);
         }
-        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0x1c) && !(is_mask_attacked(board, 0x1c)))
+        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0x1c) && !(is_mask_attacked(board, 0xe)))
         {
             const Move move{
                 4,
@@ -459,12 +463,12 @@ std::vector<Move> MoveGen::generate_castle_moves(Board &board)
                 prev_en_passant_flag,
                 prev_en_passant_file,
             };
-            moves.push_back(move);
+            list.push(move);
         }
     }
     else
     {
-        if ((castling_rights & BLACK_KINGSIDE) && !(occupancy & 0x7000000000000000) && (!is_mask_attacked(board, 0x7000000000000000)))
+        if ((castling_rights & BLACK_KINGSIDE) && !(occupancy & 0x6000000000000000) && (!is_mask_attacked(board, 0x7000000000000000)))
         {
             const Move move{
                 60,
@@ -476,9 +480,9 @@ std::vector<Move> MoveGen::generate_castle_moves(Board &board)
                 prev_en_passant_flag,
                 prev_en_passant_file,
             };
-            moves.push_back(move);
+            list.push(move);
         }
-        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0x1c00000000000000) && !(is_mask_attacked(board, 0x1c00000000000000)))
+        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0x1c00000000000000) && !(is_mask_attacked(board, 0xe00000000000000)))
         {
             const Move move{
                 60,
@@ -490,39 +494,83 @@ std::vector<Move> MoveGen::generate_castle_moves(Board &board)
                 prev_en_passant_flag,
                 prev_en_passant_file,
             };
-            moves.push_back(move);
+            list.push(move);
         }
     }
     board.switch_trait();
-    return moves;
 }
-std::vector<Move> MoveGen::generate_legal_moves(Board &board)
+void MoveGen::generate_legal_moves(Board &board, MoveList &list)
 {
-    const Color color = board.get_side_to_move();
-    std::vector<Move> moves = MoveGen::generate_pseudo_legal_moves(board, color);
-    const Color player = board.get_side_to_move();
-    // const bool is_king_atck = is_king_attacked(board, player);
-    for (auto iter = moves.begin(); iter != moves.end();)
+    const Color us = board.get_side_to_move();
+    MoveGen::generate_pseudo_legal_moves(board, us, list);
+
+    const bool is_king_atck = is_king_attacked(board, us);
+    bitboard king_bb = board.get_piece_bitboard(us, KING);
+    const int king_sq = pop_lsb(king_bb);
+
+    const U64 king_mask = generate_rook_moves(king_sq, board) | generate_bishop_moves(king_sq, board);
+    const U64 king_mask_knight = KnightAttacks[king_sq];
+
+    int write_idx = 0; // Pointeur d'écriture
+
+    // On parcourt toute la liste avec un index de lecture
+    for (int read_idx = 0; read_idx < list.count; ++read_idx)
     {
-        Move &move = *iter;
-        board.play(move);
-        if (MoveGen::is_king_attacked(board, player))
+        Move &move = list.moves[read_idx];
+        bool legal = true;
+
+        const U64 from_msk = 1ULL << move.get_from_sq();
+        const U64 to_msk = 1ULL << move.get_to_sq();
+
+        // --- TA LOGIQUE DE LÉGALITÉ ---
+        if (move.get_from_piece() == KING || move.get_flags() == Move::Flags::EN_PASSANT_CAP)
         {
+            board.play(move);
+            if (MoveGen::is_king_attacked(board, us))
+                legal = false;
             board.unplay(move);
-            iter = moves.erase(iter);
         }
-        else
+        else if (!is_king_atck)
         {
-            board.unplay(move);
-            iter++;
+            if (from_msk & king_mask)
+            {
+                board.play(move);
+                if (MoveGen::is_king_attacked(board, us))
+                    legal = false;
+                board.unplay(move);
+            }
+        }
+        else // On est en échec
+        {
+            if (to_msk & (king_mask | king_mask_knight))
+            {
+                board.play(move);
+                if (MoveGen::is_king_attacked(board, us))
+                    legal = false;
+                board.unplay(move);
+            }
+            else
+            {
+                legal = false;
+            }
+        }
+
+        // --- LE FILTRAGE ---
+        if (legal)
+        {
+            // Si le coup est légal, on le place à la position write_idx
+            // et on incrémente write_idx
+            list.moves[write_idx] = move;
+            list.scores[write_idx] = list.scores[read_idx];
+            write_idx++;
         }
     }
-    return moves;
-}
 
-U64 MoveGen::generate_rook_moves(int from_sq, const Board &board)
+    // On met à jour la taille finale de la liste
+    list.count = write_idx;
+}
+U64 generate_rook_moves_from_bitboard(int from_sq, const bitboard &occupancy)
 {
-    const U64 occupancy = board.get_occupancy(NO_COLOR);
     const MoveGen::Magic magic = MoveGen::RookMagics[from_sq];
 
     const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
@@ -530,14 +578,26 @@ U64 MoveGen::generate_rook_moves(int from_sq, const Board &board)
     return MoveGen::RookAttacks[index + magic.index_start];
 }
 
-U64 MoveGen::generate_bishop_moves(int from_sq, const Board &board)
+U64 MoveGen::generate_rook_moves(int from_sq, const Board &board)
 {
     const U64 occupancy = board.get_occupancy(NO_COLOR);
+    return generate_rook_moves_from_bitboard(from_sq, occupancy);
+}
+
+U64 generate_bishop_moves_from_bitboard(int from_sq, const bitboard &occupancy)
+{
     const MoveGen::Magic magic = MoveGen::BishopMagics[from_sq];
 
     const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
 
     return MoveGen::BishopAttacks[index + magic.index_start];
+}
+
+U64 MoveGen::generate_bishop_moves(int from_sq, const Board &board)
+{
+    const U64 occupancy = board.get_occupancy(NO_COLOR);
+
+    return generate_bishop_moves_from_bitboard(from_sq, occupancy);
 }
 
 U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook)

@@ -156,11 +156,12 @@ TEST_F(MoveGenTest, EnPassantAfterCheckTest)
 U64 Perft(Board &b, int depth)
 {
     U64 nodes = 0;
-    std::vector<Move> leg_moves = MoveGen::generate_legal_moves(b);
+    MoveList list;
+    MoveGen::generate_legal_moves(b, list);
     if (depth == 1)
-        return leg_moves.size();
+        return list.count;
 
-    for (const Move &m : leg_moves)
+    for (const Move &m : list)
     {
         b.play(m);
         nodes += Perft(b, depth - 1);
