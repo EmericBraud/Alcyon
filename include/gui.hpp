@@ -19,7 +19,7 @@
 class GUI
 {
 public:
-    GUI(Board &initial_board) : board(initial_board), computer(Computer(initial_board)), window(sf::RenderWindow(sf::VideoMode(W_WIDTH, W_HEIGHT), "Chess 26", sf::Style::Titlebar | sf::Style::Close)), is_sq_selected(false), selected_sq(0), last_piece(0)
+    GUI(Board &initial_board, bool auto_play = false, Color computer_side = BLACK) : board(initial_board), computer(Computer(initial_board)), window(sf::RenderWindow(sf::VideoMode(W_WIDTH, W_HEIGHT), "Chess 26", sf::Style::Titlebar | sf::Style::Close)), is_sq_selected(false), selected_sq(0), last_piece(0), auto_play(auto_play), computer_side(computer_side)
     {
         window.setFramerateLimit(60);
         const std::array<std::array<const char *, N_PIECES_TYPE_HALF>, 2> PIECE_IMAGE_PATHS = {
@@ -66,6 +66,8 @@ private:
     bool is_sq_selected;
     int selected_sq;
     int last_piece;
+    bool auto_play;
+    Color computer_side;
     void draw_board();
     void draw_pieces();
     void draw_sq(int sq, sf::Color color);

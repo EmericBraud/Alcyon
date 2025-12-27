@@ -123,11 +123,12 @@ public:
         return (value >> 23) & 0xF;
     }
 
-    inline void set_prev_castling_rights(int val)
+    inline void set_prev_castling_rights(uint32_t val)
     {
-        uint32_t mask = 0xF << 23;
-        value &= ~mask;
-        value |= (val << 23);
+        constexpr uint32_t SHIFT = 23;
+        constexpr uint32_t MASK = 0xFu << SHIFT;
+
+        value = (value & ~MASK) | ((val & 0xFu) << SHIFT);
     }
 
     inline int get_prev_en_passant(const Color move_side) const
