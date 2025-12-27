@@ -252,4 +252,24 @@ public:
     {
         return history.size();
     }
+
+    int get_smallest_attacker(U64 all_attackers, Color side, Piece &found_type)
+    {
+        U64 side_attackers = all_attackers & (side == WHITE ? occupied_white : occupied_black);
+        if (!side_attackers)
+            return -1;
+
+        // Ordre de priorité : Pion < Cavalier < Fou < Tour < Dame < Roi
+        const int offset = side == WHITE ? 0 : N_PIECES_TYPE_HALF;
+        for (int type = PAWN; type <= KING; ++type)
+        {
+            U64 subset = side_attackers & pieces_occ[type + offset];
+            if (subset)
+            {
+                found_type = static_cast<Piece>(type);
+                return get_lsb_index(subset);
+            }
+        }
+        return -1;
+    }
 };

@@ -227,3 +227,8 @@ public:
         return uci;
     }
 };
+
+inline bool operator==(const Move &a, const Move &b) noexcept
+{
+    return a.get_value() == b.get_value();
+}

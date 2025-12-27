@@ -899,6 +899,45 @@ void MoveGen::init_move_flags(const Board &board, Move &move)
     }
 }
 
+U64 MoveGen::update_xrays(int sq, U64 occupied, const Board &board)
+{
+    return (generate_bishop_moves_from_bitboard(sq, occupied) &
+            (board.get_piece_bitboard(WHITE, BISHOP) | board.get_piece_bitboard(BLACK, BISHOP) |
+             board.get_piece_bitboard(WHITE, QUEEN) | board.get_piece_bitboard(BLACK, QUEEN))) |
+           (generate_rook_moves_from_bitboard(sq, occupied) &
+            (board.get_piece_bitboard(WHITE, ROOK) | board.get_piece_bitboard(BLACK, ROOK) |
+             board.get_piece_bitboard(WHITE, QUEEN) | board.get_piece_bitboard(BLACK, QUEEN)));
+}
+U64 MoveGen::attackers_to(int sq, U64 occupancy, const Board &b)
+{
+    return ((MoveGen::PawnAttacksBlack[sq] &
+             b.get_piece_bitboard(WHITE, PAWN)) |
+
+            (MoveGen::PawnAttacksWhite[sq] &
+             b.get_piece_bitboard(BLACK, PAWN)) |
+
+            (MoveGen::KnightAttacks[sq] &
+             (b.get_piece_bitboard(WHITE, KNIGHT) |
+              b.get_piece_bitboard(BLACK, KNIGHT))) |
+
+            (generate_bishop_moves_from_bitboard(sq, occupancy) &
+             (b.get_piece_bitboard(WHITE, BISHOP) |
+              b.get_piece_bitboard(BLACK, BISHOP) |
+              b.get_piece_bitboard(WHITE, QUEEN) |
+              b.get_piece_bitboard(BLACK, QUEEN))) |
+
+            (generate_rook_moves_from_bitboard(sq, occupancy) &
+             (b.get_piece_bitboard(WHITE, ROOK) |
+              b.get_piece_bitboard(BLACK, ROOK) |
+              b.get_piece_bitboard(WHITE, QUEEN) |
+              b.get_piece_bitboard(BLACK, QUEEN))) |
+
+            (MoveGen::KingAttacks[sq] &
+             (b.get_piece_bitboard(WHITE, KING) |
+              b.get_piece_bitboard(BLACK, KING)))) &
+           occupancy;
+}
+
 static bool perform_initial_data_loading()
 {
     MoveGen::initialize_bitboard_tables();
