@@ -1,7 +1,7 @@
 #pragma once
 #include "pos_eval.hpp"
 
-#define MAX_DEPTH 25
+#define MAX_DEPTH 50
 constexpr int INF = 1000000;
 
 struct MoveScorer
@@ -160,17 +160,16 @@ class Computer
 public:
     int negamax(int depth, int alpha, int beta, int ply)
     {
+        // 1. Détection des nullités (Répétition / 50 coups)
         if (ply > 0)
         {
             if (board.is_repetition() || board.get_halfmove_clock() >= 100)
             {
-                if (board.get_history_size() < 20)
-                {
-                    return -25;
-                }
-                return 0;
+                return (board.get_history_size() < 20) ? -25 : 0;
             }
         }
+
+        // 2. Sondage de la Transposition Table (TT)
         int tt_score;
         Move tt_move;
         total_nodes++;
@@ -181,20 +180,23 @@ public:
             tt_cuts++;
             return tt_score;
         }
+
         check_time();
         if (time_up)
             return eval::eval_relative(board.get_side_to_move(), board);
+
+        // 3. Quiescence Search à l'horizon
         if (depth <= 0)
-        {
             return qsearch(alpha, beta);
-        }
-        if (depth >= 3 && ply > 0 && !MoveGen::is_king_attacked(board, board.get_side_to_move()))
+
+        // 4. Null Move Pruning (NMP)
+        bool in_check = MoveGen::is_king_attacked(board, board.get_side_to_move());
+        if (depth >= 3 && ply > 0 && !in_check)
         {
             int stored_ep;
             board.play_null_move(stored_ep);
-            int R = 2;
+            int R = (depth > 6) ? 3 : 2;
             int score = -negamax(depth - 1 - R, -beta, -beta + 1, ply + 1);
-
             board.unplay_null_move(stored_ep);
 
             if (score >= beta)
@@ -204,68 +206,100 @@ public:
                 return score;
             }
         }
-
+        // --- Essayer le TT Move AVANT la génération ---
+        int best_score = -INF;
+        Move best_move_this_node;
+        int moves_searched = 0;
         const Color player = board.get_side_to_move();
+
+        if (tt_move.get_value() != 0)
+        {
+            board.play(tt_move);
+            if (!MoveGen::is_king_attacked(board, player))
+            {
+                moves_searched++;
+                // Premier coup : fenêtre complète
+                int score = -negamax(depth - 1, -beta, -alpha, ply + 1);
+                board.unplay(tt_move);
+
+                if (score >= beta)
+                    return score; // Beta-cutoff immédiat
+
+                if (score > best_score)
+                {
+                    best_score = score;
+                    best_move_this_node = tt_move;
+                    if (score > alpha)
+                        alpha = score; // MISE À JOUR D'ALPHA
+                }
+            }
+            else
+            {
+                board.unplay(tt_move);
+            }
+        }
+
+        // 5. Génération et tri des coups
         MoveList list;
         MoveGen::generate_legal_moves(board, list);
 
-        for (int i = 0; i < list.count; ++i)
+        if (list.count == 0) // Pat ou Mat
         {
-            list.scores[i] = score_move(list.moves[i], board, tt_move, ply);
+            return in_check ? (-MATE_SCORE + ply) : 0;
         }
 
-        int legal_moves_count = 0;
-        int best_score = -INF;
-        Move best_move_this_node;
+        for (int i = 0; i < list.count; ++i)
+            list.scores[i] = score_move(list.moves[i], board, tt_move, ply);
+
         int alpha_orig = alpha;
 
-        int moves_searched = 0;
+        // --- BOUCLE DE RECHERCHE PVS ---
         for (int i = 0; i < list.count; ++i)
         {
             check_time();
             if (time_up)
                 break;
-            Move &m = list.pick_best_move(i);
-            const int m_score = list.scores[i];
-            board.play(m);
 
-            legal_moves_count++;
+            Move &m = list.pick_best_move(i);
+            if (m.get_value() == tt_move.get_value())
+                continue;
+            int score;
+            const int m_score = list.scores[i];
+            bool is_tactical = (m_score >= 900000);
+
+            board.play(m);
             moves_searched++;
 
-            int score;
-            bool needs_full_search = true;
-            bool is_tactical = (m_score >= 900000);
-            // LMR (Late Move Reduction)
-            // Conditions :
-            // 1. Profondeur suffisante (> 2)
-            // 2. On a déjà testé les bons coups (moves_searched > 4)
-            // 3. Ce n'est pas un coup tactique (pas capture, pas promotion)
-            // 4. On n'est pas en échec (trop dangereux de réduire)
-            // --- LMR (LATE MOVE REDUCTION) ---
-            if (depth >= 3 && moves_searched > 4 &&
-                ply > 0 &&
-                !is_tactical &&
-                !MoveGen::is_king_attacked(board, player))
+            if (moves_searched == 1)
             {
-                int reduction = 1;
-                if (depth > 6)
-                    reduction = 2;
-                score = -negamax(depth - 1 - reduction, -beta, -alpha, ply + 1);
-                if (score <= alpha)
-                {
-                    // Move is bad even tho we searched a bit
-                    // It is really a bad move
-                    needs_full_search = false;
-                }
-            }
-            // --- RECHERCHE COMPLÈTE (FULL DEPTH) ---
-            // On la fait si :
-            // A) On n'a pas fait de LMR (premiers coups, captures, échecs...)
-            // B) Ou si le LMR a échoué (le coup semblait trop beau pour être vrai)
-            if (needs_full_search)
-            {
-
+                // PREMIER COUP : Recherche avec fenêtre complète
                 score = -negamax(depth - 1, -beta, -alpha, ply + 1);
+            }
+            else
+            {
+                // COUPS SUIVANTS : On parie qu'ils sont moins bons (Zero Window Search)
+
+                // Tentative de réduction LMR
+                int reduction = 0;
+                if (depth >= 3 && moves_searched > 4 && !is_tactical && !in_check)
+                {
+                    reduction = (depth > 6) ? 2 : 1;
+                }
+
+                // Recherche avec fenêtre nulle [-(alpha + 1), -alpha]
+                score = -negamax(depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
+
+                // Re-search si le LMR a échoué (le score est meilleur que alpha)
+                if (score > alpha && reduction > 0)
+                {
+                    score = -negamax(depth - 1, -alpha - 1, -alpha, ply + 1);
+                }
+
+                // Re-search complet si le coup est réellement meilleur que notre PV actuelle
+                if (score > alpha && score < beta)
+                {
+                    score = -negamax(depth - 1, -beta, -alpha, ply + 1);
+                }
             }
 
             board.unplay(m);
@@ -274,10 +308,10 @@ public:
             {
                 beta_cutoffs++;
                 tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
-                if (m.get_to_piece() == NO_PIECE && m.get_flags() != Move::EN_PASSANT_CAP)
+
+                if (!is_tactical)
                 {
-                    int bonus = depth * depth;
-                    history_moves[board.get_side_to_move()][m.get_from_sq()][m.get_to_sq()] += bonus;
+                    history_moves[player][m.get_from_sq()][m.get_to_sq()] += depth * depth;
                     if (!(m.get_value() == killer_moves[ply][0].get_value()))
                     {
                         killer_moves[ply][1] = killer_moves[ply][0];
@@ -292,34 +326,16 @@ public:
                 best_score = score;
                 best_move_this_node = m;
                 if (score > alpha)
-                {
                     alpha = score;
-                }
             }
         }
 
-        if (legal_moves_count == 0)
-        {
-            if (MoveGen::is_king_attacked(board, player)) // Checkmate
-            {
-                return -MATE_SCORE + ply;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-        TTFlag flag;
-        if (best_score <= alpha_orig)
-            flag = TT_ALPHA;
-        else
-            flag = TT_EXACT;
-
+        TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
         tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node);
 
         return best_score;
     }
-    void play(int time_ms = 20000)
+    void play(int time_ms = 5000)
     {
         time_limit_ms = time_ms;
         time_up = false;
@@ -334,8 +350,6 @@ public:
         beta_cutoffs = 0;
         clear_killers();
         age_history();
-
-        // ... clear history/killers ...
 
         for (int current_depth = 1; current_depth <= MAX_DEPTH; ++current_depth)
         {
@@ -395,6 +409,10 @@ public:
                           << " | Nodes " << total_nodes
                           << " | PV: " << get_pv_line(current_depth)
                           << std::endl;
+            }
+            if (std::abs(last_score) >= MATE_SCORE - MAX_DEPTH) // We found a checkmate
+            {
+                break;
             }
         }
 

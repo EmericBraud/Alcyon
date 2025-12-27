@@ -74,10 +74,7 @@ public:
 
     inline bitboard &get_piece_bitboard(const Color color, const Piece type)
     {
-        if (type > KING) // Should be disabled on prod for increased performances
-        {
-            throw std::out_of_range("Invalid piece type requested for Bitboard access.");
-        }
+        assert(type <= KING);
         size_t zero_based_index = (color * N_PIECES_TYPE_HALF) + (type);
 
         return pieces_occ[zero_based_index];
@@ -172,33 +169,30 @@ public:
     /// @param piece (NO_PIECE == checks for any piece type)
     /// @param color (NO_COLOR == checks for any color)
     /// @return true if occupied
-    bool is_occupied(const int sq, const Piece piece, const Color color) const
+    inline bool is_occupied(int sq, Piece piece, Color color) const
     {
+        const U64 mask = sq_mask(sq);
+
         if (piece == NO_PIECE)
         {
-            if (color == BLACK)
-            {
-                return is_set(occupied_black, sq);
-            }
             if (color == WHITE)
-            {
-                return is_set(occupied_white, sq);
-            }
-            return is_set(occupied_all, sq);
+                return occupied_white & mask;
+            if (color == BLACK)
+                return occupied_black & mask;
+            return occupied_all & mask; // NO_COLOR
         }
 
-        const U64 mask = sq_mask(sq);
-        U64 final_mask = EMPTY_MASK;
-        if (color == WHITE || color == NO_COLOR)
-        {
-            final_mask |= get_piece_bitboard(WHITE, piece) & mask;
-        }
-        if (color == BLACK || color == NO_COLOR)
-        {
-            final_mask |= get_piece_bitboard(BLACK, piece) & mask;
-        }
-        return final_mask;
+        if (color == WHITE)
+            return get_piece_bitboard(WHITE, piece) & mask;
+        if (color == BLACK)
+            return get_piece_bitboard(BLACK, piece) & mask;
+
+        // NO_COLOR: either side
+        return (get_piece_bitboard(WHITE, piece) |
+                get_piece_bitboard(BLACK, piece)) &
+               mask;
     }
+
     bool is_occupied(const int sq, const int piece, const Color color) const
     {
         return is_occupied(sq, static_cast<Piece>(piece), color);

@@ -5,6 +5,12 @@ void GUI::run()
     while (window.isOpen())
     {
         sf::Event event;
+        if (auto_play && board.get_side_to_move() == computer_side)
+        {
+            std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
+            computer.play();
+            std::cout << "Move played" << std::endl;
+        }
         while (window.pollEvent(event))
         {
             if (event.type == sf::Event::Closed)
@@ -58,6 +64,7 @@ void GUI::run()
             {
                 std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
                 computer.play();
+                std::cout << "Move played" << std::endl;
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::U)
             {

@@ -6,7 +6,7 @@ int main()
     Board b{};
     b.load_fen(FEN_INIT_POS);
 
-    GUI gui{b};
+    GUI gui{b, true};
     gui.run();
     return 0;
 }

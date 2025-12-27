@@ -23,28 +23,26 @@ void Board::clear()
 
 std::pair<Color, Piece> Board::get_piece_on_square(int sq) const
 {
-    // Check if the square is occupied at all
-    if (!is_set(occupied_all, sq))
-    {
+    U64 mask = 1ULL << sq;
+    if (!(occupied_all & mask))
         return {NO_COLOR, NO_PIECE};
-    }
 
-    // Determine color first
-    Color piece_color = is_set(occupied_white, sq) ? WHITE : BLACK;
+    Color color = (occupied_white & mask) ? WHITE : BLACK;
+    int offset = color * N_PIECES_TYPE_HALF;
 
-    // Determine piece type
-    for (int type = PAWN; type <= KING; ++type)
-    {
-        // Check if the piece's bitboard is set at the given square
-        if (is_occupied(sq, type, piece_color))
-        {
-            return {piece_color, static_cast<Piece>(type)};
-        }
-    }
+    if (pieces_occ[offset + PAWN] & mask)
+        return {color, PAWN};
+    if (pieces_occ[offset + KNIGHT] & mask)
+        return {color, KNIGHT};
+    if (pieces_occ[offset + BISHOP] & mask)
+        return {color, BISHOP};
+    if (pieces_occ[offset + ROOK] & mask)
+        return {color, ROOK};
+    if (pieces_occ[offset + QUEEN] & mask)
+        return {color, QUEEN};
 
-    throw std::logic_error("Incoherent result, square should be occupied");
+    return {color, KING};
 }
-
 bool Board::play(const Move &move)
 {
     if (move.get_from_piece() == PAWN || move.get_to_piece() != NO_PIECE)
@@ -65,6 +63,8 @@ bool Board::play(const Move &move)
     const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
     Piece from_piece{move.get_from_piece()};
     const Piece to_piece{move.get_to_piece()};
+    U64 &occupancy_col = side_to_move == WHITE ? occupied_white : occupied_black;
+    U64 &occupancy_opp = side_to_move == WHITE ? occupied_black : occupied_white;
     if (from_piece == NO_PIECE)
     {
         std::cerr << "No piece found on square" << from_sq << std::endl;
@@ -83,7 +83,10 @@ bool Board::play(const Move &move)
         zobrist_key ^= zobrist_en_passant[8];
 
     en_passant_sq = EN_PASSANT_SQ_NONE;
-    get_piece_bitboard(side_to_move, from_piece) ^= sq_mask(from_sq); // Delete old position
+    const U64 from_sq_mask = sq_mask(from_sq);
+    get_piece_bitboard(side_to_move, from_piece) ^= from_sq_mask; // Delete old position
+    occupancy_col ^= from_sq_mask;
+    occupied_all ^= from_sq_mask;
     HASH_PIECE(side_to_move, from_piece, from_sq);
 
     // Delete castling rights flags if rook is moved / captured
@@ -121,6 +124,8 @@ bool Board::play(const Move &move)
         }
 
         get_piece_bitboard(side_to_move, ROOK) ^= (1ULL << rook_from_sq) | (1ULL << rook_to_sq);
+        occupancy_col ^= (1ULL << rook_from_sq) | (1ULL << rook_to_sq);
+        occupied_all ^= (1ULL << rook_from_sq) | (1ULL << rook_to_sq);
         HASH_PIECE(side_to_move, ROOK, rook_from_sq);
         HASH_PIECE(side_to_move, ROOK, rook_to_sq);
         castling_rights ^= required_rights;
@@ -140,6 +145,8 @@ bool Board::play(const Move &move)
         }
 
         get_piece_bitboard(side_to_move, ROOK) ^= (1ULL << rook_from_sq) | (1ULL << rook_to_sq);
+        occupancy_col ^= (1ULL << rook_from_sq) | (1ULL << rook_to_sq);
+        occupied_all ^= (1ULL << rook_from_sq) | (1ULL << rook_to_sq);
         HASH_PIECE(side_to_move, ROOK, rook_from_sq);
         HASH_PIECE(side_to_move, ROOK, rook_to_sq);
         castling_rights ^= required_rights;
@@ -152,11 +159,15 @@ bool Board::play(const Move &move)
         if (side_to_move == WHITE)
         {
             get_piece_bitboard(BLACK, PAWN) ^= sq_mask(to_sq - 8);
+            occupied_black ^= sq_mask(to_sq - 8);
+            occupied_all ^= sq_mask(to_sq - 8);
             HASH_PIECE(BLACK, PAWN, to_sq - 8);
         }
         else
         {
             get_piece_bitboard(WHITE, PAWN) ^= sq_mask(to_sq + 8);
+            occupied_white ^= sq_mask(to_sq + 8);
+            occupied_all ^= sq_mask(to_sq + 8);
             HASH_PIECE(WHITE, PAWN, to_sq + 8);
         }
         break;
@@ -180,12 +191,16 @@ bool Board::play(const Move &move)
     }
 
     get_piece_bitboard(side_to_move, from_piece) |= to_sq_mask; // Fill new position
+    occupancy_col ^= to_sq_mask;
+    occupied_all ^= to_sq_mask;
     HASH_PIECE(side_to_move, from_piece, to_sq);
 
     // Checking if an opponent square has to be updated
     if (to_piece != NO_PIECE)
     {
         get_piece_bitboard(opponent_color, to_piece) ^= to_sq_mask;
+        occupancy_opp ^= to_sq_mask;
+        occupied_all ^= to_sq_mask;
         HASH_PIECE(opponent_color, to_piece, to_sq);
     }
 
@@ -195,7 +210,6 @@ bool Board::play(const Move &move)
     else
         zobrist_key ^= zobrist_en_passant[8];
 
-    update_occupancy();
     switch_trait();
     return true;
 }
@@ -212,9 +226,13 @@ void Board::unplay(const Move move)
     const Color color = side_to_move;
     const U64 mask_from_piece = (1ULL << to_sq) | (1ULL << from_sq);
     U64 &from_bitboard = get_piece_bitboard(color, from_piece);
+    U64 &occupancy_col = color == WHITE ? occupied_white : occupied_black;
+    U64 &occupancy_opp = color == WHITE ? occupied_black : occupied_white;
     assert(from_bitboard & (1ULL << to_sq));
     assert(!(from_bitboard & (1ULL << from_sq)));
     from_bitboard ^= mask_from_piece;
+    occupancy_col ^= mask_from_piece;
+    occupied_all ^= mask_from_piece;
     assert(!(from_bitboard & (1ULL << to_sq)));
     assert(from_bitboard & (1ULL << from_sq));
     castling_rights = move.get_prev_castling_rights();
@@ -224,6 +242,8 @@ void Board::unplay(const Move move)
     {
         const Color opponent_color = color == WHITE ? BLACK : WHITE;
         get_piece_bitboard(opponent_color, to_piece) |= 1ULL << to_sq;
+        occupancy_opp |= 1ULL << to_sq;
+        occupied_all |= 1ULL << to_sq;
     }
     switch (move.get_flags())
     {
@@ -231,30 +251,42 @@ void Board::unplay(const Move move)
         if (color == WHITE)
         {
             get_piece_bitboard(color, ROOK) ^= 0xa0;
+            occupancy_col ^= 0xa0;
+            occupied_all ^= 0xa0;
         }
         else
         {
             get_piece_bitboard(color, ROOK) ^= 0xa000000000000000;
+            occupancy_col ^= 0xa000000000000000;
+            occupied_all ^= 0xa000000000000000;
         }
         break;
     case Move::Flags::QUEEN_CASTLE:
         if (color == WHITE)
         {
             get_piece_bitboard(color, ROOK) ^= 0x9;
+            occupancy_col ^= 0x900000000000000;
+            occupied_all ^= 0x900000000000000;
         }
         else
         {
             get_piece_bitboard(color, ROOK) ^= 0x900000000000000;
+            occupancy_col ^= 0x900000000000000;
+            occupied_all ^= 0x900000000000000;
         }
         break;
     case Move::EN_PASSANT_CAP:
         if (color == WHITE)
         {
             get_piece_bitboard(BLACK, PAWN) ^= sq_mask(to_sq - 8);
+            occupied_black ^= sq_mask(to_sq - 8);
+            occupied_all ^= sq_mask(to_sq - 8);
         }
         else
         {
             get_piece_bitboard(WHITE, PAWN) ^= sq_mask(to_sq + 8);
+            occupied_white ^= sq_mask(to_sq + 8);
+            occupied_all ^= sq_mask(to_sq + 8);
         }
         break;
     case Move::PROMOTION_MASK:
@@ -264,7 +296,6 @@ void Board::unplay(const Move move)
     default:
         break;
     }
-    update_occupancy();
     const UndoInfo info = history.back();
     zobrist_key = info.zobrist_key;
     halfmove_clock = info.halfmove_clock;

@@ -29,6 +29,8 @@
 #define N_PIECES_TYPE_HALF 6
 #define FEN_INIT_POS "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
+#define FEN_HARD_PROBLEM_1 "8/3P3k/n2K3p/2p3n1/1b4N1/2p1p1P1/8/3B4 w - - 0 1" // Successfully solved after depth 20 (20s/move)
+
 constexpr int MATE_SCORE = 100000;
 
 using U64 = std::uint64_t;
