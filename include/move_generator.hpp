@@ -73,6 +73,10 @@ namespace MoveGen
     void load_attacks();
 
     void init_move_flags(const Board &board, Move &move);
+
+    U64 attackers_to(int sq, U64 occupancy, const Board &b);
+    U64 update_xrays(int sq, U64 occupied, const Board &board);
+
 }
 
 U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook);

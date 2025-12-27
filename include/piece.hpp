@@ -20,6 +20,19 @@ enum Color : uint8_t
     NO_COLOR
 };
 
+constexpr Color operator!(Color c)
+{
+    switch (c)
+    {
+    case WHITE:
+        return BLACK;
+    case BLACK:
+        return WHITE;
+    default:
+        return NO_COLOR;
+    }
+}
+
 using PieceInfo = std::pair<Color, Piece>;
 
 inline int get_piece_index(const Piece p, const Color c)
