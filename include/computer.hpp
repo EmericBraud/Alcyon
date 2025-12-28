@@ -49,7 +49,7 @@ class Computer
 
 public:
     int negamax(int depth, int alpha, int beta, int ply);
-    void play(int time_ms = 2000);
+    void play(int time_ms = 15000);
 
     int score_move(const Move &move, const Board &board, const Move &tt_move, int ply) const;
     // Score uniquement pour le Quiescence Search (MVV-LVA)

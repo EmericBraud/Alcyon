@@ -5,8 +5,8 @@ void GUI::run()
     while (window.isOpen())
     {
         sf::Event event;
-        computer.play();
-        if (false && auto_play && board.get_side_to_move() == computer_side)
+        // computer.play();
+        if (auto_play && board.get_side_to_move() == computer_side)
         {
             std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
             computer.play();
