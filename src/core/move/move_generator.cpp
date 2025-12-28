@@ -1,4 +1,4 @@
-#include "move_generator.hpp"
+#include "core/move/move_generator.hpp"
 
 constexpr const char *ROOK_ATTACKS_FILE = DATA_PATH "rook_attacks.bin";
 constexpr const char *BISHOP_ATTACKS_FILE = DATA_PATH "bishop_attacks.bin";
@@ -451,7 +451,7 @@ void MoveGen::generate_castle_moves(Board &board, MoveList &list)
             };
             list.push(move);
         }
-        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0x1c) && !(is_mask_attacked(board, 0xe)))
+        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0xe) && !(is_mask_attacked(board, 0x1c)))
         {
             const Move move{
                 4,
@@ -482,7 +482,7 @@ void MoveGen::generate_castle_moves(Board &board, MoveList &list)
             };
             list.push(move);
         }
-        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0x1c00000000000000) && !(is_mask_attacked(board, 0xe00000000000000)))
+        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0xe00000000000000) && !(is_mask_attacked(board, 0x1c00000000000000)))
         {
             const Move move{
                 60,

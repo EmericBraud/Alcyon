@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-#include "zobrist.hpp"
+#include "engine/zobrist.hpp"
 
 enum CastlingRights : uint8_t
 {

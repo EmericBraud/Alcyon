@@ -1,5 +1,5 @@
-#include "computer.hpp"
-int Computer::qsearch(int alpha, int beta)
+#include "engine/engine.hpp"
+int Engine::qsearch(int alpha, int beta)
 {
     check_time();
     if (time_up)
@@ -126,7 +126,7 @@ int Computer::qsearch(int alpha, int beta)
     return best_score;
 }
 
-int Computer::score_capture(const Move &move) const
+int Engine::score_capture(const Move &move) const
 {
     int attacker = move.get_from_piece();
 

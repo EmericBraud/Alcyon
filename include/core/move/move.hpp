@@ -1,6 +1,6 @@
 #pragma once
 
-#include "piece.hpp"
+#include "core/piece/piece.hpp"
 
 class Move
 {

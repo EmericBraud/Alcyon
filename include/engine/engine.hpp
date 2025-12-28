@@ -1,5 +1,5 @@
 #pragma once
-#include "pos_eval.hpp"
+#include "engine/pos_eval.hpp"
 
 #define MAX_DEPTH 50
 constexpr int INF = 1000000;
@@ -12,7 +12,7 @@ struct MoveScorer
 
 using Clock = std::chrono::steady_clock;
 
-class Computer
+class Engine
 {
     Board &board;
     TranspositionTable tt;
@@ -49,7 +49,7 @@ class Computer
 
 public:
     int negamax(int depth, int alpha, int beta, int ply);
-    void play(int time_ms = 15000);
+    void play(int time_ms = 2000);
 
     int score_move(const Move &move, const Board &board, const Move &tt_move, int ply) const;
     // Score uniquement pour le Quiescence Search (MVV-LVA)
@@ -65,7 +65,7 @@ public:
     std::string get_pv_line(int depth);
 
 public:
-    Computer(Board &board) : board(board)
+    Engine(Board &board) : board(board)
     {
         init_zobrist();
         tt.resize(1024);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bitboard.hpp"
+#include "core/piece/bitboard.hpp"
 
 enum Piece : uint8_t
 {

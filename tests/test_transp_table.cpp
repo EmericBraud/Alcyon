@@ -1,4 +1,4 @@
-#include "computer.hpp"
+#include "engine/engine.hpp"
 #include "gtest/gtest.h"
 
 class TTTest : public ::testing::Test
@@ -50,7 +50,6 @@ TEST_F(TTTest, DepthReplacement)
     tt.probe(key, 5, 0, -INF, INF, score, m);
     ASSERT_EQ(score, 100); // La profondeur 5 doit avoir été conservée car 5 > 3
 }
-
 TEST_F(TTTest, AlphaBetaCuts)
 {
     TranspositionTable tt;
@@ -59,17 +58,21 @@ TEST_F(TTTest, AlphaBetaCuts)
     int score;
     Move m;
 
-    // Stocke une borne ALPHA (Upper Bound) de 50
+    // On stocke : "Le score est <= 50"
     tt.store(key, 10, 0, 50, TT_ALPHA, Move());
 
-    // Test 1 : Alpha actuel est 60. On sait que score <= 50.
-    // Donc score < alpha, on peut renvoyer alpha.
+    // Test 1 : Fenêtre [60, 80].
+    // Comme 50 <= 60, on sait que cette branche ne peut pas améliorer Alpha.
+    // C'est un HIT, et le score retourné doit être <= Alpha.
     bool hit = tt.probe(key, 10, 0, 60, 80, score, m);
     ASSERT_TRUE(hit);
-    ASSERT_EQ(score, 60);
+    ASSERT_LE(score, 60); // On vérifie que le score ne dépasse pas alpha
+    ASSERT_EQ(score, 50); // En réalité, il doit retourner la valeur exacte stockée
 
-    // Test 2 : Beta actuel est 40. On sait que score <= 50.
-    // On ne peut pas conclure si le score est > 40 ou non.
+    // Test 2 : Fenêtre [30, 40].
+    // On sait que score <= 50. Est-ce que le score est <= 30 ? On ne sait pas.
+    // Est-ce que le score est >= 40 ? On ne sait pas (il pourrait être 35).
+    // On ne peut pas couper. hit doit être FALSE.
     hit = tt.probe(key, 10, 0, 30, 40, score, m);
     ASSERT_FALSE(hit);
 }

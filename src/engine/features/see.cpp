@@ -1,6 +1,6 @@
-#include "computer.hpp"
+#include "engine/engine.hpp"
 
-int Computer::see(int sq, Piece target, Piece attacker, Color side, int from_sq) const
+int Engine::see(int sq, Piece target, Piece attacker, Color side, int from_sq) const
 {
     int value[32];
     int d = 0;
