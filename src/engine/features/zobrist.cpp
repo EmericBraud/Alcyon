@@ -1,4 +1,4 @@
-#include "zobrist.hpp"
+#include "engine/zobrist.hpp"
 
 uint64_t zobrist_table[12][64];
 uint64_t zobrist_castling[16];

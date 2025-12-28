@@ -1,6 +1,6 @@
-#include "computer.hpp"
+#include "engine/engine.hpp"
 
-void Computer::play(int time_ms)
+void Engine::play(int time_ms)
 {
     time_limit_ms = time_ms;
     time_up = false;
@@ -85,7 +85,7 @@ void Computer::play(int time_ms)
         board.play(best_move);
 }
 
-int Computer::score_move(const Move &move, const Board &board, const Move &tt_move, int ply) const
+int Engine::score_move(const Move &move, const Board &board, const Move &tt_move, int ply) const
 {
     if (tt_move.get_value() != 0 && move.get_value() == tt_move.get_value())
         return 2000000;
@@ -127,7 +127,7 @@ int Computer::score_move(const Move &move, const Board &board, const Move &tt_mo
     return history_moves[board.get_side_to_move()][move.get_from_sq()][move.get_to_sq()];
 }
 
-std::string Computer::get_pv_line(int depth)
+std::string Engine::get_pv_line(int depth)
 {
     std::string pv_line = "";
     Board temp_board = board; // Copie locale pour ne pas corrompre le plateau réel
@@ -144,7 +144,7 @@ std::string Computer::get_pv_line(int depth)
     return pv_line;
 }
 
-int Computer::negamax(int depth, int alpha, int beta, int ply)
+int Engine::negamax(int depth, int alpha, int beta, int ply)
 {
     // 1. Détection des nullités (Répétition / 50 coups)
     if (ply > 0)
