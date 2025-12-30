@@ -27,12 +27,11 @@ public:
     };
 
     // Default constructor (creates an invalid/null move)
-    Move() : value(0) {}
+    Move() = default;
 
     // Constructor to encode a move from its components
     Move(int from_sq, int to_sq, Piece from_piece, Flags flags = NONE, Piece to_piece = NO_PIECE, int prev_castling_rights = 0, bool prev_en_passant_flag = false, int prev_en_passant_file = 0)
     {
-        // Example encoding scheme:
         // [0..5] : From Square (6 bits)
         // [6..11]: To Square (6 bits)
         // [12..15]: Flags / Move Type (4 bits)
@@ -51,6 +50,8 @@ public:
                 ((uint32_t)(prev_en_passant_flag)) << 28 |
                 ((uint32_t)(prev_en_passant_file)) << 29;
     }
+
+    Move(uint32_t raw_value) : value(raw_value) {}
 
     inline int get_from_sq() const
     {

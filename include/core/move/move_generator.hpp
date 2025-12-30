@@ -36,8 +36,89 @@ namespace MoveGen
     extern std::vector<U64> BishopAttacksProcessing;
 
     void initialize_bitboard_tables();
-    inline U64 get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type);
-    U64 get_pseudo_moves_mask(const Board &board, const int sq);
+
+    void generate_pawn_moves(Board &board, const Color color, MoveList &list);
+    inline U64 generate_rook_moves(int from_sq, const bitboard occupancy)
+    {
+        const MoveGen::Magic magic = MoveGen::RookMagics[from_sq];
+
+        const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
+
+        return MoveGen::RookAttacks[index + magic.index_start];
+    }
+
+    inline U64 generate_bishop_moves(int from_sq, const bitboard occupancy)
+    {
+        const MoveGen::Magic magic = MoveGen::BishopMagics[from_sq];
+
+        const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
+
+        return MoveGen::BishopAttacks[index + magic.index_start];
+    }
+    inline U64 get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
+    {
+        const U64 occ = board.get_occupancy(NO_COLOR);
+        U64 target_mask = 0;
+
+        switch (piece_type)
+        {
+        case PAWN:
+        {
+            const int ep_sq = board.get_en_passant_sq();
+            if (color == WHITE)
+            {
+                // Poussée simple : case devant vide
+                U64 push1 = (1ULL << (sq + 8)) & ~occ;
+                // Poussée double : push1 possible ET case cible vide ET rangée 2
+                U64 push2 = (push1 << 8) & ~occ & 0x00000000FF000000ULL;
+                target_mask = push1 | push2;
+                target_mask |= PawnAttacksWhite[sq] & board.get_occupancy(BLACK);
+                if (ep_sq != EN_PASSANT_SQ_NONE)
+                    target_mask |= PawnAttacksWhite[sq] & (1ULL << ep_sq);
+            }
+            else
+            {
+                U64 push1 = (1ULL << (sq - 8)) & ~occ;
+                U64 push2 = (push1 >> 8) & ~occ & 0x000000FF00000000ULL;
+                target_mask = push1 | push2;
+                target_mask |= PawnAttacksBlack[sq] & board.get_occupancy(WHITE);
+                if (ep_sq != EN_PASSANT_SQ_NONE)
+                    target_mask |= PawnAttacksBlack[sq] & (1ULL << ep_sq);
+            }
+            break;
+        }
+        case KNIGHT:
+            target_mask = KnightAttacks[sq];
+            break;
+        case BISHOP:
+            target_mask = generate_bishop_moves(sq, occ);
+            break;
+        case ROOK:
+            target_mask = generate_rook_moves(sq, occ);
+            break;
+        case QUEEN:
+            target_mask = generate_rook_moves(sq, occ) | generate_bishop_moves(sq, occ);
+            break;
+        case KING:
+            target_mask = KingAttacks[sq];
+            break;
+        default:
+            throw std::logic_error("Piece type unsupported");
+        }
+
+        return target_mask & ~board.get_occupancy(color);
+    }
+    inline U64 get_pseudo_moves_mask(const Board &board, const int sq)
+    {
+        const PieceInfo pair = board.get_piece_on_square(sq);
+        const Color color = pair.first;
+        const Piece piece_type = pair.second;
+        if (piece_type == NO_PIECE)
+        {
+            return 0ULL;
+        }
+        return get_pseudo_moves_mask(board, sq, color, piece_type);
+    }
     void initialize_rook_masks();
     void initialize_bishop_masks();
     void initialize_pawn_masks();
@@ -46,17 +127,10 @@ namespace MoveGen
     void generate_pseudo_legal_captures(const Board &board, Color color, MoveList &list);
     U64 get_legal_moves_mask(Board &board, int from_sq);
 
-    bool is_king_attacked(const Board &board, Color us);
-
-    bool is_mask_attacked(Board &board, const U64 mask);
+    bool is_mask_attacked(const Board &board, const U64 mask, Color attacker);
     void generate_castle_moves(Board &board, MoveList &list);
 
     void generate_legal_moves(Board &board, MoveList &list);
-
-    U64 generate_knight_moves(int from_sq, const Board &board);
-    U64 generate_rook_moves(int from_sq, const Board &board);
-
-    U64 generate_bishop_moves(int from_sq, const Board &board);
 
     void export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook);
     void run_magic_searcher();
@@ -72,8 +146,50 @@ namespace MoveGen
     void load_attacks_bishop();
     void load_attacks();
 
-    void init_move_flags(const Board &board, Move &move);
+    inline void init_move_flags(const Board &board, Move &move)
+    {
+        const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
+        const Piece from_piece{move.get_from_piece()};
+        const PieceInfo to_piece_info{board.get_piece_on_square(to_sq)};
 
+        move.set_prev_castling_rights(board.get_castling_rights());
+        move.set_prev_en_passant(board.get_en_passant_sq());
+
+        move.set_to_piece(to_piece_info.second);
+        if (to_piece_info.second != NO_PIECE)
+        {
+            move.set_flags(Move::Flags::CAPTURE);
+        }
+
+        if (from_piece == PAWN)
+        {
+            if (to_sq / 8 % 7 == 0) // First or last row
+            {
+                move.set_flags(Move::Flags::PROMOTION_MASK);
+                return;
+            }
+            else if (abs(from_sq - to_sq) == 16)
+            {
+                move.set_flags(Move::Flags::DOUBLE_PUSH);
+                return;
+            }
+            else if (to_sq == board.get_en_passant_sq())
+            {
+                move.set_flags(Move::Flags::EN_PASSANT_CAP);
+                return;
+            }
+        }
+    }
+    inline void push_moves_from_mask(MoveList &list, int from, Piece type, bitboard targets, const Board &board)
+    {
+        while (targets)
+        {
+            int to = pop_lsb(targets); //
+            Move m{from, to, type};
+            init_move_flags(board, m);
+            list.push(m);
+        }
+    }
     U64 attackers_to(int sq, U64 occupancy, const Board &b);
     U64 update_xrays(int sq, U64 occupied, const Board &board);
 

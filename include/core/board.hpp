@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-#include "engine/zobrist.hpp"
+#include "core/move/history.hpp"
 
 enum CastlingRights : uint8_t
 {
@@ -13,63 +13,136 @@ enum CastlingRights : uint8_t
     ALL_CASTLING = 0b1111     // 15
 };
 
-struct UndoInfo
-{
-    U64 zobrist_key;
-    uint16_t halfmove_clock;
-    int last_irreversible_move_index;
-    Move move;
-};
-
 class Board
 {
 private:
-    // Bitboards for each pieces
-    std::array<bitboard, N_PIECES_TYPE> pieces_occ;
-
-    // Bitboards for fast occupancy queries
-    bitboard occupied_white;
-    bitboard occupied_black;
-    bitboard occupied_all;
-
-    // State info
-    uint8_t castling_rights;     // Castle rights
-    uint8_t en_passant_sq;       // En passant capture case (255 = none)
-    uint16_t halfmove_clock = 0; // For 50 moves rule
-    uint32_t fullmove_number;
-    Color side_to_move; // White or black turn ?
-
-    std::vector<UndoInfo> history;
-
-    U64 zobrist_key;
-
-    int last_irreversible_move_index = 0;
+    static constexpr uint8_t PIECE_MASK = 0x07; // 0b00000111
+    static constexpr uint8_t COLOR_SHIFT = 3;   // 0b00001000
+    static constexpr uint8_t COLOR_MASK = 3;
+    static constexpr uint8_t EMPTY_SQ = (NO_COLOR << COLOR_SHIFT) | NO_PIECE;
 
 public:
+    // Bitboards for each pieces
+
+    // Bitboards for fast occupancy queries
+    bitboard occupancies[3]; // [0] WHITE, [1] BLACK, [2] ALL (NO_COLOR)
+    U64 zobrist_key;
+
+    struct State
+    {
+        uint8_t castling_rights;
+        uint8_t en_passant_sq;
+        uint16_t halfmove_clock;
+        Color side_to_move;
+        int last_irreversible_index;
+    } state;
+
+    std::array<bitboard, N_PIECES_TYPE> pieces_occ;
+
+    EvalState eval_state;
+
+    uint8_t mailbox[64];
+    History *history_tagged;
+
+    inline Piece get_p(int sq) const { return static_cast<Piece>(mailbox[sq] & PIECE_MASK); }
+    inline Color get_c(int sq) const { return static_cast<Color>((mailbox[sq] >> COLOR_SHIFT) & COLOR_MASK); }
+
+    inline History *get_history() const
+    {
+        return reinterpret_cast<History *>(
+            reinterpret_cast<uintptr_t>(history_tagged) & ~1ULL);
+    }
+
+    inline bool owns_history() const
+    {
+        return reinterpret_cast<uintptr_t>(history_tagged) & 1ULL;
+    }
     // Rule of five
-    Board() = default; // Default constructor. We will use load_fen
+    Board()
+    {
+        History *raw = new History();
+        history_tagged = reinterpret_cast<History *>(
+            reinterpret_cast<uintptr_t>(raw) | 1ULL);
+    }
 
     // 1. Copy
-    Board(const Board &other) = default;
-    // 2. Copy affectation operator
-    Board &operator=(const Board &other) = default;
+    Board(const Board &other)
+    {
+        std::memcpy(occupancies, other.occupancies, sizeof(occupancies));
+        std::memcpy(&state, &other.state, sizeof(state));
+        pieces_occ = other.pieces_occ;
+        eval_state = other.eval_state;
+        std::memcpy(mailbox, other.mailbox, sizeof(mailbox));
+        zobrist_key = other.zobrist_key;
 
-    // 3. Destructor
-    ~Board() = default;
+        History *raw_copy = new History(*other.get_history());
+        history_tagged = reinterpret_cast<History *>(
+            reinterpret_cast<uintptr_t>(raw_copy) | 1ULL);
+    }
+    // 2. Copy affectation operator
+    Board &operator=(const Board &other)
+    {
+        if (this != &other)
+        {
+            if (history_tagged && owns_history())
+                delete get_history();
+            History *raw_copy = new History(*other.get_history());
+            std::memcpy(occupancies, other.occupancies, sizeof(occupancies));
+            std::memcpy(&state, &other.state, sizeof(state));
+            pieces_occ = other.pieces_occ;
+            eval_state = other.eval_state;
+            zobrist_key = other.zobrist_key;
+            std::memcpy(mailbox, other.mailbox, sizeof(mailbox));
+            history_tagged = reinterpret_cast<History *>(
+                reinterpret_cast<uintptr_t>(raw_copy) | 1ULL);
+        };
+
+        return *this;
+    }
+
+    // 3 - Destructor
+    ~Board()
+    {
+        if (history_tagged && owns_history())
+        {
+            delete get_history();
+        }
+    }
 
     // 4. Move
-    Board(Board &&other) noexcept = default;
+    Board(Board &&other) noexcept : history_tagged(other.history_tagged)
+    {
+        other.history_tagged = nullptr;
+    }
     // 5. Affectation & move operator
-    Board &operator=(Board &&other) noexcept = default;
-
+    Board &operator=(Board &&other) noexcept
+    {
+        if (this != &other)
+        {
+            if (history_tagged && owns_history())
+                delete get_history();
+            history_tagged = other.history_tagged;
+            other.history_tagged = nullptr;
+        }
+        return *this;
+    }
     bool load_fen(const std::string_view fen_string);
+
+    void attach_history(History *h)
+    {
+        if (history_tagged && owns_history())
+        {
+            delete get_history();
+        }
+        history_tagged = h;
+    }
 
     void clear();
 
     inline void switch_trait()
     {
         zobrist_key ^= zobrist_black_to_move;
-        side_to_move = static_cast<Color>(1 - static_cast<int>(side_to_move));
+        state.side_to_move = static_cast<Color>(1 - static_cast<int>(state.side_to_move));
     }
 
     inline bitboard &get_piece_bitboard(const Color color, const Piece type)
@@ -82,12 +155,12 @@ public:
 
     inline Color get_side_to_move() const
     {
-        return side_to_move;
+        return state.side_to_move;
     }
 
     inline uint8_t get_castling_rights()
     {
-        return castling_rights;
+        return state.castling_rights;
     }
 
     inline bitboard &get_piece_bitboard(const Color color, const int type)
@@ -111,29 +184,11 @@ public:
 
     inline bitboard &get_occupancy(Color c)
     {
-        switch (c)
-        {
-        case NO_COLOR:
-            return occupied_all;
-        case WHITE:
-            return occupied_white;
-        case BLACK:
-            return occupied_black;
-        }
-        throw std::logic_error("Color unsupported");
+        return occupancies[c];
     }
     inline const bitboard &get_occupancy(Color c) const
     {
-        switch (c)
-        {
-        case NO_COLOR:
-            return occupied_all;
-        case WHITE:
-            return occupied_white;
-        case BLACK:
-            return occupied_black;
-        }
-        throw std::logic_error("Color unsupported");
+        return occupancies[c];
     }
 
     inline void update_square_bitboard(Color color, Piece type, int square, bool fill)
@@ -147,51 +202,40 @@ public:
     inline void update_occupancy()
     {
         // Reset
-        occupied_white = EMPTY_MASK;
-        occupied_black = EMPTY_MASK;
+        occupancies[WHITE] = EMPTY_MASK;
+        occupancies[BLACK] = EMPTY_MASK;
 
         for (int i{PAWN}; i <= KING; ++i)
         {
-            occupied_white |= get_piece_bitboard(WHITE, static_cast<Piece>(i));
-            occupied_black |= get_piece_bitboard(BLACK, static_cast<Piece>(i));
+            occupancies[WHITE] |= get_piece_bitboard(WHITE, static_cast<Piece>(i));
+            occupancies[BLACK] |= get_piece_bitboard(BLACK, static_cast<Piece>(i));
         }
 
         // Total
-        occupied_all = occupied_white | occupied_black;
+        occupancies[NO_COLOR] = occupancies[WHITE] | occupancies[BLACK];
     }
-    std::pair<Color, Piece> get_piece_on_square(int sq) const;
-    bool play(const Move &move);
-    char piece_to_char(Color color, Piece type) const;
-    void show() const;
+    inline std::pair<Color, Piece> get_piece_on_square(int sq) const
+    {
+        uint8_t val = mailbox[sq];
+        if (val == EMPTY_SQ)
+            return {NO_COLOR, NO_PIECE};
+        return {static_cast<Color>((val >> COLOR_SHIFT) & COLOR_MASK), static_cast<Piece>(val & PIECE_MASK)};
+    }
 
-    /// @brief Checks if specified square is being occupied
-    /// @param sq
-    /// @param piece (NO_PIECE == checks for any piece type)
-    /// @param color (NO_COLOR == checks for any color)
-    /// @return true if occupied
     inline bool is_occupied(int sq, Piece piece, Color color) const
     {
-        const U64 mask = sq_mask(sq);
+        uint8_t val = mailbox[sq];
+        if (piece == NO_PIECE) [[likely]]
+            return val != EMPTY_SQ && (color == NO_COLOR || (val >> COLOR_SHIFT) == color);
 
-        if (piece == NO_PIECE)
-        {
-            if (color == WHITE)
-                return occupied_white & mask;
-            if (color == BLACK)
-                return occupied_black & mask;
-            return occupied_all & mask; // NO_COLOR
-        }
-
-        if (color == WHITE)
-            return get_piece_bitboard(WHITE, piece) & mask;
-        if (color == BLACK)
-            return get_piece_bitboard(BLACK, piece) & mask;
-
-        // NO_COLOR: either side
-        return (get_piece_bitboard(WHITE, piece) |
-                get_piece_bitboard(BLACK, piece)) &
-               mask;
+        uint8_t target = (color << COLOR_SHIFT) | piece;
+        return val == target;
     }
+
+    bool play(const Move move);
+    bool is_move_legal(const Move move);
+    char piece_to_char(Color color, Piece type) const;
+    void show() const;
 
     bool is_occupied(const int sq, const int piece, const Color color) const
     {
@@ -204,11 +248,11 @@ public:
 
     inline uint8_t get_castling_rights() const
     {
-        return castling_rights;
+        return state.castling_rights;
     }
     inline uint8_t get_en_passant_sq() const
     {
-        return en_passant_sq;
+        return state.en_passant_sq;
     }
 
     inline U64 get_hash() const
@@ -220,12 +264,12 @@ public:
 
     inline void play_null_move(int &stored_ep_sq)
     {
-        if (en_passant_sq != EN_PASSANT_SQ_NONE)
-            zobrist_key ^= zobrist_en_passant[en_passant_sq % 8];
+        if (state.en_passant_sq != EN_PASSANT_SQ_NONE)
+            zobrist_key ^= zobrist_en_passant[state.en_passant_sq % 8];
         else
             zobrist_key ^= zobrist_en_passant[8];
-        stored_ep_sq = en_passant_sq;
-        en_passant_sq = EN_PASSANT_SQ_NONE;
+        stored_ep_sq = state.en_passant_sq;
+        state.en_passant_sq = EN_PASSANT_SQ_NONE;
         zobrist_key ^= zobrist_en_passant[8];
 
         switch_trait();
@@ -234,9 +278,9 @@ public:
     {
         switch_trait();
         zobrist_key ^= zobrist_en_passant[8];
-        en_passant_sq = stored_ep_sq;
-        if (en_passant_sq != EN_PASSANT_SQ_NONE)
-            zobrist_key ^= zobrist_en_passant[en_passant_sq % 8];
+        state.en_passant_sq = stored_ep_sq;
+        if (state.en_passant_sq != EN_PASSANT_SQ_NONE)
+            zobrist_key ^= zobrist_en_passant[state.en_passant_sq % 8];
         else
             zobrist_key ^= zobrist_en_passant[8];
     }
@@ -245,17 +289,17 @@ public:
 
     uint16_t get_halfmove_clock()
     {
-        return halfmove_clock;
+        return state.halfmove_clock;
     }
 
     inline int get_history_size()
     {
-        return history.size();
+        return get_history()->size();
     }
 
     int get_smallest_attacker(U64 all_attackers, Color side, Piece &found_type)
     {
-        U64 side_attackers = all_attackers & (side == WHITE ? occupied_white : occupied_black);
+        U64 side_attackers = all_attackers & occupancies[side];
         if (!side_attackers)
             return -1;
 
@@ -271,5 +315,46 @@ public:
             }
         }
         return -1;
+    }
+
+    inline const EvalState &get_eval_state() const
+    {
+        return eval_state;
+    }
+
+    inline const std::array<bitboard, N_PIECES_TYPE> get_all_bitboards() const
+    {
+        return pieces_occ;
+    }
+
+    bool is_king_attacked(Color c);
+    bool is_attacked(int sq, Color attacker) const;
+
+    inline U64 get_hash_after(Move m) const
+    {
+        U64 h = zobrist_key;
+
+        // 1. Inversion du trait (OBLIGATOIRE)
+        // On XOR la clé qui représente le tour de jouer
+        h ^= zobrist_black_to_move;
+
+        // 2. Déplacement de la pièce
+        h ^= zobrist_table[state.side_to_move * N_PIECES_TYPE_HALF + m.get_from_piece()][m.get_from_sq()];
+        h ^= zobrist_table[state.side_to_move * N_PIECES_TYPE_HALF + m.get_from_piece()][m.get_to_sq()];
+
+        // 3. Gestion de la capture
+        if (m.get_to_piece() != NO_PIECE)
+            h ^= zobrist_table[!state.side_to_move * N_PIECES_TYPE_HALF + m.get_to_piece()][m.get_to_sq()];
+
+        return h;
+    }
+
+    void verify_consistency()
+    {
+        U64 expected_all = occupancies[WHITE] | occupancies[BLACK];
+        if (occupancies[NO_COLOR] != expected_all)
+        {
+            throw std::logic_error("Corrupted bitboards");
+        }
     }
 };

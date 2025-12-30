@@ -1,34 +1,42 @@
 #pragma once
 #include "core/move/move_list.hpp"
 
-// Drapeaux pour savoir quel type de score nous avons stocké
 enum TTFlag : uint8_t
 {
-    TT_EXACT, // Score exact (compris entre alpha et beta)
-    TT_ALPHA, // Borne supérieure (Upper bound) : le score est <= alpha
-    TT_BETA   // Borne inférieure (Lower bound) : le score est >= beta
+    TT_EXACT = 0,
+    TT_ALPHA = 1,
+    TT_BETA = 2
 };
 
-struct TTEntry
+struct alignas(16) TTEntry
 {
-    uint64_t key; // Pour vérifier les collisions
-    Move move;    // Le meilleur coup (très important pour le tri des coups plus tard)
-    int score;    // Le score de la position
-    int depth;    // La profondeur de la recherche pour ce score
-    uint8_t flag; // Type de score (TTFlag)
+    uint64_t key;
+    Move move;
+    int16_t score;
+    uint8_t depth;
+    uint8_t flag; // [7:2] Age (6 bits), [1:0] Type (2 bits)
+
+    TTEntry() : key(0), move(0), score(0), depth(0), flag(0) {}
+};
+
+struct TTBucket
+{
+    TTEntry entries[4];
 };
 
 class TranspositionTable
 {
 private:
-    std::vector<TTEntry> table;
-    size_t size;
+    std::vector<TTBucket> table;
+    size_t bucket_count;
+    size_t index_mask;
+    uint8_t current_age = 0; // Utilise les 6 bits de poids fort
 
-    // Gestion des scores de mat pour qu'ils soient valides peu importe le tour en cours
+    // Normalisation des scores de mat pour la TT
     int score_to_tt(int score, int ply)
     {
         if (score > MATE_SCORE - 1000)
-            return score + ply; // On ajoute le ply pour "neutraliser" la distance à la racine
+            return score + ply;
         if (score < -MATE_SCORE + 1000)
             return score - ply;
         return score;
@@ -37,86 +45,155 @@ private:
     int score_from_tt(int score, int ply)
     {
         if (score > MATE_SCORE - 1000)
-            return score - ply; // On retire le ply actuel pour retrouver la distance réelle depuis la racine
+            return score - ply;
         if (score < -MATE_SCORE + 1000)
             return score + ply;
         return score;
     }
 
 public:
-    // Taille en MB (ex: 64MB)
     void resize(size_t mb_size)
     {
-        size_t entry_count = (mb_size * 1024 * 1024) / sizeof(TTEntry);
-        table.resize(entry_count);
-        size = entry_count;
-        clear();
+        size_t bytes = mb_size * 1024 * 1024;
+        size_t desired_buckets = bytes / sizeof(TTBucket);
+
+        // Puissance de 2 pour un masquage rapide
+        size_t n = 1;
+        while (n <= desired_buckets)
+            n <<= 1;
+        n >>= 1;
+
+        table.assign(n, TTBucket{});
+        index_mask = n - 1;
+        bucket_count = n;
     }
 
     void clear()
     {
-        std::fill(table.begin(), table.end(), TTEntry{0, Move(), 0, 0, 0});
+        std::fill(table.begin(), table.end(), TTBucket{});
     }
 
-    // Sauvegarder une entrée
+    // Appelé à chaque début de nouvelle recherche (itération de l'ID)
+    // On incrémente de 4 car on stocke l'âge dans les bits [7:2]
+    void next_generation() { current_age = (current_age + 4) & 0xFC; }
+
     void store(uint64_t key, int depth, int ply, int score, uint8_t flag, Move move)
     {
-        size_t index = key % size; // Ou (key & (size - 1)) si size est une puissance de 2
+        TTBucket &bucket = table[key & index_mask];
 
-        // Stratégie de remplacement simple : "Always Replace" ou "Depth-preferred"
-        // Ici on remplace si nouvelle profondeur >= ancienne profondeur OU si c'est une hash différente
-        if (table[index].key != key || depth >= table[index].depth)
+        int best_idx = 0;
+        int worst_priority = 1000000;
+
+        for (int i = 0; i < 4; ++i)
         {
-            table[index].key = key;
-            table[index].depth = depth;
-            table[index].flag = flag;
-            table[index].score = score_to_tt(score, ply);
-            table[index].move = move;
+            // 1. Hit : On a déjà la clé
+            if (bucket.entries[i].key == key)
+            {
+                // On n'écrase que si la nouvelle profondeur est meilleure
+                // ou si l'entrée existante appartient à une ancienne recherche
+                bool old = ((bucket.entries[i].flag ^ current_age) & 0xFC) != 0;
+                if (depth >= bucket.entries[i].depth || old)
+                {
+                    if (move != 0)
+                        bucket.entries[i].move = move;
+                    bucket.entries[i].score = (int16_t)score_to_tt(score, ply);
+                    bucket.entries[i].depth = (uint8_t)depth;
+                    bucket.entries[i].flag = flag | current_age;
+                }
+                return;
+            }
+
+            // 2. Stratégie de remplacement (Priority = Depth + Age_Bonus)
+            // Une entrée d'une génération précédente est très facile à remplacer
+            bool old = ((bucket.entries[i].flag ^ current_age) & 0xFC) != 0;
+            int priority = bucket.entries[i].depth;
+            if (!old)
+                priority += 100; // Bonus de survie pour la génération actuelle
+
+            if (priority < worst_priority)
+            {
+                worst_priority = priority;
+                best_idx = i;
+            }
         }
+
+        // 3. Remplacement
+        bucket.entries[best_idx].key = key;
+        bucket.entries[best_idx].move = move;
+        bucket.entries[best_idx].score = (int16_t)score_to_tt(score, ply);
+        bucket.entries[best_idx].depth = (uint8_t)depth;
+        bucket.entries[best_idx].flag = flag | current_age;
     }
 
-    // Lire une entrée. Retourne true si une entrée valide est trouvée et UTILISABLE pour couper
     bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move)
     {
-        size_t index = key % size;
-        TTEntry &entry = table[index];
+        TTBucket &bucket = table[key & index_mask];
 
-        if (entry.key == key)
+        for (int i = 0; i < 4; ++i)
         {
-            // On récupère le meilleur coup même si la profondeur n'est pas suffisante
-            // Cela servira au tri des coups (move ordering)
-            best_move = entry.move;
-
-            if (entry.depth >= depth)
+            if (bucket.entries[i].key == key)
             {
-                int score = score_from_tt(entry.score, ply);
+                TTEntry &entry = bucket.entries[i];
+                best_move = entry.move;
 
-                if (entry.flag == TT_EXACT)
+                if (entry.depth >= depth)
                 {
-                    return_score = score;
-                    return true;
+                    int score = score_from_tt(entry.score, ply);
+                    uint8_t flag = entry.flag & 0x03;
+
+                    if (flag == TT_EXACT)
+                    {
+                        return_score = score;
+                        return true;
+                    }
+                    if (flag == TT_ALPHA && score <= alpha)
+                    {
+                        return_score = alpha;
+                        return true; // On retourne alpha (borne sup)
+                    }
+                    if (flag == TT_BETA && score >= beta)
+                    {
+                        return_score = beta;
+                        return true; // On retourne beta (borne inf)
+                    }
                 }
-                if (entry.flag == TT_ALPHA && score <= alpha)
-                {
-                    return_score = score;
-                    return true;
-                }
-                if (entry.flag == TT_BETA && score >= beta)
-                {
-                    return_score = score;
-                    return true;
-                }
+                return false; // Clé trouvée mais profondeur insuffisante
             }
         }
         return false;
     }
 
-    // Juste pour récupérer le coup (pour le tri)
+    // Utilisé par le moteur pour le tri des coups (Ordering)
     Move get_move(uint64_t key)
     {
-        size_t index = key % size;
-        if (table[index].key == key)
-            return table[index].move;
-        return Move(); // Coup null
+        TTBucket &bucket = table[key & index_mask];
+        for (int i = 0; i < 4; ++i)
+        {
+            if (bucket.entries[i].key == key)
+                return bucket.entries[i].move;
+        }
+        return 0;
+    }
+
+    // Retourne le taux de remplissage en permillage (0-1000)
+    // On vérifie les 1000 premiers buckets pour une estimation rapide
+    int get_hashfull() const
+    {
+        size_t count = 0;
+        size_t sample = std::min(bucket_count, (size_t)1000);
+        for (size_t i = 0; i < sample; ++i)
+        {
+            for (int j = 0; j < 4; ++j)
+            {
+                if (table[i].entries[j].key != 0)
+                    count++;
+            }
+        }
+        return (int)(count * 1000 / (sample * 4));
+    }
+
+    inline void prefetch(uint64_t hash)
+    {
+        _mm_prefetch((const char *)&table[hash & index_mask], _MM_HINT_T0);
     }
 };

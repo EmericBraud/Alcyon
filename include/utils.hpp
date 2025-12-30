@@ -19,6 +19,8 @@
 #include <algorithm>
 #include <chrono>
 
+#include <xmmintrin.h> //x86 / intel only
+
 #define BOARD_SIZE 64
 #define STARTING_POS_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 #define ROOK_ATTACKS_SIZE 102400
@@ -31,10 +33,34 @@
 
 #define FEN_HARD_PROBLEM_1 "8/3P3k/n2K3p/2p3n1/1b4N1/2p1p1P1/8/3B4 w - - 0 1" // Successfully solved after depth 20 (20s/move)
 
-constexpr int MATE_SCORE = 100000;
+constexpr int MATE_SCORE = 10000;
 
 using U64 = std::uint64_t;
 using bitboard = std::uint64_t;
+
+namespace masks
+{
+    static constexpr uint8_t king_vicinity_files[8] = {
+        0b00000011, // File A (0) : colonnes A et B
+        0b00000111, // File B (1) : colonnes A, B, C
+        0b00001110, // File C (2) : colonnes B, C, D
+        0b00011100, // File D (3) : colonnes C, D, E
+        0b00111000, // File E (4) : colonnes D, E, F
+        0b01110000, // File F (5) : colonnes E, F, G
+        0b11100000, // File G (6) : colonnes F, G, H
+        0b11000000  // File H (7) : colonnes G et H
+    };
+    static constexpr uint64_t file[8] = {
+        0x0101010101010101ULL, // Colonne A
+        0x0202020202020202ULL, // Colonne B
+        0x0404040404040404ULL, // Colonne C
+        0x0808080808080808ULL, // Colonne D
+        0x1010101010101010ULL, // Colonne E
+        0x2020202020202020ULL, // Colonne F
+        0x4040404040404040ULL, // Colonne G
+        0x8080808080808080ULL  // Colonne H
+    };
+}
 
 inline int get_lsb_index(U64 bb)
 {

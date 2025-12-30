@@ -21,7 +21,7 @@ TEST_F(TTTest, MateScoreConsistency)
     tt.store(key, 10, ply_found, score_found_at_ply_5, TT_EXACT, Move());
 
     int retrieved_score;
-    Move m;
+    Move m = 0;
     // On sonde à la racine (ply 0)
     bool hit = tt.probe(key, 10, 0, -1000000, 1000000, retrieved_score, m);
 
@@ -46,7 +46,7 @@ TEST_F(TTTest, DepthReplacement)
     tt.store(key, 3, 0, 200, TT_EXACT, Move());
 
     int score;
-    Move m;
+    Move m = 0;
     tt.probe(key, 5, 0, -INF, INF, score, m);
     ASSERT_EQ(score, 100); // La profondeur 5 doit avoir été conservée car 5 > 3
 }
@@ -56,7 +56,7 @@ TEST_F(TTTest, AlphaBetaCuts)
     tt.resize(1);
     uint64_t key = 0x1;
     int score;
-    Move m;
+    Move m = 0;
 
     // On stocke : "Le score est <= 50"
     tt.store(key, 10, 0, 50, TT_ALPHA, Move());
