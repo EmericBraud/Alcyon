@@ -33,7 +33,7 @@ void GUI::run()
                     if (is_sq_selected && MoveGen::get_legal_moves_mask(board, last_piece) & (1ULL << selected_sq))
                     {
                         PieceInfo info = board.get_piece_on_square(last_piece);
-                        Move move{};
+                        Move move = 0;
                         if (info.second == KING && abs(last_piece - selected_sq) == 2)
                         {                                 // Castle
                             if (last_piece < selected_sq) // King side

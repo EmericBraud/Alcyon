@@ -66,9 +66,9 @@ TEST_F(MoveGenTest, MoveGenRook)
 {
     Board b{};
     b.load_fen("8/1p1q4/5k2/1n1R4/8/1K2N1p1/3B4/8 w - - 0 1");
-
+    const U64 occ = b.get_occupancy(NO_COLOR);
     // Half legal move (can capture his own pieces)
-    const U64 bitboard_moves = MoveGen::generate_rook_moves(Square::d5, b);
+    const U64 bitboard_moves = MoveGen::generate_rook_moves(Square::d5, occ);
     ASSERT_EQ(bitboard_moves, 0b1000000010001111011000001000000010000000100000000000);
 }
 
@@ -76,9 +76,10 @@ TEST_F(MoveGenTest, MoveGenRookPieceOnBorder)
 {
     Board b{};
     b.load_fen("8/1p1q4/5k2/1n1R3r/8/1K2N1p1/3B4/8 w - - 0 1");
+    const U64 occ = b.get_occupancy(NO_COLOR);
 
     // Half legal move (can capture his own pieces)
-    const U64 bitboard_moves = MoveGen::generate_rook_moves(Square::d5, b);
+    const U64 bitboard_moves = MoveGen::generate_rook_moves(Square::d5, occ);
     ASSERT_EQ(bitboard_moves, 0b1000000010001111011000001000000010000000100000000000);
 }
 
@@ -86,9 +87,10 @@ TEST_F(MoveGenTest, MoveGenBishop)
 {
     Board b{};
     b.load_fen("8/1p1q4/5k2/1n1R4/8/1K2N1p1/3B4/8 w - - 0 1");
+    const U64 occ = b.get_occupancy(NO_COLOR);
 
     // Half legal move (can capture his own pieces)
-    const U64 bitboard_moves = MoveGen::generate_bishop_moves(Square::d2, b);
+    const U64 bitboard_moves = MoveGen::generate_bishop_moves(Square::d2, occ);
     ASSERT_EQ(bitboard_moves, 0b100000010000101000000000000010100);
 }
 
@@ -116,9 +118,11 @@ TEST_F(MoveGenTest, PawnCanPush)
     Board b{};
     b.load_fen("rnbqkbnr/pppp1ppp/8/8/5p2/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     Move move(Square::e2, Square::e4, PAWN);
+    MoveGen::init_move_flags(b, move);
     b.play(move);
 
     Move move2(Square::f4, Square::e3, PAWN);
+    MoveGen::init_move_flags(b, move2);
     b.play(move2);
     U64 mask = MoveGen::get_legal_moves_mask(b, Square::d2);
     ASSERT_EQ(mask, 0x8180000);
@@ -142,7 +146,7 @@ TEST_F(MoveGenTest, EnPassantAfterCheckTest)
      * When we "get_legal_moves_mask",
      * under the hood we perform the move, get the opponent attack mask
      * then check if it collides with our king,
-     * then undo the move. That is why we need to check if en_passant_sq
+     * then undo the move. That is why we need to check if state.en_passant_sq
      * is still unchanged.
      */
     Move m2{Square::f4, Square::e3, PAWN};

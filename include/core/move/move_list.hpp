@@ -6,13 +6,15 @@
 
 struct MoveList
 {
-    std::array<Move, MAX_MOVES> moves;
-    std::array<int, MAX_MOVES> scores;
+    Move moves[MAX_MOVES];
+    int scores[MAX_MOVES];
 
     int count = 0;
 
     Move *begin() { return &moves[0]; }
     Move *end() { return &moves[count]; }
+
+    MoveList() {}
 
     void push(Move m)
     {

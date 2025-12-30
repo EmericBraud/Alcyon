@@ -1,14 +1,8 @@
 #pragma once
-#include "engine/pos_eval.hpp"
+#include "engine/eval/pos_eval.hpp"
 
 #define MAX_DEPTH 50
-constexpr int INF = 1000000;
-
-struct MoveScorer
-{
-    Move m;
-    int score;
-};
+constexpr int INF = 10000;
 
 using Clock = std::chrono::steady_clock;
 
@@ -29,6 +23,9 @@ class Engine
     Clock::time_point start_time;
     int time_limit_ms = 0;
     bool time_up = false;
+    double lmr_table[64][64];
+
+    Move counter_moves[2][7][64];
 
     int qsearch(int alpha, int beta);
     inline void check_time()
@@ -42,16 +39,30 @@ class Engine
         if (elapsed >= time_limit_ms)
         {
             time_up = true;
+            std::cout << static_cast<double>(total_nodes) * 1000 / static_cast<double>(elapsed) << " Nodes/s" << std::endl;
         }
     }
 
     int see(int sq, Piece target, Piece attacker, Color side, int from_sq) const;
 
+    void init_lmr_table()
+    {
+        for (int d = 1; d < 64; d++)
+        {
+            for (int m = 1; m < 64; m++)
+            {
+                // Formule standard  K = 2.25
+                lmr_table[d][m] = 0.5 + log(d) * log(m) / 2.25;
+            }
+        }
+    }
+
 public:
     int negamax(int depth, int alpha, int beta, int ply);
-    void play(int time_ms = 2000);
+    void play(int time_ms = 20000);
 
-    int score_move(const Move &move, const Board &board, const Move &tt_move, int ply) const;
+    int score_move(const Move &move, const Board &board, const Move &tt_move, int ply, const Move &prev_move) const;
+
     // Score uniquement pour le Quiescence Search (MVV-LVA)
     int score_capture(const Move &move) const;
     void age_history()
@@ -68,9 +79,11 @@ public:
     Engine(Board &board) : board(board)
     {
         init_zobrist();
-        tt.resize(1024);
+        tt.resize(256);
         clear_killers();
         clear_history();
+        init_lmr_table();
+        clear_count();
     }
 
     int eval_position()
@@ -84,5 +97,9 @@ public:
     void clear_history()
     {
         std::memset(history_moves, 0, sizeof(history_moves));
+    }
+    void clear_count()
+    {
+        std::memset(counter_moves, 0, sizeof(counter_moves));
     }
 };

@@ -112,6 +112,8 @@ TEST_F(MovePlayTest, DetectionRepetition)
     Board b;
     b.load_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
+    const U64 z1 = b.zobrist_key;
+
     Move nf3(Square::g1, Square::f3, KNIGHT);
     Move nf6(Square::g8, Square::f6, KNIGHT);
     Move ng1(Square::f3, Square::g1, KNIGHT);
@@ -126,7 +128,11 @@ TEST_F(MovePlayTest, DetectionRepetition)
     b.play(ng1);
     b.play(ng8);
 
+    const U64 z2 = b.zobrist_key;
+
     // Ici, la position est la même qu'au début.
     // Ton code devrait renvoyer true car elle est déjà dans l'historique.
+    ASSERT_EQ(b.get_history()->size(), 4);
+    ASSERT_EQ(z1, z2);
     ASSERT_TRUE(b.is_repetition());
 }

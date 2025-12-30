@@ -7,7 +7,7 @@ int Engine::see(int sq, Piece target, Piece attacker, Color side, int from_sq) c
     U64 occupied = board.get_occupancy(NO_COLOR);
 
     // Initialisation du score avec la valeur de la pièce capturée
-    value[0] = eval::get_piece_score(target);
+    value[0] = Eval::get_piece_score(target);
 
     // On génère le masque initial de tous les attaquants
     U64 all_attackers = MoveGen::attackers_to(sq, occupied, board);
@@ -39,7 +39,7 @@ int Engine::see(int sq, Piece target, Piece attacker, Color side, int from_sq) c
 
         d++;
         // On accumule les gains (Capture - valeur de la pièce qu'on risque)
-        value[d] = eval::get_piece_score(next_attacker) - value[d - 1];
+        value[d] = Eval::get_piece_score(next_attacker) - value[d - 1];
 
         // Retrait de la pièce utilisée
         occupied ^= (1ULL << from);

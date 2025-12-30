@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <sstream>
-
 bool Board::load_fen(const std::string_view fen_string)
 {
     clear();
@@ -10,213 +9,101 @@ bool Board::load_fen(const std::string_view fen_string)
 
     std::string fen(fen_string);
     std::istringstream ss(fen);
-
-    int square{56}; // Starts at 56 (A8)
+    int square{56};
     std::string token;
 
-    // --- 1. PIECES ---
     if (!std::getline(ss, token, ' '))
-    {
-        std::cerr << "WARNING: FEN incomplete - missing piece placement." << std::endl;
         return false;
-    }
 
     for (const char c : token)
     {
         if (c == ' ')
+            break;
+
+        // Gestion des pièces
+        if (std::isalpha(c))
         {
-            break;
-        }
+            Color color = std::isupper(c) ? WHITE : BLACK;
+            Piece type;
+            char upper_c = std::toupper(c);
 
-        switch (c)
-        {
-        // ---- BLACK
-        case 'p':
-            update_square_bitboard(BLACK, PAWN, square++, true);
-            break;
-        case 'n':
-            update_square_bitboard(BLACK, KNIGHT, square++, true);
-            break;
-        case 'b':
-            update_square_bitboard(BLACK, BISHOP, square++, true);
-            break;
-        case 'r':
-            update_square_bitboard(BLACK, ROOK, square++, true);
-            break;
-        case 'q':
-            update_square_bitboard(BLACK, QUEEN, square++, true);
-            break;
-        case 'k':
-            update_square_bitboard(BLACK, KING, square++, true);
-            break;
-
-        // ---- WHITE
-        case 'P':
-            update_square_bitboard(WHITE, PAWN, square++, true);
-            break;
-        case 'N':
-            update_square_bitboard(WHITE, KNIGHT, square++, true);
-            break;
-        case 'B':
-            update_square_bitboard(WHITE, BISHOP, square++, true);
-            break;
-        case 'R':
-            update_square_bitboard(WHITE, ROOK, square++, true);
-            break;
-        case 'Q':
-            update_square_bitboard(WHITE, QUEEN, square++, true);
-            break;
-        case 'K':
-            update_square_bitboard(WHITE, KING, square++, true);
-            break;
-
-        // Other
-        case '/':
-            square -= 16;
-            break;
-
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-        case '6':
-        case '7':
-        case '8':
-        {
-            int jump{c - '0'};
-            square += jump;
-        }
-        break;
-
-        default:
-            std::cerr << "WARNING: Invalid character in piece placement: " << c << std::endl;
-            return false;
-        }
-    }
-
-    // --- 2. SIDE TO MOVE ---
-    if (!std::getline(ss, token, ' '))
-    {
-        std::cerr << "WARNING: FEN incomplete - missing side to move." << std::endl;
-        return false;
-    }
-    if (token.length() != 1)
-    {
-        std::cerr << "WARNING: Invalid side to move field." << std::endl;
-        return false;
-    }
-
-    char side_char = token[0];
-    if (side_char == 'w')
-    {
-        side_to_move = WHITE;
-    }
-    else if (side_char == 'b')
-    {
-        side_to_move = BLACK;
-    }
-    else
-    {
-        std::cerr << "WARNING: Invalid side to move: " << side_char << std::endl;
-        return false;
-    }
-
-    // --- 3. CASTLING RIGHTS ---
-    if (!std::getline(ss, token, ' '))
-    {
-        std::cerr << "WARNING: FEN incomplete - missing castling rights." << std::endl;
-        return false;
-    }
-    // Assumons que castling_rights a été initialisé à 0 par clear()
-    for (const char c : token)
-    {
-        switch (c)
-        {
-        case 'K':
-            castling_rights |= WHITE_KINGSIDE;
-            break;
-        case 'Q':
-            castling_rights |= WHITE_QUEENSIDE;
-            break;
-        case 'k':
-            castling_rights |= BLACK_KINGSIDE;
-            break;
-        case 'q':
-            castling_rights |= BLACK_QUEENSIDE;
-            break;
-        case '-': // No castling rights
-            if (token.length() > 1)
+            switch (upper_c)
             {
-                std::cerr << "WARNING: Invalid castling field: -" << std::endl;
+            case 'P':
+                type = PAWN;
+                break;
+            case 'N':
+                type = KNIGHT;
+                break;
+            case 'B':
+                type = BISHOP;
+                break;
+            case 'R':
+                type = ROOK;
+                break;
+            case 'Q':
+                type = QUEEN;
+                break;
+            case 'K':
+                type = KING;
+                break;
+            default:
                 return false;
             }
-            break;
-        default:
-            std::cerr << "WARNING: Invalid character in castling rights: " << c << std::endl;
-            return false;
+
+            // Mise à jour Mailbox unifiée
+            mailbox[square] = (color << COLOR_SHIFT) | type;
+            update_square_bitboard(color, type, square++, true);
+        }
+        else if (c == '/')
+        {
+            square -= 16;
+        }
+        else if (std::isdigit(c))
+        {
+            square += (c - '0');
         }
     }
 
-    // --- 4. EN PASSANT TARGET SQUARE ---
+    // --- SIDE TO MOVE ---
     if (!std::getline(ss, token, ' '))
-    {
-        std::cerr << "WARNING: FEN incomplete - missing en passant target." << std::endl;
         return false;
+    state.side_to_move = (token[0] == 'w') ? WHITE : BLACK;
+
+    // --- CASTLING RIGHTS ---
+    if (!std::getline(ss, token, ' '))
+        return false;
+    for (const char c : token)
+    {
+        if (c == 'K')
+            state.castling_rights |= WHITE_KINGSIDE;
+        else if (c == 'Q')
+            state.castling_rights |= WHITE_QUEENSIDE;
+        else if (c == 'k')
+            state.castling_rights |= BLACK_KINGSIDE;
+        else if (c == 'q')
+            state.castling_rights |= BLACK_QUEENSIDE;
     }
+
+    // --- EN PASSANT ---
+    if (!std::getline(ss, token, ' '))
+        return false;
     if (token == "-")
-    {
-        en_passant_sq = EN_PASSANT_SQ_NONE;
-    }
-    else if (token.length() == 2)
-    {
-        // Convert format a3 -> index (0-63)
-        // Simple example: 'a' -> 0, '1' -> 0. (column * 8 + row)
-        int file = token[0] - 'a';
-        int rank = token[1] - '1';
-        en_passant_sq = (rank * 8) + file;
-    }
+        state.en_passant_sq = EN_PASSANT_SQ_NONE;
     else
     {
-        std::cerr << "WARNING: Invalid en passant field: " << token << std::endl;
-        return false;
+        int file = token[0] - 'a';
+        int rank = token[1] - '1';
+        state.en_passant_sq = (rank * 8) + file;
     }
 
-    // --- 5. HALFMOVE CLOCK (50 moves rule) ---
-    if (!std::getline(ss, token, ' '))
-    {
-        std::cerr << "WARNING: FEN incomplete - missing halfmove clock." << std::endl;
-        return false;
-    }
-    try
-    {
-        halfmove_clock = std::stoi(token);
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "WARNING: Invalid halfmove clock value: " << token << std::endl;
-        return false;
-    }
+    // --- CLOCKS ---
+    if (std::getline(ss, token, ' '))
+        state.halfmove_clock = std::stoi(token);
 
-    // --- 6. FULLMOVE NUMBER ---
-    if (!std::getline(ss, token, ' '))
-    {
-        std::cerr << "WARNING: FEN incomplete - missing fullmove number." << std::endl;
-        return false;
-    }
-    try
-    {
-        fullmove_number = std::stoi(token);
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "WARNING: Invalid fullmove number value: " << token << std::endl;
-        return false;
-    }
-
-    // Update occupancy masks
     update_occupancy();
     compute_full_hash();
+    eval_state = EvalState(pieces_occ);
     return true;
 }
 
@@ -287,16 +174,16 @@ void Board::show() const
               << std::endl;
 
     // Display basic state info
-    std::cout << "Side to Move: " << (side_to_move == WHITE ? "White (w)" : "Black (b)") << std::endl;
+    std::cout << "Side to Move: " << (state.side_to_move == WHITE ? "White (w)" : "Black (b)") << std::endl;
 
     // Display castling rights using binary mask check
-    std::cout << "Castling Rights: " << (castling_rights & WHITE_KINGSIDE ? 'K' : '-')
-              << (castling_rights & WHITE_QUEENSIDE ? 'Q' : '-')
-              << (castling_rights & BLACK_KINGSIDE ? 'k' : '-')
-              << (castling_rights & BLACK_QUEENSIDE ? 'q' : '-') << std::endl;
+    std::cout << "Castling Rights: " << (state.castling_rights & WHITE_KINGSIDE ? 'K' : '-')
+              << (state.castling_rights & WHITE_QUEENSIDE ? 'Q' : '-')
+              << (state.castling_rights & BLACK_KINGSIDE ? 'k' : '-')
+              << (state.castling_rights & BLACK_QUEENSIDE ? 'q' : '-') << std::endl;
 
     // Display en passant square
-    std::cout << "En Passant Square: " << (en_passant_sq == 0 ? "-" : std::to_string(en_passant_sq)) << std::endl;
+    std::cout << "En Passant Square: " << (state.en_passant_sq == 0 ? "-" : std::to_string(state.en_passant_sq)) << std::endl;
 }
 
 void Board::compute_full_hash()
@@ -332,8 +219,7 @@ void Board::compute_full_hash()
 
 void Board::undo_last_move()
 {
-    if (history.empty())
+    if (get_history()->empty())
         return;
-    const UndoInfo last_info = history.back();
-    unplay(last_info.move);
+    unplay(get_history()->back().move);
 }

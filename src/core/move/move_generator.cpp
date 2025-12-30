@@ -190,110 +190,118 @@ void MoveGen::initialize_bitboard_tables()
 
     std::cout << "Bitboard tables initialized." << std::endl;
 }
-/// @brief Generates pseudo legal moves mask !! does not include castling moves
-/// @param board
-/// @param sq
-/// @param color
-/// @param piece_type
-/// @return
-inline U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
+void MoveGen::generate_pawn_moves(Board &board, const Color color, MoveList &list)
 {
-    U64 target_mask;
-    U64 temp_mask;
-    const uint8_t en_passant_sq = board.get_en_passant_sq();
+    const bitboard pawns = board.get_piece_bitboard(color, PAWN);
+    const bitboard occ = board.get_occupancy(NO_COLOR);
+    const bitboard enemies = board.get_occupancy((Color)!color);
+    const int ep_sq = board.get_en_passant_sq();
 
-    switch (piece_type)
+    const int current_cr = board.get_castling_rights();
+    const bool ep_flag = (ep_sq != EN_PASSANT_SQ_NONE);
+    const int ep_file = ep_flag ? (ep_sq % 8) : 0;
+
+    // --- Paramètres de direction selon la couleur ---
+    const int dir = (color == WHITE) ? 8 : -8;
+    const int start_rank = (color == WHITE) ? 1 : 6;
+    const int promo_rank = (color == WHITE) ? 6 : 1;
+    const std::array<bitboard, 64> &pawn_attacks = (color == WHITE) ? PawnAttacksWhite : PawnAttacksBlack;
+
+    bitboard temp_pawns = pawns;
+    while (temp_pawns)
     {
-    case PAWN:
-        if (color == WHITE)
-        {
-            // We use rook move generation to limit push
-            temp_mask = generate_rook_moves(sq, board) & (~board.get_occupancy(NO_COLOR));
-            target_mask = (PawnPushWhite[sq] | PawnPush2White[sq]) & temp_mask;
-            target_mask |= PawnAttacksWhite[sq] & board.get_occupancy(BLACK);
+        const int from = pop_lsb(temp_pawns);
+        const int rank = from >> 3;
 
-            if (en_passant_sq != EN_PASSANT_SQ_NONE)
+        // 1. Poussées (Simple et Double)
+        int to = from + dir;
+        // Sécurité : on vérifie que 'to' est bien sur l'échiquier avant le test d'occupation
+        if (to >= 0 && to < 64 && !(occ & (1ULL << to)))
+        {
+            if (rank == promo_rank)
             {
-                target_mask |= PawnAttacksWhite[sq] & sq_mask(en_passant_sq);
+                list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, current_cr, ep_flag, ep_file});
+            }
+            else
+            {
+                list.push(Move{from, to, PAWN, Move::Flags::NONE, NO_PIECE, current_cr, ep_flag, ep_file});
+
+                // Double poussée
+                int double_to = to + dir;
+                if (rank == start_rank && !(occ & (1ULL << double_to)))
+                {
+                    list.push(Move{from, double_to, PAWN, Move::Flags::DOUBLE_PUSH, NO_PIECE, current_cr, ep_flag, ep_file});
+                }
             }
         }
-        else if (color == BLACK)
-        {
-            // We use rook move generation to limit push
-            temp_mask = generate_rook_moves(sq, board) & (~board.get_occupancy(NO_COLOR));
-            target_mask = (PawnPushBlack[sq] | PawnPush2Black[sq]) & temp_mask;
-            target_mask |= PawnAttacksBlack[sq] & board.get_occupancy(WHITE);
 
-            if (en_passant_sq != EN_PASSANT_SQ_NONE)
-            {
-                target_mask |= PawnAttacksBlack[sq] & sq_mask(en_passant_sq);
-            }
-        }
-        else
+        // 2. Captures normales
+        bitboard attacks = pawn_attacks[from] & enemies;
+        while (attacks)
         {
-            throw std::logic_error("Passed NONE color to generate pseudo legal moves");
+            int target = pop_lsb(attacks);
+            if (rank == promo_rank)
+                list.push(Move{from, target, PAWN, Move::Flags::PROMOTION_MASK, board.get_p(target), current_cr, ep_flag, ep_file});
+            else
+                list.push(Move{from, target, PAWN, Move::Flags::CAPTURE, board.get_p(target), current_cr, ep_flag, ep_file});
         }
-        break;
-    case KNIGHT:
-        target_mask = KnightAttacks[sq];
-        break;
-    case BISHOP:
-        target_mask = generate_bishop_moves(sq, board);
-        break;
-    case ROOK:
-        target_mask = generate_rook_moves(sq, board);
-        break;
-    case QUEEN:
-        target_mask = generate_rook_moves(sq, board) | generate_bishop_moves(sq, board);
-        break;
-    case KING:
-        target_mask = KingAttacks[sq];
-        break;
-    default:
-        throw std::logic_error("Unsupported piece type");
-        break;
-    }
 
-    U64 friendly_mask = board.get_occupancy(color);
-    target_mask &= ~friendly_mask;
-    return target_mask;
-}
-U64 MoveGen::get_pseudo_moves_mask(const Board &board, const int sq)
-{
-    const PieceInfo pair = board.get_piece_on_square(sq);
-    const Color color = pair.first;
-    const Piece piece_type = pair.second;
-    if (piece_type == NO_PIECE)
-    {
-        return 0ULL;
+        // 3. Capture En Passant
+        if (ep_flag && (pawn_attacks[from] & (1ULL << ep_sq)))
+        {
+            list.push(Move{from, ep_sq, PAWN, Move::Flags::EN_PASSANT_CAP, PAWN, current_cr, ep_flag, ep_file});
+        }
     }
-    return get_pseudo_moves_mask(board, sq, color, piece_type);
 }
 void MoveGen::generate_pseudo_legal_moves(Board &board, const Color color, MoveList &list)
 {
-    const bitboard opponent_king_mask{~board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING)};
+    const bitboard occupied = board.get_occupancy(NO_COLOR);
+    const bitboard us_occ = board.get_occupancy(color);
+    const bitboard opponent_king_mask = ~board.get_piece_bitboard(!color, KING);
 
-    for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
+    // 1. Pions : Déjà dans une fonction dédiée (Excellent)
+    generate_pawn_moves(board, color, list);
+
+    // 2. Cavaliers (Sauts fixes)
+    bitboard knights = board.get_piece_bitboard(color, KNIGHT);
+    while (knights)
     {
-        U64 piece_bitboard = board.get_piece_bitboard(color, piece_type);
-
-        while (piece_bitboard != 0)
-        {
-            int from_sq = pop_lsb(piece_bitboard);
-            U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type)) & opponent_king_mask;
-
-            while (target_mask != 0)
-            {
-                int target_sq = pop_lsb(target_mask);
-                Move m{
-                    from_sq,
-                    target_sq,
-                    static_cast<Piece>(piece_type)};
-                MoveGen::init_move_flags(board, m);
-                list.push(m);
-            }
-        }
+        int sq = pop_lsb(knights);
+        bitboard targets = KnightAttacks[sq] & ~us_occ & opponent_king_mask;
+        push_moves_from_mask(list, sq, KNIGHT, targets, board);
     }
+
+    // 3. Sliders : Fous et Tours (Utilisent l'occupancy)
+    bitboard bishops = board.get_piece_bitboard(color, BISHOP);
+    while (bishops)
+    {
+        int sq = pop_lsb(bishops);
+        bitboard targets = generate_bishop_moves(sq, occupied) & ~us_occ & opponent_king_mask;
+        push_moves_from_mask(list, sq, BISHOP, targets, board);
+    }
+
+    bitboard rooks = board.get_piece_bitboard(color, ROOK);
+    while (rooks)
+    {
+        int sq = pop_lsb(rooks);
+        bitboard targets = generate_rook_moves(sq, occupied) & ~us_occ & opponent_king_mask;
+        push_moves_from_mask(list, sq, ROOK, targets, board);
+    }
+
+    // 4. Dames (Combinaison des deux)
+    bitboard queens = board.get_piece_bitboard(color, QUEEN);
+    while (queens)
+    {
+        int sq = pop_lsb(queens);
+        bitboard targets = (generate_rook_moves(sq, occupied) | generate_bishop_moves(sq, occupied)) & ~us_occ & opponent_king_mask;
+        push_moves_from_mask(list, sq, QUEEN, targets, board);
+    }
+
+    // 5. Roi
+    const int sq = board.get_eval_state().king_sq[color];
+    bitboard targets = KingAttacks[sq] & ~us_occ & opponent_king_mask;
+    push_moves_from_mask(list, sq, KING, targets, board);
+
     generate_castle_moves(board, list);
 }
 
@@ -334,23 +342,17 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
     MoveList list;
     PieceInfo info = board.get_piece_on_square(from_sq);
     if (info.second == NO_PIECE)
-    {
         return 0ULL;
-    }
+
     U64 target_mask_pseudo = get_pseudo_moves_mask(board, from_sq, info.first, static_cast<Piece>(info.second));
     U64 target_mask = 0ULL;
     while (target_mask_pseudo != 0)
     {
         int to_sq = pop_lsb(target_mask_pseudo);
-        Move move(from_sq, to_sq, info.second);
+        Move move(from_sq, to_sq, static_cast<Piece>(info.second));
         MoveGen::init_move_flags(board, move);
-        const Color player = board.get_side_to_move();
-        board.play(move);
-        if (!is_king_attacked(board, player))
-        {
+        if (board.is_move_legal(move))
             target_mask |= sq_mask(to_sq);
-        }
-        board.unplay(move);
     }
 
     if (info.second == KING)
@@ -375,140 +377,113 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
     return target_mask;
 }
 
-bool MoveGen::is_king_attacked(const Board &board, Color us)
+bool MoveGen::is_mask_attacked(const Board &board, U64 mask, Color attacker)
 {
-    const Color opponent = (us == WHITE) ? BLACK : WHITE;
+    const Color us = (attacker == WHITE) ? BLACK : WHITE;
 
-    bitboard king_mask = board.get_piece_bitboard(us, KING);
-    assert(king_mask);
+    const std::array<U64, BOARD_SIZE> &PawnAttacks =
+        (us == WHITE) ? MoveGen::PawnAttacksWhite : MoveGen::PawnAttacksBlack;
 
-    int king_sq = pop_lsb(king_mask);
+    const U64 occ = board.get_occupancy(NO_COLOR);
 
-    assert(king_sq >= 0 && king_sq <= 63);
-
-    const U64 rook_check = generate_rook_moves(king_sq, board);
-    if (rook_check & (board.get_piece_bitboard(opponent, ROOK) | board.get_piece_bitboard(opponent, QUEEN)))
-        return true;
-
-    const U64 bishop_check = generate_bishop_moves(king_sq, board);
-    if (bishop_check & (board.get_piece_bitboard(opponent, BISHOP) | board.get_piece_bitboard(opponent, QUEEN)))
-        return true;
-
-    const U64 knight_check = KnightAttacks[king_sq];
-    if (knight_check & board.get_piece_bitboard(opponent, KNIGHT))
-        return true;
-
-    const U64 king_check = KingAttacks[king_sq];
-    if (king_check & board.get_piece_bitboard(opponent, KING))
-        return true;
-
-    const U64 pawn_check = (us == WHITE) ? PawnAttacksWhite[king_sq] : PawnAttacksBlack[king_sq];
-    if (pawn_check & board.get_piece_bitboard(opponent, PAWN))
-        return true;
-
-    return false;
-}
-
-bool MoveGen::is_mask_attacked(Board &board, const U64 mask)
-{
-    const Color color = board.get_side_to_move();
-    for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
+    // On boucle sur chaque case du masque (généralement 2 ou 3 cases pour le roque)
+    while (mask)
     {
-        U64 piece_bitboard = board.get_piece_bitboard(color, piece_type);
-        while (piece_bitboard != 0)
-        {
-            int from_sq = pop_lsb(piece_bitboard);
-            U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type));
-            if (mask & target_mask)
-            {
-                return true;
-            }
-        }
+        int sq = pop_lsb(mask);
+
+        // 1. Attaques de Pions (Reverse)
+        // On regarde si un pion adverse sur sa case de départ pourrait attaquer 'sq'
+        if (PawnAttacks[sq] & board.get_piece_bitboard(attacker, PAWN))
+            return true;
+
+        // 2. Attaques de Cavaliers
+        if (MoveGen::KnightAttacks[sq] & board.get_piece_bitboard(attacker, KNIGHT))
+            return true;
+
+        // 3. Attaques de Fou / Dame (Diagonales)
+        U64 bishop_attacks = MoveGen::generate_bishop_moves(sq, occ);
+        if (bishop_attacks & (board.get_piece_bitboard(attacker, BISHOP) | board.get_piece_bitboard(attacker, QUEEN)))
+            return true;
+
+        // 4. Attaques de Tour / Dame (Colonnes/Rangées)
+        U64 rook_attacks = MoveGen::generate_rook_moves(sq, occ);
+        if (rook_attacks & (board.get_piece_bitboard(attacker, ROOK) | board.get_piece_bitboard(attacker, QUEEN)))
+            return true;
+
+        // 5. Attaques de Roi (Reverse)
+        if (MoveGen::KingAttacks[sq] & board.get_piece_bitboard(attacker, KING))
+            return true;
     }
+
     return false;
 }
 void MoveGen::generate_castle_moves(Board &board, MoveList &list)
 {
-    const Color color = board.get_side_to_move();
+    const Color us = board.get_side_to_move();
     const uint8_t castling_rights = board.get_castling_rights();
     const bitboard occupancy = board.get_occupancy(NO_COLOR);
-    board.switch_trait();
-    const bool prev_en_passant_flag = board.get_en_passant_sq() != EN_PASSANT_SQ_NONE;
-    const int prev_en_passant_file = board.get_en_passant_sq() == EN_PASSANT_SQ_NONE ? 0 : board.get_en_passant_sq() % 8;
-    if (color == WHITE)
+
+    // On prépare les infos d'En Passant
+    const bool ep_flag = board.get_en_passant_sq() != EN_PASSANT_SQ_NONE;
+    const int ep_file = ep_flag ? board.get_en_passant_sq() % 8 : 0;
+
+    // On identifie l'adversaire pour éviter switch_trait()
+    const Color them = !us;
+
+    if (us == WHITE)
     {
-        if ((castling_rights & WHITE_KINGSIDE) && !(occupancy & 0x60) && (!is_mask_attacked(board, 0x70)))
+        // PETIT ROQUE BLANC (h1)
+        // 1. Droits ? 2. Cases vides (f1, g1) ? 3. Sécurité (e1, f1, g1) ?
+        if ((castling_rights & WHITE_KINGSIDE) && !(occupancy & 0x60ULL))
         {
-            const Move move{
-                4,
-                6,
-                KING,
-                Move::Flags::KING_CASTLE,
-                NO_PIECE,
-                castling_rights,
-                prev_en_passant_flag,
-                prev_en_passant_file,
-            };
-            list.push(move);
+            if (!is_mask_attacked(board, 0x70ULL, them)) // e1, f1, g1
+            {
+                list.push(Move(4, 6, KING, Move::Flags::KING_CASTLE, NO_PIECE, castling_rights, ep_flag, ep_file));
+            }
         }
-        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0xe) && !(is_mask_attacked(board, 0x1c)))
+        // GRAND ROQUE BLANC (a1)
+        // 1. Droits ? 2. Cases vides (b1, c1, d1) ? 3. Sécurité (c1, d1, e1) ?
+        if ((castling_rights & WHITE_QUEENSIDE) && !(occupancy & 0x0EULL))
         {
-            const Move move{
-                4,
-                2,
-                KING,
-                Move::Flags::QUEEN_CASTLE,
-                NO_PIECE,
-                castling_rights,
-                prev_en_passant_flag,
-                prev_en_passant_file,
-            };
-            list.push(move);
+            if (!is_mask_attacked(board, 0x1CULL, them)) // c1, d1, e1
+            {
+                list.push(Move(4, 2, KING, Move::Flags::QUEEN_CASTLE, NO_PIECE, castling_rights, ep_flag, ep_file));
+            }
         }
     }
-    else
+    else // BLACK
     {
-        if ((castling_rights & BLACK_KINGSIDE) && !(occupancy & 0x6000000000000000) && (!is_mask_attacked(board, 0x7000000000000000)))
+        // PETIT ROQUE NOIR (h8)
+        if ((castling_rights & BLACK_KINGSIDE) && !(occupancy & 0x6000000000000000ULL))
         {
-            const Move move{
-                60,
-                62,
-                KING,
-                Move::Flags::KING_CASTLE,
-                NO_PIECE,
-                castling_rights,
-                prev_en_passant_flag,
-                prev_en_passant_file,
-            };
-            list.push(move);
+            if (!is_mask_attacked(board, 0x7000000000000000ULL, them)) // e8, f8, g8
+            {
+                list.push(Move(60, 62, KING, Move::Flags::KING_CASTLE, NO_PIECE, castling_rights, ep_flag, ep_file));
+            }
         }
-        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0xe00000000000000) && !(is_mask_attacked(board, 0x1c00000000000000)))
+        // GRAND ROQUE NOIR (a8)
+        if ((castling_rights & BLACK_QUEENSIDE) && !(occupancy & 0x0E00000000000000ULL))
         {
-            const Move move{
-                60,
-                58,
-                KING,
-                Move::Flags::QUEEN_CASTLE,
-                NO_PIECE,
-                castling_rights,
-                prev_en_passant_flag,
-                prev_en_passant_file,
-            };
-            list.push(move);
+            if (!is_mask_attacked(board, 0x1C00000000000000ULL, them)) // c8, d8, e8
+            {
+                list.push(Move(60, 58, KING, Move::Flags::QUEEN_CASTLE, NO_PIECE, castling_rights, ep_flag, ep_file));
+            }
         }
     }
-    board.switch_trait();
 }
+
 void MoveGen::generate_legal_moves(Board &board, MoveList &list)
 {
     const Color us = board.get_side_to_move();
     MoveGen::generate_pseudo_legal_moves(board, us, list);
 
-    const bool is_king_atck = is_king_attacked(board, us);
+    const bool is_king_atck = board.is_king_attacked(us);
     bitboard king_bb = board.get_piece_bitboard(us, KING);
     const int king_sq = pop_lsb(king_bb);
 
-    const U64 king_mask = generate_rook_moves(king_sq, board) | generate_bishop_moves(king_sq, board);
+    const U64 occ = board.get_occupancy(NO_COLOR);
+
+    const U64 king_mask = generate_rook_moves(king_sq, occ) | generate_bishop_moves(king_sq, occ);
     const U64 king_mask_knight = KnightAttacks[king_sq];
 
     int write_idx = 0; // Pointeur d'écriture
@@ -522,32 +497,22 @@ void MoveGen::generate_legal_moves(Board &board, MoveList &list)
         const U64 from_msk = 1ULL << move.get_from_sq();
         const U64 to_msk = 1ULL << move.get_to_sq();
 
-        // --- TA LOGIQUE DE LÉGALITÉ ---
         if (move.get_from_piece() == KING || move.get_flags() == Move::Flags::EN_PASSANT_CAP)
         {
-            board.play(move);
-            if (MoveGen::is_king_attacked(board, us))
-                legal = false;
-            board.unplay(move);
+            legal = board.is_move_legal(move);
         }
         else if (!is_king_atck)
         {
             if (from_msk & king_mask)
             {
-                board.play(move);
-                if (MoveGen::is_king_attacked(board, us))
-                    legal = false;
-                board.unplay(move);
+                legal = board.is_move_legal(move);
             }
         }
         else // On est en échec
         {
             if (to_msk & (king_mask | king_mask_knight))
             {
-                board.play(move);
-                if (MoveGen::is_king_attacked(board, us))
-                    legal = false;
-                board.unplay(move);
+                legal = board.is_move_legal(move);
             }
             else
             {
@@ -568,36 +533,6 @@ void MoveGen::generate_legal_moves(Board &board, MoveList &list)
 
     // On met à jour la taille finale de la liste
     list.count = write_idx;
-}
-U64 generate_rook_moves_from_bitboard(int from_sq, const bitboard &occupancy)
-{
-    const MoveGen::Magic magic = MoveGen::RookMagics[from_sq];
-
-    const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
-
-    return MoveGen::RookAttacks[index + magic.index_start];
-}
-
-U64 MoveGen::generate_rook_moves(int from_sq, const Board &board)
-{
-    const U64 occupancy = board.get_occupancy(NO_COLOR);
-    return generate_rook_moves_from_bitboard(from_sq, occupancy);
-}
-
-U64 generate_bishop_moves_from_bitboard(int from_sq, const bitboard &occupancy)
-{
-    const MoveGen::Magic magic = MoveGen::BishopMagics[from_sq];
-
-    const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
-
-    return MoveGen::BishopAttacks[index + magic.index_start];
-}
-
-U64 MoveGen::generate_bishop_moves(int from_sq, const Board &board)
-{
-    const U64 occupancy = board.get_occupancy(NO_COLOR);
-
-    return generate_bishop_moves_from_bitboard(from_sq, occupancy);
 }
 
 U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook)
@@ -864,47 +799,12 @@ void MoveGen::load_attacks()
     load_attacks_rook();
 }
 
-void MoveGen::init_move_flags(const Board &board, Move &move)
-{
-    const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
-    const Piece from_piece{move.get_from_piece()};
-    const PieceInfo to_piece_info{board.get_piece_on_square(to_sq)};
-
-    move.set_prev_castling_rights(board.get_castling_rights());
-    move.set_prev_en_passant(board.get_en_passant_sq());
-
-    move.set_to_piece(to_piece_info.second);
-    if (to_piece_info.second != NO_PIECE)
-    {
-        move.set_flags(Move::Flags::CAPTURE);
-    }
-
-    if (from_piece == PAWN)
-    {
-        if (abs(from_sq - to_sq) == 16)
-        {
-            move.set_flags(Move::Flags::DOUBLE_PUSH);
-            return;
-        }
-        else if (to_sq == board.get_en_passant_sq())
-        {
-            move.set_flags(Move::Flags::EN_PASSANT_CAP);
-            return;
-        }
-        else if (to_sq / 8 % 7 == 0) // First or last row
-        {
-            move.set_flags(Move::Flags::PROMOTION_MASK);
-            return;
-        }
-    }
-}
-
 U64 MoveGen::update_xrays(int sq, U64 occupied, const Board &board)
 {
-    return (generate_bishop_moves_from_bitboard(sq, occupied) &
+    return (generate_bishop_moves(sq, occupied) &
             (board.get_piece_bitboard(WHITE, BISHOP) | board.get_piece_bitboard(BLACK, BISHOP) |
              board.get_piece_bitboard(WHITE, QUEEN) | board.get_piece_bitboard(BLACK, QUEEN))) |
-           (generate_rook_moves_from_bitboard(sq, occupied) &
+           (generate_rook_moves(sq, occupied) &
             (board.get_piece_bitboard(WHITE, ROOK) | board.get_piece_bitboard(BLACK, ROOK) |
              board.get_piece_bitboard(WHITE, QUEEN) | board.get_piece_bitboard(BLACK, QUEEN)));
 }
@@ -920,13 +820,13 @@ U64 MoveGen::attackers_to(int sq, U64 occupancy, const Board &b)
              (b.get_piece_bitboard(WHITE, KNIGHT) |
               b.get_piece_bitboard(BLACK, KNIGHT))) |
 
-            (generate_bishop_moves_from_bitboard(sq, occupancy) &
+            (generate_bishop_moves(sq, occupancy) &
              (b.get_piece_bitboard(WHITE, BISHOP) |
               b.get_piece_bitboard(BLACK, BISHOP) |
               b.get_piece_bitboard(WHITE, QUEEN) |
               b.get_piece_bitboard(BLACK, QUEEN))) |
 
-            (generate_rook_moves_from_bitboard(sq, occupancy) &
+            (generate_rook_moves(sq, occupancy) &
              (b.get_piece_bitboard(WHITE, ROOK) |
               b.get_piece_bitboard(BLACK, ROOK) |
               b.get_piece_bitboard(WHITE, QUEEN) |
