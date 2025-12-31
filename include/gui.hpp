@@ -2,7 +2,7 @@
 
 #include <SFML/Graphics.hpp>
 
-#include "engine/engine.hpp"
+#include "engine/engine_manager.hpp"
 
 #define W_HEIGHT 600
 #define W_WIDTH 600
@@ -19,7 +19,7 @@
 class GUI
 {
 public:
-    GUI(Board &initial_board, bool auto_play = false, Color computer_side = BLACK) : board(initial_board), computer(Engine(initial_board)), window(sf::RenderWindow(sf::VideoMode(W_WIDTH, W_HEIGHT), "Chess 26", sf::Style::Titlebar | sf::Style::Close)), is_sq_selected(false), selected_sq(0), last_piece(0), auto_play(auto_play), computer_side(computer_side)
+    GUI(Board &initial_board, bool auto_play = false, Color computer_side = BLACK) : board(initial_board), computer(EngineManager(initial_board)), window(sf::RenderWindow(sf::VideoMode(W_WIDTH, W_HEIGHT), "Chess 26", sf::Style::Titlebar | sf::Style::Close)), is_sq_selected(false), selected_sq(0), last_piece(0), auto_play(auto_play), computer_side(computer_side)
     {
         history.clear();
         window.setFramerateLimit(60);
@@ -63,7 +63,7 @@ public:
 private:
     Board &board;
     History history;
-    Engine computer;
+    EngineManager computer;
     sf::RenderWindow window;
     std::array<std::array<sf::Texture, N_PIECES_TYPE_HALF>, 2> m_piece_textures;
     bool is_sq_selected;

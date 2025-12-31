@@ -9,7 +9,7 @@ void GUI::run()
         if (auto_play && board.get_side_to_move() == computer_side)
         {
             std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
-            computer.play();
+            computer.start_search();
             std::cout << "Move played" << std::endl;
         }
         while (window.pollEvent(event))
@@ -58,13 +58,13 @@ void GUI::run()
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::E)
             {
                 std::cout << "Evaluating position with depth " << MAX_DEPTH << " ..." << std::endl;
-                const int score{computer.eval_position()};
+                const int score{computer.evaluate_position(5000)};
                 std::cout << "Position score : " << score << std::endl;
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::P)
             {
                 std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
-                computer.play();
+                computer.start_search();
                 std::cout << "Move played" << std::endl;
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::U)

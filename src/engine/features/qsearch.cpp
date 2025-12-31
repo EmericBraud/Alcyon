@@ -1,25 +1,33 @@
 #include "engine/engine.hpp"
-int Engine::qsearch(int alpha, int beta)
+int SearchWorker::qsearch(int alpha, int beta)
 {
-    // 1. Contrôles de sécurité (Temps et Nœuds)
-    if ((total_nodes & 2047) == 0)
-        check_time();
-    if (time_up)
-        return Eval::eval_relative(board.get_side_to_move(), board, alpha, beta);
-
-    q_nodes++;
-    total_nodes++;
+    if (((++local_nodes) & 2047) == 0)
+    {
+        global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
+        local_nodes = 0;
+        if (thread_id == 0)
+        {
+            auto now = Clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_ref).count();
+            if (elapsed >= time_limit_ms_ref)
+            {
+                shared_stop.store(true, std::memory_order_relaxed);
+            }
+        }
+        // Si l'arrêt est demandé (par temps ou par un autre thread), on quitte
+        if (shared_stop.load(std::memory_order_relaxed))
+            return alpha;
+    }
 
     // 2. Sondage de la Transposition Table (TT)
     int tt_score;
     Move tt_move = 0;
-    // En qsearch, on utilise souvent depth = 0 ou une constante pour la TT
-    bool tt_hit = tt.probe(board.get_hash(), 0, 0, alpha, beta, tt_score, tt_move);
+    // En qsearch, la profondeur est considérée comme 0
+    bool tt_hit = shared_tt.probe(board.get_hash(), 0, 0, alpha, beta, tt_score, tt_move);
     if (tt_hit)
         return tt_score;
 
     // 3. Standing Pat (Évaluation statique)
-    // On considère que ne rien faire est une option (on peut "pat" si la position est bonne)
     int stand_pat = Eval::eval_relative(board.get_side_to_move(), board, alpha, beta);
     if (stand_pat >= beta)
         return beta;
@@ -32,44 +40,35 @@ int Engine::qsearch(int alpha, int beta)
     MoveList list;
     MoveGen::generate_pseudo_legal_captures(board, player, list);
 
-    // 5. TRI HYBRIDE : Calcul des scores (SEE + MVV-LVA)
+    // 5. TRI HYBRIDE : SEE + MVV-LVA
     for (int i = 0; i < list.count; ++i)
     {
         Move &m = list[i];
         Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
 
-        // On calcule la valeur réelle de l'échange via SEE
+        // Calcul du SEE pour filtrer et trier
         int see_val = see(m.get_to_sq(), target, m.get_from_piece(), player, m.get_from_sq());
 
         if (see_val < 0)
-        {
-            // Mauvaises captures : on les marque pour les ignorer plus tard
-            list.scores[i] = -1000000;
-        }
+            list.scores[i] = -1000000; // Mauvaise capture
         else
-        {
-            // Bonnes captures ou échanges égaux : SEE sert de base, MVV-LVA affine le tri
             list.scores[i] = 1000000 + see_val + score_capture(m);
-        }
     }
 
     int best_score = stand_pat;
     int alpha_orig = alpha;
     Move best_move = 0;
 
-    // 6. Boucle de recherche sur les captures
+    // 6. Boucle de recherche
     for (int i = 0; i < list.count; ++i)
     {
-        // On récupère le meilleur coup de la liste selon les scores calculés
         Move &m = list.pick_best_move(i);
 
-        // --- FILTRAGE SEE ---
-        // On ignore les captures qui perdent du matériel (SEE < 0)
+        // Élagage SEE
         if (list.scores[i] < 0)
             continue;
 
         // --- DELTA PRUNING ---
-        // Si même avec le gain de la capture + un bonus de promotion, on n'atteint pas alpha
         Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
         int victim_val = Eval::get_piece_score(target);
         int promo_bonus = (m.get_flags() & Move::PROMOTION_MASK) ? 800 : 0;
@@ -77,33 +76,27 @@ int Engine::qsearch(int alpha, int beta)
         if (stand_pat + victim_val + promo_bonus + 200 < alpha)
             continue;
 
-        // --- EXECUTION DU COUP ---
-        const U64 next_hash = board.get_hash_after(m);
-        tt.prefetch(next_hash);
-
+        // --- EXÉCUTION ---
+        shared_tt.prefetch(board.get_hash_after(m));
         board.play(m);
 
-        // Vérification de la légalité (on n'a pas le droit de laisser son roi en échec)
         if (board.is_king_attacked(player))
         {
-            _mm_prefetch((const char *)&(board.get_history())->back(), _MM_HINT_T0);
             board.unplay(m);
             continue;
         }
 
-        // Appel récursif (Negamax)
         int score = -qsearch(-beta, -alpha);
-
-        _mm_prefetch((const char *)&(board.get_history())->back(), _MM_HINT_T0);
         board.unplay(m);
 
-        if (time_up)
-            break;
+        // Sortie immédiate si le temps est écoulé pendant la récursion
+        if (shared_stop.load(std::memory_order_relaxed))
+            return alpha;
 
         // --- MISE À JOUR ALPHA-BETA ---
         if (score >= beta)
         {
-            tt.store(board.get_hash(), 0, 0, beta, TT_BETA, m);
+            shared_tt.store(board.get_hash(), 0, 0, beta, TT_BETA, m);
             return beta;
         }
 
@@ -118,13 +111,13 @@ int Engine::qsearch(int alpha, int beta)
         }
     }
 
-    // 7. Sauvegarde dans la Table de Transposition
+    // 7. Sauvegarde TT
     TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-    tt.store(board.get_hash(), 0, 0, best_score, flag, best_move);
+    shared_tt.store(board.get_hash(), 0, 0, best_score, flag, best_move);
 
     return best_score;
 }
-int Engine::score_capture(const Move &move) const
+int SearchWorker::score_capture(const Move &move) const
 {
     int attacker = move.get_from_piece();
 

@@ -18,6 +18,8 @@
 #include <cassert>
 #include <algorithm>
 #include <chrono>
+#include <atomic>
+#include <thread>
 
 #include <xmmintrin.h> //x86 / intel only
 

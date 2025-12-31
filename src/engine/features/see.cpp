@@ -1,6 +1,6 @@
 #include "engine/engine.hpp"
 
-int Engine::see(int sq, Piece target, Piece attacker, Color side, int from_sq) const
+int SearchWorker::see(int sq, Piece target, Piece attacker, Color side, int from_sq) const
 {
     int value[32];
     int d = 0;

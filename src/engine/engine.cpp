@@ -11,101 +11,7 @@ static constexpr int MVV_LVA_TABLE[7][7] = {
     /* NONE   */ {0, 0, 0, 0, 0, 0, 0}};
 //clang-format on
 
-void Engine::play(int time_ms)
-{
-    time_limit_ms = time_ms;
-    time_up = false;
-    start_time = Clock::now();
-
-    Move best_move = 0;
-    int last_score = 0;
-    int window = 40;
-
-    total_nodes = 0;
-    tt_cuts = 0;
-    beta_cutoffs = 0;
-    clear_killers();
-    age_history();
-
-    for (int current_depth = 1; current_depth <= MAX_DEPTH; ++current_depth)
-    {
-        if (time_up)
-            break;
-        int delta = 16;
-        int alpha = last_score - window;
-        int beta = last_score + window;
-
-        // Si on est à faible profondeur, on garde INF pour la stabilité
-        if (current_depth < 3)
-        {
-            alpha = -INF;
-            beta = INF;
-        }
-
-        // On n'active l'aspiration qu'à partir d'une certaine profondeur
-        if (current_depth >= 5)
-        {
-            alpha = std::max(-INF, last_score - delta);
-            beta = std::min(INF, last_score + delta);
-        }
-
-        while (true)
-        {
-            int score = negamax(current_depth, alpha, beta, 0);
-
-            if (time_up)
-                break;
-
-            if (score <= alpha) // Fail Low
-            {
-                // On élargit la fenêtre vers le bas
-                alpha = std::max(-INF, alpha - delta);
-                beta = (alpha + beta) / 2; // On peut resserrer beta pour aider l'élagage
-                delta += delta / 4 + 5;    // Croissance dynamique du delta
-                std::cout << "Fail Low (new alpha: " << alpha << ")\n";
-            }
-            else if (score >= beta) // Fail High
-            {
-                // On élargit la fenêtre vers le haut
-                beta = std::min(INF, beta + delta);
-                delta += delta / 4 + 5;
-                std::cout << "Fail High (new beta: " << beta << ")\n";
-            }
-            else
-            {
-                // SUCCESS : Le score est dans la fenêtre
-                last_score = score;
-                break;
-            }
-
-            // Sécurité : si la recherche prend trop de temps ou si delta explose
-            if (delta > 1000)
-            {
-                alpha = -INF;
-                beta = INF;
-            }
-        }
-
-        if (!time_up)
-        {
-            best_move = tt.get_move(board.get_hash());
-            std::cout << "Depth " << current_depth
-                      << " | Score " << last_score
-                      << " | Nodes " << total_nodes
-                      << " | PV: " << get_pv_line(current_depth)
-                      << std::endl;
-        }
-        if (std::abs(last_score) >= MATE_SCORE - MAX_DEPTH) // We found a checkmate
-        {
-            break;
-        }
-    }
-
-    if (best_move.get_value() != 0)
-        board.play(best_move);
-}
-
-int Engine::score_move(const Move &move, const Board &board, const Move &tt_move, int ply, const Move &prev_move) const
+int SearchWorker::score_move(const Move &move, const Board &board, const Move &tt_move, int ply, const Move &prev_move) const
 {
     // 1. Mise en cache de la valeur brute du mouvement (32 bits)
     const uint32_t move_val = move.get_value();
@@ -152,14 +58,14 @@ int Engine::score_move(const Move &move, const Board &board, const Move &tt_move
     return history_moves[us][move.get_from_sq()][move.get_to_sq()];
 }
 
-std::string Engine::get_pv_line(int depth)
+std::string SearchWorker::get_pv_line(int depth)
 {
     std::string pv_line = "";
     std::vector<Move> moves_to_unplay;
 
     for (int i = 0; i < depth; i++)
     {
-        Move m = tt.get_move(board.get_hash());
+        Move m = shared_tt.get_move(board.get_hash());
         if (m == 0)
             break;
 
@@ -176,43 +82,94 @@ std::string Engine::get_pv_line(int depth)
     return pv_line;
 }
 
-int Engine::negamax(int depth, int alpha, int beta, int ply)
+int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 {
-    // 1. Détection des nullités (Répétition / 50 coups)
+    int delta = 16;
+    int alpha = -INF;
+    int beta = INF;
+
+    // On n'active l'aspiration qu'après une profondeur minimale
+    if (depth >= 5)
+    {
+        alpha = std::max(-INF, last_score - delta);
+        beta = std::min(INF, last_score + delta);
+    }
+
+    while (true)
+    {
+        int score = negamax(depth, alpha, beta, 0);
+
+        // Si le temps est écoulé ou qu'un autre thread a demandé l'arrêt
+        if (shared_stop.load(std::memory_order_relaxed))
+            return score;
+
+        if (score <= alpha)
+        { // Fail Low
+            alpha = std::max(-INF, alpha - delta);
+            beta = (alpha + beta) / 2; // Resserrage de beta pour aider l'élagage
+            delta += delta / 4 + 5;
+        }
+        else if (score >= beta)
+        { // Fail High
+            beta = std::min(INF, beta + delta);
+            delta += delta / 4 + 5;
+        }
+        else
+        {
+            return score; // Succès : score dans la fenêtre
+        }
+
+        // Sécurité pour éviter les boucles infinies hors limites
+        if (delta > 2000)
+        {
+            alpha = -INF;
+            beta = INF;
+        }
+    }
+}
+int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
+{
+    // 1. Vérification périodique de l'arrêt (Atomique)
+    // On incrémente le compteur global de nœuds et on vérifie le temps
+    if (((++local_nodes)) & 2047 == 0)
+    {
+        global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
+        local_nodes = 0;
+        if (thread_id == 0)
+        {
+            auto now = Clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_ref).count();
+            if (elapsed >= time_limit_ms_ref)
+            {
+                shared_stop.store(true, std::memory_order_relaxed);
+            }
+        }
+        // Si l'arrêt est demandé (par temps ou par un autre thread), on quitte
+        if (shared_stop.load(std::memory_order_relaxed))
+            return alpha;
+    }
+
+    // 2. Détection des nullités (Répétition / 50 coups)
     if (ply > 0)
     {
         if (board.is_repetition() || board.get_halfmove_clock() >= 100)
-        {
             return (board.get_history_size() < 20) ? -25 : 0;
-        }
     }
 
-    // 2. Sondage de la Transposition Table (TT)
+    // 3. Sondage de la Transposition Table (TT)
     int tt_score;
     Move tt_move = 0;
-    total_nodes++;
-    bool tt_hit = tt.probe(board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move);
+    bool tt_hit = shared_tt.probe(board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move);
 
     if (tt_hit && ply > 0)
-    {
-        tt_cuts++;
         return tt_score;
-    }
 
-    if ((total_nodes & 2047) == 0)
-        check_time();
-    if (time_up)
-    {
-
-        return Eval::eval_relative(board.get_side_to_move(), board, alpha, beta);
-    }
-
-    // 3. Quiescence Search à l'horizon
+    // 4. Quiescence Search à l'horizon
     if (depth <= 0)
         return qsearch(alpha, beta);
 
-    // 4. Null Move Pruning (NMP)
-    bool in_check = board.is_king_attacked((Color)board.get_side_to_move());
+    // 5. Null Move Pruning (NMP)
+    bool in_check = board.is_king_attacked(board.get_side_to_move());
     if (depth >= 3 && ply > 0 && !in_check)
     {
         int stored_ep;
@@ -222,13 +179,10 @@ int Engine::negamax(int depth, int alpha, int beta, int ply)
         board.unplay_null_move(stored_ep);
 
         if (score >= beta)
-        {
-            if (score >= MATE_SCORE - MAX_DEPTH)
-                return beta;
-            return score;
-        }
+            return (score >= MATE_SCORE - MAX_DEPTH) ? beta : score;
     }
-    // --- Essayer le TT Move AVANT la génération ---
+
+    // --- RECHERCHE DU TT MOVE (PV Move) ---
     int best_score = -INF;
     Move best_move_this_node = 0;
     int moves_searched = 0;
@@ -236,130 +190,100 @@ int Engine::negamax(int depth, int alpha, int beta, int ply)
 
     if (tt_move.get_value() != 0)
     {
-        const U64 next_hash = board.get_hash_after(tt_move);
-        tt.prefetch(next_hash);
         board.play(tt_move);
-        if (!board.is_king_attacked((Color)player))
+        if (!board.is_king_attacked(player))
         {
             moves_searched++;
-            // Premier coup : fenêtre complète
-            int score = -negamax(depth - 1, -beta, -alpha, ply + 1);
-            if (ply > 0)
-                _mm_prefetch((const char *)&(board.get_history()->back()), _MM_HINT_T0);
+            best_score = -negamax(depth - 1, -beta, -alpha, ply + 1);
             board.unplay(tt_move);
 
-            if (score >= beta)
-                return score; // Beta-cutoff immédiat
-
-            if (score > best_score)
-            {
-                best_score = score;
-                best_move_this_node = tt_move;
-                if (score > alpha)
-                    alpha = score; // MISE À JOUR D'ALPHA
-            }
+            if (best_score >= beta)
+                return best_score;
+            if (best_score > alpha)
+                alpha = best_score;
+            best_move_this_node = tt_move;
         }
         else
         {
-            if (ply > 1)
-                _mm_prefetch((const char *)&(board.get_history())[board.get_history()->size() - 2], _MM_HINT_T0);
-            if (ply > 0)
-                _mm_prefetch((const char *)&(board.get_history()->back()), _MM_HINT_T0);
             board.unplay(tt_move);
         }
     }
 
-    const Move m = ply > 0 ? (board.get_history()->back()).move : 0;
-
-    // 5. Génération et tri des coups
+    // 6. Génération et tri des coups restants
     MoveList list;
-    MoveGen::generate_pseudo_legal_moves(board, board.get_side_to_move(), list);
+    MoveGen::generate_pseudo_legal_moves(board, player, list);
+
+    // Récupération du coup précédent pour les Counter-moves
+    const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
 
     for (int i = 0; i < list.count; ++i)
-        list.scores[i] = score_move(list.moves[i], board, tt_move, ply, m);
+        list.scores[i] = score_move(list.moves[i], board, tt_move, ply, prev_m);
 
     int alpha_orig = alpha;
 
-    // --- BOUCLE DE RECHERCHE PVS ---
+    // 7. BOUCLE PVS (Principal Variation Search)
     for (int i = 0; i < list.count; ++i)
     {
-        if ((total_nodes & 2047) == 0)
-            check_time();
-        if (time_up)
-            break;
-
         Move &m = list.pick_best_move(i);
+
         if (m.get_value() == tt_move.get_value())
             continue;
         if (!board.is_move_legal(m))
             continue;
-        int score;
-        const int m_score = list.scores[i];
-        bool is_tactical = (m_score >= 900000);
 
-        const U64 next_hash = board.get_hash_after(m);
-        tt.prefetch(next_hash);
-        board.play(m);
         moves_searched++;
+        int score;
+        bool is_tactical = (list.scores[i] >= 900000);
 
-        if (moves_searched == 1)
+        board.play(m);
+
+        // --- LATE MOVE REDUCTION (LMR) ---
+        if (depth >= 3 && moves_searched > 4 && !is_tactical && !in_check)
         {
-            // PREMIER COUP : Recherche avec fenêtre complète
+            int r = static_cast<int>(lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
+            r = std::clamp(r, 0, depth - 2);
+
+            score = -negamax(depth - 1 - r, -alpha - 1, -alpha, ply + 1);
+
+            // Re-search si le coup réduit semble bon
+            if (score > alpha)
+                score = -negamax(depth - 1, -alpha - 1, -alpha, ply + 1);
+        }
+        else if (moves_searched > 1) // Null Window Search pour PVS
+        {
+            score = -negamax(depth - 1, -alpha - 1, -alpha, ply + 1);
+        }
+        else // Full Window Search (seulement si moves_searched == 1 et pas de TT move)
+        {
             score = -negamax(depth - 1, -beta, -alpha, ply + 1);
         }
-        else
+
+        // Si le score est dans la fenêtre mais pas une coupure, on re-cherche normalement
+        if (score > alpha && score < beta && moves_searched > 1)
         {
-            int reduction = 0;
-
-            // Conditions pour réduire : profondeur >= 3 et coup "calme" (non tactique)
-            if (depth >= 3 && moves_searched > 4 && !is_tactical && !in_check)
-            {
-                // Accès direct à la table (plus rapide que les calculs de log)
-                reduction = static_cast<int>(lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
-
-                // Sécurité : on ne réduit pas au point de tomber en qsearch immédiatement
-                reduction = std::clamp(reduction, 0, depth - 2);
-            }
-
-            // Recherche réduite avec fenêtre nulle
-            score = -negamax(depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
-
-            // Re-search si le coup réduit dépasse alpha (il est peut-être meilleur que prévu)
-            if (score > alpha && reduction > 0)
-            {
-                score = -negamax(depth - 1, -alpha - 1, -alpha, ply + 1);
-            }
-
-            // Re-search complet (PVS) si le coup est dans la fenêtre
-            if (score > alpha && score < beta)
-            {
-                score = -negamax(depth - 1, -beta, -alpha, ply + 1);
-            }
+            score = -negamax(depth - 1, -beta, -alpha, ply + 1);
         }
-        if (ply > 0)
-            _mm_prefetch((const char *)&(board.get_history()->back()), _MM_HINT_T0);
 
         board.unplay(m);
 
+        // Vérification d'arrêt immédiat après un unplay
+        if (shared_stop.load(std::memory_order_relaxed))
+            return alpha;
+
+        // --- MISE À JOUR DES SCORES ET DES TABLES ---
         if (score >= beta)
         {
-            beta_cutoffs++;
-            if (ply > 0)
-                _mm_prefetch((const char *)&(board.get_history()->back()), _MM_HINT_T0);
-            tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
+            shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
 
             if (!is_tactical)
             {
-                if (ply > 0)
-                {
-                    Move prev_move = (board.get_history()->back()).move;
-                    if (prev_move.get_value() != 0)
-                    {
-                        counter_moves[player][prev_move.get_from_piece()][prev_move.get_to_sq()] = m;
-                    }
-                }
+                // Update Counter-moves et History (Local au thread)
+                if (prev_m.get_value() != 0)
+                    counter_moves[player][prev_m.get_from_piece()][prev_m.get_to_sq()] = m;
+
                 history_moves[player][m.get_from_sq()][m.get_to_sq()] += depth * depth;
-                if (!(m.get_value() == killer_moves[ply][0].get_value()))
+
+                if (m.get_value() != killer_moves[ply][0].get_value())
                 {
                     killer_moves[ply][1] = killer_moves[ply][0];
                     killer_moves[ply][0] = m;
@@ -376,17 +300,16 @@ int Engine::negamax(int depth, int alpha, int beta, int ply)
                 alpha = score;
         }
     }
+
+    // 8. Gestion des Mats et Pats
     if (moves_searched == 0)
     {
-        // On vérifie si le camp qui doit jouer est en échec
-        if (board.is_king_attacked(board.get_side_to_move()))
-            return -MATE_SCORE + ply; // MAT
-        else
-            return 0; // PAT
+        return in_check ? -MATE_SCORE + ply : 0;
     }
 
+    // 9. Sauvegarde TT Finale
     TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-    tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node);
+    shared_tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node);
 
     return best_score;
 }

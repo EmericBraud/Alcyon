@@ -2,15 +2,15 @@
 #include "engine/zobrist.hpp"
 
 static constexpr int mg_pawn_table[64] = {
-    0, 0, 0, 0, 0, 0, 0, 0,
-    50, 50, 50, 50, 50, 50, 50, 50, // Rang 7 : Menace de promotion
-    10, 10, 20, 30, 30, 20, 10, 10,
-    5, 5, 10, 25, 25, 10, 5, 5,
-    0, 0, 0, 20, 20, 0, 0, 0,
-    5, 5, 5, 10, 10, 5, 5, 5, // Rang 3 : Encourager l'avance légère
-    0, 0, 0, 0, 0, 0, 0, 0,   // Rang 2 : Neutre (on ne punit plus l'avance)
-    0, 0, 0, 0, 0, 0, 0, 0};
-
+    0, 0, 0, 0, 0, 0, 0, 0,         // Rang 1 (Inutilisé)
+    0, 0, 0, 0, 0, 0, 0, 0,         // Rang 2
+    5, 5, 5, 10, 10, 5, 5, 5,       // Rang 3
+    0, 0, 0, 20, 20, 0, 0, 0,       // Rang 4
+    5, 5, 10, 25, 25, 10, 5, 5,     // Rang 5
+    10, 10, 20, 30, 30, 20, 10, 10, // Rang 6
+    50, 50, 50, 50, 50, 50, 50, 50, // Rang 7 : Promotion proche !
+    0, 0, 0, 0, 0, 0, 0, 0          // Rang 8
+};
 static constexpr int mg_knight_table[64] = {
     -50, -40, -30, -30, -30, -30, -40, -50,
     -40, -20, 0, 0, 0, 0, -20, -40,
@@ -71,12 +71,65 @@ static constexpr int eg_king_table[64] = {
     -30, -30, 0, 0, 0, 0, -30, -30,
     -50, -30, -30, -30, -30, -30, -30, -50};
 
+static constexpr int eg_pawn_table[64] = {
+    0, 0, 0, 0, 0, 0, 0, 0,                 // Rang 1
+    5, 5, 5, 5, 5, 5, 5, 5,                 // Rang 2
+    10, 10, 10, 10, 10, 10, 10, 10,         // Rang 3
+    25, 25, 25, 25, 25, 25, 25, 25,         // Rang 4
+    50, 50, 50, 50, 50, 50, 50, 50,         // Rang 5
+    100, 100, 100, 100, 100, 100, 100, 100, // Rang 6
+    150, 150, 150, 150, 150, 150, 150, 150, // Rang 7
+    0, 0, 0, 0, 0, 0, 0, 0                  // Rang 8
+};
+static constexpr int eg_knight_table[64] = {
+    -50, -40, -30, -30, -30, -30, -40, -50,
+    -40, -20, 0, 0, 0, 0, -20, -40,
+    -30, 0, 10, 15, 15, 10, 0, -30,
+    -30, 5, 15, 20, 20, 15, 5, -30,
+    -30, 0, 15, 20, 20, 15, 0, -30,
+    -30, 5, 10, 15, 15, 10, 5, -30,
+    -40, -20, 0, 5, 5, 0, -20, -40,
+    -50, -40, -30, -30, -30, -30, -40, -50};
+
+static constexpr int eg_bishop_table[64] = {
+    -20, -10, -10, -10, -10, -10, -10, -20,
+    -10, 0, 0, 0, 0, 0, 0, -10,
+    -10, 0, 5, 10, 10, 5, 0, -10,
+    -10, 5, 5, 10, 10, 5, 5, -10,
+    -10, 0, 10, 10, 10, 10, 0, -10,
+    -10, 10, 10, 10, 10, 10, 10, -10,
+    -10, 5, 0, 0, 0, 0, 5, -10,
+    -20, -10, -10, -10, -10, -10, -10, -20};
+
+static constexpr int eg_rook_table[64] = {
+    10, 10, 10, 10, 10, 10, 10, 10,
+    15, 20, 20, 20, 20, 20, 20, 15, // Bonus 7ème rangée
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    -5, 0, 0, 0, 0, 0, 0, -5,
+    -10, -5, 0, 5, 5, 0, -5, -10};
+
+static constexpr int eg_queen_table[64] = {
+    -20, -10, -10, -5, -5, -10, -10, -20,
+    -10, 0, 5, 5, 5, 5, 0, -10,
+    -10, 5, 10, 10, 10, 10, 5, -10,
+    -5, 5, 10, 15, 15, 10, 5, -5,
+    -5, 5, 10, 15, 15, 10, 5, -5,
+    -10, 5, 10, 10, 10, 10, 5, -10,
+    -10, 0, 5, 5, 5, 5, 0, -10,
+    -20, -10, -10, -5, -5, -10, -10, -20};
+
 static constexpr std::array<int, N_PIECES_TYPE_HALF> pieces_score = {
     100, 300, 300, 500, 900, 10000};
 
 // Table de correspondance pour le milieu de jeu
 static const int *mg_tables[] = {
     mg_pawn_table, mg_knight_table, mg_bishop_table, mg_rook_table, mg_queen_table, mg_king_table};
+
+static const int *eg_tables[] = {
+    eg_pawn_table, eg_knight_table, eg_bishop_table, eg_rook_table, eg_queen_table, eg_king_table};
 
 static const int pawnPhase = 0;
 static const int knightPhase = 1;
@@ -235,8 +288,10 @@ private:
     inline void add_piece(Piece p, int sq, Color c)
     {
         int mirror = (c == WHITE) ? sq : sq ^ 56;
+
+        // Utilisation des tables respectives MG et EG
         int pst_mg = mg_tables[p][mirror];
-        int pst_eg = (p == KING) ? eg_king_table[mirror] : pst_mg;
+        int pst_eg = eg_tables[p][mirror];
 
         mg_pst[c] += pst_mg;
         eg_pst[c] += pst_eg;
@@ -245,14 +300,15 @@ private:
         if (p == PAWN)
             pawn_key ^= zobrist_table[PAWN + (c == BLACK ? 6 : 0)][sq];
         else if (p == KING)
-            king_sq[c] = sq; // Mise à jour systématique
+            king_sq[c] = sq;
     }
 
     inline void remove_piece(Piece p, int sq, Color c)
     {
         int mirror = (c == WHITE) ? sq : sq ^ 56;
+
         int pst_mg = mg_tables[p][mirror];
-        int pst_eg = (p == KING) ? eg_king_table[mirror] : pst_mg;
+        int pst_eg = eg_tables[p][mirror];
 
         mg_pst[c] -= pst_mg;
         eg_pst[c] -= pst_eg;
@@ -260,7 +316,6 @@ private:
 
         if (p == PAWN)
             pawn_key ^= zobrist_table[PAWN + (c == BLACK ? 6 : 0)][sq];
-        // Note: On ne touche pas à king_sq ici, add_piece le fera au prochain mouvement
     }
     inline void update_phase_on_capture(Piece p)
     {

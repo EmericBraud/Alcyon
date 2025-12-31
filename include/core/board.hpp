@@ -297,7 +297,7 @@ public:
         return get_history()->size();
     }
 
-    int get_smallest_attacker(U64 all_attackers, Color side, Piece &found_type)
+    int get_smallest_attacker(U64 all_attackers, Color side, Piece &found_type) const
     {
         U64 side_attackers = all_attackers & occupancies[side];
         if (!side_attackers)
