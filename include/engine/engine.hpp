@@ -6,65 +6,65 @@ constexpr int INF = 10000;
 
 using Clock = std::chrono::steady_clock;
 
-class Engine
+class SearchWorker
 {
-    Board &board;
-    TranspositionTable tt;
-    std::array<Move, MAX_DEPTH> move_stack;
-    // [Color] [From sq] [To sq]
+private:
+    // Ressources locales (Copie pour éviter les Data Races)
+    Board board;
+
+    // Ressources partagées (Références vers l'Orchestrateur)
+    TranspositionTable &shared_tt;
+    std::atomic<bool> &shared_stop;
+    std::atomic<long long> &global_nodes;
+    const Clock::time_point &start_time_ref;
+    const int &time_limit_ms_ref;
+    const double (&lmr_table)[64][64];
+
+    // Heuristiques locales (Thread-local)
     int history_moves[2][64][64];
-
-    long long total_nodes = 0;
-    long long tt_cuts = 0;
-    long long beta_cutoffs = 0;
-    long long q_nodes = 0;
-
     Move killer_moves[MAX_DEPTH][2];
-    Clock::time_point start_time;
-    int time_limit_ms = 0;
-    bool time_up = false;
-    double lmr_table[64][64];
-
     Move counter_moves[2][7][64];
+    std::array<Move, MAX_DEPTH> move_stack;
 
-    int qsearch(int alpha, int beta);
-    inline void check_time()
-    {
-        if (time_up)
-            return;
-
-        auto now = Clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
-
-        if (elapsed >= time_limit_ms)
-        {
-            time_up = true;
-            std::cout << static_cast<double>(total_nodes) * 1000 / static_cast<double>(elapsed) << " Nodes/s" << std::endl;
-        }
-    }
-
-    int see(int sq, Piece target, Piece attacker, Color side, int from_sq) const;
-
-    void init_lmr_table()
-    {
-        for (int d = 1; d < 64; d++)
-        {
-            for (int m = 1; m < 64; m++)
-            {
-                // Formule standard  K = 2.25
-                lmr_table[d][m] = 0.5 + log(d) * log(m) / 2.25;
-            }
-        }
-    }
+    // Métriques locales
+    long long local_nodes = 0;
+    int thread_id;
 
 public:
+    // CONSTRUCTEUR PRINCIPAL
+    // Appelé par l'orchestrateur pour chaque thread
+    SearchWorker(const Board &b,
+                 TranspositionTable &tt,
+                 std::atomic<bool> &stop,
+                 std::atomic<long long> &nodes,
+                 const Clock::time_point &start_time,
+                 const int &time_limit,
+                 const double (&lmr)[64][64],
+                 int id)
+        : board(b), // Copie physique du plateau
+          shared_tt(tt),
+          shared_stop(stop),
+          global_nodes(nodes),
+          start_time_ref(start_time),
+          time_limit_ms_ref(time_limit),
+          lmr_table(lmr),
+          thread_id(id)
+    {
+        clear_heuristics();
+    }
+
+    // --- Méthodes de recherche ---
     int negamax(int depth, int alpha, int beta, int ply);
-    void play(int time_ms = 20000);
+    int qsearch(int alpha, int beta);
 
-    int score_move(const Move &move, const Board &board, const Move &tt_move, int ply, const Move &prev_move) const;
+    // --- Heuristiques ---
+    void clear_heuristics()
+    {
+        std::memset(history_moves, 0, sizeof(history_moves));
+        std::memset(killer_moves, 0, sizeof(killer_moves));
+        std::memset(counter_moves, 0, sizeof(counter_moves));
+    }
 
-    // Score uniquement pour le Quiescence Search (MVV-LVA)
-    int score_capture(const Move &move) const;
     void age_history()
     {
         for (int c = 0; c < 2; ++c)
@@ -73,33 +73,10 @@ public:
                     history_moves[c][f][t] /= 8;
     }
 
+    // --- utilitaires ---
+    int score_move(const Move &move, const Board &current_board, const Move &tt_move, int ply, const Move &prev_move) const;
+    int score_capture(const Move &move) const;
+    int see(int sq, Piece target, Piece attacker, Color side, int from_sq) const;
     std::string get_pv_line(int depth);
-
-public:
-    Engine(Board &board) : board(board)
-    {
-        init_zobrist();
-        tt.resize(256);
-        clear_killers();
-        clear_history();
-        init_lmr_table();
-        clear_count();
-    }
-
-    int eval_position()
-    {
-        return negamax(MAX_DEPTH, -INF, INF, 0);
-    }
-    void clear_killers()
-    {
-        std::memset(killer_moves, 0, sizeof(killer_moves));
-    }
-    void clear_history()
-    {
-        std::memset(history_moves, 0, sizeof(history_moves));
-    }
-    void clear_count()
-    {
-        std::memset(counter_moves, 0, sizeof(counter_moves));
-    }
+    int negamax_with_aspiration(int depth, int last_score);
 };

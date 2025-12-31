@@ -142,7 +142,6 @@ int Eval::eval(const Board &board, int alpha, int beta)
         return base_score;
     if (base_score <= alpha - margin)
         return base_score;
-
     // Cache des bitboards d'occupation pour éviter les appels répétés
     const U64 occ_all = board.get_occupancy(NO_COLOR);
     const U64 occ_white = board.get_occupancy(WHITE);
@@ -157,6 +156,12 @@ int Eval::eval(const Board &board, int alpha, int beta)
 
         // Sécurité du Roi
         bonus += evaluate_castling_and_safety(us, board);
+
+        if (std::popcount(board.get_piece_bitboard(us, BISHOP)) >= 2)
+        {
+            bonus += 30; // Bonus milieu de jeu
+            bonus += 50; // Bonus fin de partie (plus important car le plateau est ouvert)
+        }
 
         // Mobilité optimisée
         for (int piece = KNIGHT; piece <= QUEEN; ++piece)
