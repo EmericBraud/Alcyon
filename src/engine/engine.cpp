@@ -131,7 +131,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
 {
     // 1. Vérification périodique de l'arrêt (Atomique)
     // On incrémente le compteur global de nœuds et on vérifie le temps
-    if (((++local_nodes)) & 2047 == 0)
+    if (((++local_nodes) & 2047) == 0)
     {
         global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
         local_nodes = 0;

@@ -16,21 +16,22 @@ struct alignas(16) TTEntry
 
     void save(uint64_t k, Move m, int16_t s, uint8_t d, uint8_t f)
     {
-        uint64_t d_pack = (uint64_t)m.get_value();
-        d_pack |= (uint64_t)(uint16_t)s << 32;
-        d_pack |= (uint64_t)d << 48;
-        d_pack |= (uint64_t)f << 56;
+        uint64_t d_pack = (uint64_t)m.get_value() |
+                          ((uint64_t)(uint16_t)s << 32) |
+                          ((uint64_t)d << 48) |
+                          ((uint64_t)f << 56);
 
-        // On écrit d'abord la donnée, puis la clé pour éviter qu'un autre thread
-        // ne valide une clé correcte avec des données en cours d'écriture.
+        // On force l'écriture des données AVANT la clé.
         data.store(d_pack, std::memory_order_relaxed);
-        key.store(k, std::memory_order_relaxed);
+        // memory_order_release garantit que toutes les écritures précédentes
+        // sont visibles avant que la clé ne soit mise à jour.
+        key.store(k, std::memory_order_release);
     }
 
     // k_target est la clé recherchée.
     bool load(uint64_t k_target, Move &m, int16_t &s, uint8_t &d, uint8_t &f) const
     {
-        if (key.load(std::memory_order_relaxed) == k_target)
+        if (key.load(std::memory_order_acquire) == k_target)
         {
             uint64_t d_pack = data.load(std::memory_order_relaxed);
             m = Move(static_cast<uint32_t>(d_pack & 0xFFFFFFFF));
@@ -48,7 +49,7 @@ struct alignas(16) TTEntry
     TTEntry() : key(0), data(0) {}
 };
 
-struct TTBucket
+struct alignas(64) TTBucket
 {
     TTEntry entries[4];
 };

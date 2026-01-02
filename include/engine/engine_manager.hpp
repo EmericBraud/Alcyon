@@ -30,6 +30,8 @@ public:
         tt.next_generation();
 
         int num_threads = std::thread::hardware_concurrency();
+        std::cout << num_threads << " concurrent threads are supported.\n";
+
         {
             std::vector<std::jthread> workers;
             for (int i = 0; i < num_threads; ++i)
