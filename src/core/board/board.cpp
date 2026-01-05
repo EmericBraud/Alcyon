@@ -35,6 +35,7 @@ void Board::clear()
     state.en_passant_sq = EN_PASSANT_SQ_NONE;
     state.halfmove_clock = 0;
     state.side_to_move = WHITE;
+    state.last_irreversible_index = 0;
     zobrist_key = 0;
     if (history_tagged)
         get_history()->clear();
@@ -43,7 +44,7 @@ void Board::clear()
 bool Board::play(const Move move)
 {
     // 1. Sauvegarde avant modification
-    get_history()->push_back({zobrist_key, state.halfmove_clock, state.last_irreversible_index, move});
+    get_history()->push_back({zobrist_key, state.halfmove_clock, state.last_irreversible_index, move, state.en_passant_sq, state.castling_rights});
 
     const int from_sq = move.get_from_sq();
     const int to_sq = move.get_to_sq();
@@ -211,21 +212,17 @@ void Board::unplay(const Move move)
     zobrist_key = info.zobrist_key;
     state.halfmove_clock = info.halfmove_clock;
     state.last_irreversible_index = info.last_irreversible_index;
-    state.castling_rights = move.get_prev_castling_rights();
-    state.en_passant_sq = move.get_prev_en_passant(us);
+    state.castling_rights = info.castling_rights;
+    state.en_passant_sq = info.en_passant_sq;
 
     get_history()->pop_back();
 }
 bool Board::is_repetition() const
 {
-    int n = (int)get_history()->size();
-    if (n < 4)
-        return false;
-
-    int stop = state.last_irreversible_index;
-
-    // On recule de 2 en 2. On doit inclure 'stop' dans la recherche.
-    for (int i = n - 2; i >= stop; i -= 2)
+    const int n = (int)get_history()->size();
+    // On recule de 2 en 2 car la répétition doit être au même trait
+    // On s'arrête au dernier coup irréversible
+    for (int i = n - 2; i >= state.last_irreversible_index; i -= 2)
     {
         if ((*get_history())[i].zobrist_key == zobrist_key)
         {

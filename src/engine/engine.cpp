@@ -13,51 +13,56 @@ static constexpr int MVV_LVA_TABLE[7][7] = {
 
 int SearchWorker::score_move(const Move &move, const Board &board, const Move &tt_move, int ply, const Move &prev_move) const
 {
-    // 1. Mise en cache de la valeur brute du mouvement (32 bits)
     const uint32_t move_val = move.get_value();
     if (move_val == tt_move.get_value())
-        return 3000000;
+        return 20000000; // Augmenté
 
     const Piece from_piece = move.get_from_piece();
     const Piece to_piece = move.get_to_piece();
     const uint32_t flags = move.get_flags();
 
-    // 2. Captures et Promotions
+    // 1. Tactiques (Captures & Promotions)
     if (to_piece != NO_PIECE || flags == Move::Flags::EN_PASSANT_CAP || move.is_promotion())
     {
         const Piece target = (flags == Move::Flags::EN_PASSANT_CAP) ? PAWN : to_piece;
         const int mvv_lva = MVV_LVA_TABLE[target][from_piece];
 
         if (move.is_promotion())
-            return 2000000 + mvv_lva;
+        {
+            // Priorise la promotion Dame
+            int promo_piece = QUEEN;
+            return 15000000 + (promo_piece == QUEEN ? 1000 : promo_piece);
+        }
 
-        // On évite SEE si la capture est manifestement "bonne" (Victime >= Attaquant)
-        if (Eval::get_piece_score(target) >= Eval::get_piece_score(from_piece))
-            return 1000000 + mvv_lva;
+        // On n'appelle SEE que si c'est potentiellement perdant (LVA prend MVV)
+        if (Eval::get_piece_score(from_piece) > Eval::get_piece_score(target))
+        {
+            if (see(move.get_to_sq(), target, from_piece, board.get_side_to_move(), move.get_from_sq()) < 0)
+                return -2000000 + mvv_lva; // Clairement perdant
+        }
 
-        int see_value = see(move.get_to_sq(), target, from_piece, board.get_side_to_move(), move.get_from_sq());
-
-        // SEE est appelé ici (5.06% du temps total)
-        if (see_value == 0)
-            return 950000 + MVV_LVA_TABLE[target][from_piece];
-
-        return 100000 + mvv_lva;
+        return 10000000 + mvv_lva; // Captures normales/gagnantes
     }
 
-    // 3. Coups calmes
+    // 2. Coups calmes prioritaires
     if (move_val == killer_moves[ply][0].get_value())
-        return 900000;
+        return 9000000;
     if (move_val == killer_moves[ply][1].get_value())
-        return 800000;
+        return 8000000;
 
     const Color us = board.get_side_to_move();
-    // prev_move est maintenant passé en argument (extraite une seule fois du history.back())
-    if (ply > 0 && prev_move != 0 && move_val == counter_moves[us][prev_move.get_from_piece()][prev_move.get_to_sq()].get_value())
-        return 700000;
 
+    // Counter-move
+    if (ply > 0 && prev_move != 0 && move_val == counter_moves[us][prev_move.get_from_piece()][prev_move.get_to_sq()].get_value())
+        return 7000000;
+
+    // Bonus spécial pour les échecs "calmes" (Crucial pour mat en 11)
+    // Attention : nécessite que ta MoveGen ou une fonction légère détecte l'échec
+    // if (gives_check(move)) return 6000000;
+
+    // 3. History Moves (Score relatif)
     return history_moves[us][move.get_from_sq()][move.get_to_sq()];
 }
-
 std::string SearchWorker::get_pv_line(int depth)
 {
     std::string pv_line = "";
@@ -99,7 +104,6 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
     {
         int score = negamax(depth, alpha, beta, 0);
 
-        // Si le temps est écoulé ou qu'un autre thread a demandé l'arrêt
         if (shared_stop.load(std::memory_order_relaxed))
             return score;
 
@@ -107,12 +111,16 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         { // Fail Low
             alpha = std::max(-INF, alpha - delta);
             beta = (alpha + beta) / 2; // Resserrage de beta pour aider l'élagage
-            delta += delta / 4 + 5;
+            delta += delta / 3 + 5;
+            if (thread_id == 0)
+                std::cout << "Fail Low\n";
         }
         else if (score >= beta)
         { // Fail High
             beta = std::min(INF, beta + delta);
             delta += delta / 4 + 5;
+            if (thread_id == 0)
+                std::cout << "Fail High\n";
         }
         else
         {
@@ -131,7 +139,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
 {
     // 1. Vérification périodique de l'arrêt (Atomique)
     // On incrémente le compteur global de nœuds et on vérifie le temps
-    if (((++local_nodes) & 2047) == 0)
+    if (((++local_nodes) & 32767) == 0)
     {
         global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
         local_nodes = 0;
@@ -155,7 +163,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         if (board.is_repetition() || board.get_halfmove_clock() >= 100)
             return (board.get_history_size() < 20) ? -25 : 0;
     }
-
     // 3. Sondage de la Transposition Table (TT)
     int tt_score;
     Move tt_move = 0;
@@ -164,22 +171,22 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     if (tt_hit && ply > 0)
         return tt_score;
 
+    bool in_check;
+    bool in_check_tested = false;
+
     // 4. Quiescence Search à l'horizon
     if (depth <= 0)
-        return qsearch(alpha, beta);
-
-    // 5. Null Move Pruning (NMP)
-    bool in_check = board.is_king_attacked(board.get_side_to_move());
-    if (depth >= 3 && ply > 0 && !in_check)
     {
-        int stored_ep;
-        board.play_null_move(stored_ep);
-        int R = (depth > 6) ? 3 : 2;
-        int score = -negamax(depth - 1 - R, -beta, -beta + 1, ply + 1);
-        board.unplay_null_move(stored_ep);
-
-        if (score >= beta)
-            return (score >= MATE_SCORE - MAX_DEPTH) ? beta : score;
+        in_check = board.is_king_attacked(board.get_side_to_move());
+        in_check_tested = true;
+        if (in_check && ply < MAX_DEPTH - 1)
+        {
+            depth = 1;
+        }
+        else
+        {
+            return qsearch(alpha, beta, ply);
+        }
     }
 
     // --- RECHERCHE DU TT MOVE (PV Move) ---
@@ -193,7 +200,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         board.play(tt_move);
         if (!board.is_king_attacked(player))
         {
-            moves_searched++;
+            ++moves_searched;
             best_score = -negamax(depth - 1, -beta, -alpha, ply + 1);
             board.unplay(tt_move);
 
@@ -206,6 +213,43 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         else
         {
             board.unplay(tt_move);
+        }
+    }
+    if (!in_check_tested)
+        in_check = board.is_king_attacked(board.get_side_to_move());
+    if (depth <= 7 && !in_check && ply > 0)
+    {
+        int static_eval = Eval::lazy_eval_relative(board, board.get_side_to_move());
+        int margin = 120 * depth;
+        if (static_eval - margin >= beta)
+            return beta;
+    }
+
+    // 5. Null Move Pruning (NMP)
+    if (depth >= 3 && ply > 0 && !in_check && beta < 9000 && alpha > -9000)
+    {
+        int stored_ep;
+        board.play_null_move(stored_ep);
+        int R = (depth > 6) ? 3 : 2;
+        int score = -negamax(depth - 1 - R, -beta, -beta + 1, ply + 1);
+        board.unplay_null_move(stored_ep);
+
+        if (score >= beta)
+            return (score >= MATE_SCORE - MAX_DEPTH) ? beta : score;
+    }
+
+    bool futil_pruning = false;
+    int futil_margin = 0;
+
+    if (depth <= 3 && !in_check && ply > 0 && (best_score > -MATE_SCORE + 100))
+    {
+        // Calcul de la marge (ajustable selon ton évaluation)
+        futil_margin = 120 + 100 * depth;
+        int static_eval = Eval::lazy_eval_relative(board, player);
+
+        if (static_eval + futil_margin <= alpha)
+        {
+            futil_pruning = true;
         }
     }
 
@@ -231,9 +275,27 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         if (!board.is_move_legal(m))
             continue;
 
-        moves_searched++;
         int score;
         bool is_tactical = (list.scores[i] >= 900000);
+
+        // --- LATE MOVE PRUNING (LMP) ---
+        // Si on n'est pas en échec, à faible profondeur, on limite le nombre de coups calmes
+        if (!in_check && depth <= 4 && !is_tactical)
+        {
+            // Formule classique : on teste de plus en plus de coups avec la profondeur
+            int max_moves = 3 + (depth * depth);
+            if (moves_searched >= max_moves)
+            {
+                continue; // On ignore les coups calmes restants
+            }
+        }
+
+        if (futil_pruning && moves_searched >= 1 && !is_tactical)
+        {
+            // On ne l'incrémente pas car on ne le cherche pas
+            continue;
+        }
+        ++moves_searched;
 
         board.play(m);
 
@@ -266,10 +328,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
 
         board.unplay(m);
 
-        // Vérification d'arrêt immédiat après un unplay
-        if (shared_stop.load(std::memory_order_relaxed))
-            return alpha;
-
         // --- MISE À JOUR DES SCORES ET DES TABLES ---
         if (score >= beta)
         {
@@ -277,12 +335,23 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
 
             if (!is_tactical)
             {
-                // Update Counter-moves et History (Local au thread)
-                if (prev_m.get_value() != 0)
-                    counter_moves[player][prev_m.get_from_piece()][prev_m.get_to_sq()] = m;
+                int bonus = depth * depth;
 
-                history_moves[player][m.get_from_sq()][m.get_to_sq()] += depth * depth;
+                // On récompense le coup gagnant
+                history_moves[player][m.get_from_sq()][m.get_to_sq()] += bonus;
 
+                // MALUS : On punit tous les coups calmes testés AVANT et qui ont échoué
+                for (int j = 0; j < i; ++j)
+                {
+                    Move failed_move = list.moves[j];
+                    // On ne punit que les coups calmes (pas les captures/promotions)
+                    if (list.scores[j] < 900000)
+                    {
+                        history_moves[player][failed_move.get_from_sq()][failed_move.get_to_sq()] -= bonus;
+                    }
+                }
+
+                // 4. Update Killer Moves
                 if (m.get_value() != killer_moves[ply][0].get_value())
                 {
                     killer_moves[ply][1] = killer_moves[ply][0];

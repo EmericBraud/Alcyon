@@ -86,4 +86,6 @@ namespace Eval
     }
 
     void print_pawn_stats();
+
+    int lazy_eval_relative(const Board &board, Color us);
 }

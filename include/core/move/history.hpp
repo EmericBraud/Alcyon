@@ -8,6 +8,8 @@ struct alignas(16) UndoInfo
     uint16_t halfmove_clock;
     int last_irreversible_index;
     Move move;
+    int en_passant_sq;
+    uint8_t castling_rights;
 };
 
 struct History

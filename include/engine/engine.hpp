@@ -16,8 +16,8 @@ private:
     TranspositionTable &shared_tt;
     std::atomic<bool> &shared_stop;
     std::atomic<long long> &global_nodes;
-    const Clock::time_point &start_time_ref;
-    const int &time_limit_ms_ref;
+    const Clock::time_point start_time_ref;
+    const int time_limit_ms_ref;
     const double (&lmr_table)[64][64];
 
     // Heuristiques locales (Thread-local)
@@ -55,7 +55,7 @@ public:
 
     // --- Méthodes de recherche ---
     int negamax(int depth, int alpha, int beta, int ply);
-    int qsearch(int alpha, int beta);
+    int qsearch(int alpha, int beta, int ply);
 
     // --- Heuristiques ---
     void clear_heuristics()

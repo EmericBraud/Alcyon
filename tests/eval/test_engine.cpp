@@ -10,7 +10,7 @@ protected:
     {
     }
 };
-TEST_F(EngineTest, EngineCanRock)
+TEST_F(EngineTest, EngineCanCastle)
 {
     Board b;
     b.load_fen("2q1k3/8/8/8/8/3PPPPP/3PPPPP/4K2R w K - 0 1");
