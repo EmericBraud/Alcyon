@@ -125,6 +125,7 @@ int Eval::eval(const Board &board, int alpha, int beta)
 
     // 2. Structure des Pions (Cache Pawn Table)
     int mg_pawn = 0, eg_pawn = 0;
+
     if (!pawn_table.probe(state.pawn_key, mg_pawn, eg_pawn))
     {
         int mg_w = 0, eg_w = 0, mg_b = 0, eg_b = 0;
@@ -209,4 +210,14 @@ void Eval::print_pawn_stats()
     std::cout << " - Hits:   " << pawn_table.hits << std::endl;
     std::cout << " - Misses: " << pawn_table.misses << std::endl;
     std::cout << " - Rate:   " << pawn_table.get_hit_rate() << "%" << std::endl;
+}
+int Eval::lazy_eval_relative(const Board &board, Color us)
+{
+    const EvalState &state = board.get_eval_state();
+    const int mg_score = (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -
+                         (state.mg_pst[BLACK] + state.pieces_val[BLACK]);
+    const int eg_score = (state.eg_pst[WHITE] + state.pieces_val[WHITE]) -
+                         (state.eg_pst[BLACK] + state.pieces_val[BLACK]);
+    const int base_score = (mg_score * state.phase + eg_score * (totalPhase - state.phase)) / totalPhase;
+    return us == WHITE ? base_score : -base_score;
 }

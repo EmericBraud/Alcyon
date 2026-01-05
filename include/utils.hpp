@@ -20,7 +20,7 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
-
+#include <immintrin.h>
 #include <xmmintrin.h> //x86 / intel only
 
 #define BOARD_SIZE 64

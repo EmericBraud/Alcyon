@@ -17,7 +17,7 @@ class EngineManager
 public:
     EngineManager(Board &b) : main_board(b)
     {
-        tt.resize(2048);
+        tt.resize(1024);
         init_lmr_table();
     }
 
@@ -101,6 +101,7 @@ private:
                 // Exemple : threads impairs cherchent à depth + 1
                 search_depth = (thread_id % 2 == 0) ? current_depth : current_depth + 1;
             }
+            worker.age_history();
 
             int score = worker.negamax_with_aspiration(search_depth, last_score);
 

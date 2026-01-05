@@ -142,8 +142,8 @@ static const int phase_values[] = {pawnPhase, knightPhase, bishopPhase, rookPhas
 
 struct EvalState
 {
-    int16_t mg_pst[2];  // Score Middle-Game PST + Matériel par couleur
-    int16_t eg_pst[2];  // Score End-Game PST + Matériel par couleur
+    int16_t mg_pst[2];  // Score Middle-Game PST
+    int16_t eg_pst[2];  // Score End-Game PST
     int8_t phase;       // Phase actuelle (0 à 24)
     U64 pawn_key;       // Clé Zobrist spécifique aux pions (pour la Pawn Table)
     uint8_t king_sq[2]; // Position des rois
@@ -180,6 +180,10 @@ struct EvalState
                     }
                 }
             }
+        }
+        if (phase > totalPhase)
+        {
+            phase = totalPhase;
         }
     }
 
@@ -364,7 +368,7 @@ private:
     inline void restore_phase_on_promotion()
     {
         // On retire la phase de la Dame qui a été annulée
-        phase -= 4;
+        phase -= queenPhase;
         if (phase < 0)
             phase = 0;
     }

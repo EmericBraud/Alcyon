@@ -4,7 +4,7 @@ int main()
 {
     MoveGen::initialize_bitboard_tables();
     Board b{};
-    b.load_fen("5kr1/1p3p2/5p2/1P2qP1K/P1Bp3P/4bQ2/2P1R3/8 w - - 1 44");
+    b.load_fen("4r3/6k1/1p1p2p1/p1pPpr1p/PnP2P2/1Q1P3q/1P1B1PR1/R4K2 w - - 0 28");
 
     GUI gui{b, true, WHITE};
     gui.run();

@@ -1,7 +1,10 @@
 #include "engine/engine.hpp"
-int SearchWorker::qsearch(int alpha, int beta)
+#include "engine/engine.hpp"
+
+int SearchWorker::qsearch(int alpha, int beta, int ply)
 {
-    if (((++local_nodes) & 2047) == 0)
+    // 1. Vérification de l'arrêt et mise à jour des nœuds (Optimisé)
+    if (((++local_nodes) & 32767) == 0)
     {
         global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
         local_nodes = 0;
@@ -10,52 +13,70 @@ int SearchWorker::qsearch(int alpha, int beta)
             auto now = Clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_ref).count();
             if (elapsed >= time_limit_ms_ref)
-            {
                 shared_stop.store(true, std::memory_order_relaxed);
-            }
         }
-        // Si l'arrêt est demandé (par temps ou par un autre thread), on quitte
         if (shared_stop.load(std::memory_order_relaxed))
             return alpha;
     }
 
     // 2. Sondage de la Transposition Table (TT)
+    // Utilisation du ply pour normaliser les scores de mat récupérés
     int tt_score;
     Move tt_move = 0;
-    // En qsearch, la profondeur est considérée comme 0
-    bool tt_hit = shared_tt.probe(board.get_hash(), 0, 0, alpha, beta, tt_score, tt_move);
-    if (tt_hit)
+    if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move))
         return tt_score;
 
-    // 3. Standing Pat (Évaluation statique)
-    int stand_pat = Eval::eval_relative(board.get_side_to_move(), board, alpha, beta);
-    if (stand_pat >= beta)
-        return beta;
-    if (stand_pat > alpha)
-        alpha = stand_pat;
-
     const Color player = board.get_side_to_move();
+    bool in_check = board.is_king_attacked(player);
+    int stand_pat = -INF;
 
-    // 4. Génération des captures pseudo-légales
+    // 3. Standing Pat (Évaluation statique)
+    // On ne l'utilise que si on n'est pas en échec, car une position en échec est instable
+    if (!in_check)
+    {
+        stand_pat = Eval::lazy_eval_relative(board, player);
+        if (stand_pat >= beta)
+            return beta;
+        if (stand_pat > alpha)
+            alpha = stand_pat;
+    }
+
+    // 4. Génération des coups
     MoveList list;
-    MoveGen::generate_pseudo_legal_captures(board, player, list);
+    if (in_check)
+    {
+        // Si on est en échec, on doit générer TOUTES les évasions (pas seulement les captures)
+        // pour éviter d'être aveugle aux mats forcés.
+        MoveGen::generate_pseudo_legal_moves(board, player, list);
+    }
+    else
+    {
+        MoveGen::generate_pseudo_legal_captures(board, player, list);
+    }
 
-    // 5. TRI HYBRIDE : SEE + MVV-LVA
+    // 5. Tri des coups (SEE + MVV-LVA)
     for (int i = 0; i < list.count; ++i)
     {
         Move &m = list[i];
-        Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
-
-        // Calcul du SEE pour filtrer et trier
-        int see_val = see(m.get_to_sq(), target, m.get_from_piece(), player, m.get_from_sq());
-
-        if (see_val < 0)
-            list.scores[i] = -1000000; // Mauvaise capture
+        if (in_check)
+        {
+            // Pour les évasions, on peut réutiliser ton score_move habituel ou MVV-LVA simple
+            list.scores[i] = score_move(m, board, tt_move, ply, 0);
+        }
         else
-            list.scores[i] = 1000000 + see_val + score_capture(m);
+        {
+            Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
+            int see_val = see(m.get_to_sq(), target, m.get_from_piece(), player, m.get_from_sq());
+
+            if (see_val < 0)
+                list.scores[i] = -1000000; // Capture perdante
+            else
+                list.scores[i] = 1000000 + see_val + score_capture(m);
+        }
     }
 
-    int best_score = stand_pat;
+    int best_score = in_check ? -INF : stand_pat;
+    int moves_searched = 0;
     int alpha_orig = alpha;
     Move best_move = 0;
 
@@ -64,39 +85,36 @@ int SearchWorker::qsearch(int alpha, int beta)
     {
         Move &m = list.pick_best_move(i);
 
-        // Élagage SEE
-        if (list.scores[i] < 0)
+        // Élagage SEE : On ignore les captures perdantes sauf si on doit absolument sortir d'un échec
+        if (!in_check && list.scores[i] < 0)
             continue;
 
-        // --- DELTA PRUNING ---
-        Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
-        int victim_val = Eval::get_piece_score(target);
-        int promo_bonus = (m.get_flags() & Move::PROMOTION_MASK) ? 800 : 0;
+        // --- DELTA PRUNING (Seulement hors échec) ---
+        if (!in_check)
+        {
+            Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
+            int victim_val = Eval::get_piece_score(target);
+            int promo_bonus = (m.get_flags() & Move::PROMOTION_MASK) ? 800 : 0;
+            if (stand_pat + victim_val + promo_bonus + 200 < alpha)
+                continue;
+        }
 
-        if (stand_pat + victim_val + promo_bonus + 200 < alpha)
-            continue;
-
-        // --- EXÉCUTION ---
-        shared_tt.prefetch(board.get_hash_after(m));
         board.play(m);
-
         if (board.is_king_attacked(player))
         {
             board.unplay(m);
             continue;
         }
 
-        int score = -qsearch(-beta, -alpha);
+        moves_searched++;
+        // Appel récursif avec ply+1 pour la détection précise des mats
+        int score = -qsearch(-beta, -alpha, ply + 1);
         board.unplay(m);
 
-        // Sortie immédiate si le temps est écoulé pendant la récursion
-        if (shared_stop.load(std::memory_order_relaxed))
-            return alpha;
-
-        // --- MISE À JOUR ALPHA-BETA ---
         if (score >= beta)
         {
-            shared_tt.store(board.get_hash(), 0, 0, beta, TT_BETA, m);
+            // Stockage avec normalisation du score de mat (via ply interne à store)
+            shared_tt.store(board.get_hash(), 0, ply, beta, TT_BETA, m);
             return beta;
         }
 
@@ -111,9 +129,13 @@ int SearchWorker::qsearch(int alpha, int beta)
         }
     }
 
-    // 7. Sauvegarde TT
+    // 7. Détection de Mat (Si aucun coup n'a pu être joué alors qu'on est en échec)
+    if (in_check && moves_searched == 0)
+        return -MATE_SCORE + ply;
+
+    // 8. Sauvegarde TT finale
     TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-    shared_tt.store(board.get_hash(), 0, 0, best_score, flag, best_move);
+    shared_tt.store(board.get_hash(), 0, ply, best_score, flag, best_move);
 
     return best_score;
 }
