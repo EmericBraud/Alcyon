@@ -206,9 +206,8 @@ struct EvalState
         }
         else if (m.get_flags() == Move::Flags::EN_PASSANT_CAP)
         {
-            // Correction : Utiliser le square de capture EP pour retirer le pion
-            const int ep_sq = m.get_prev_en_passant(us);
-            remove_piece(PAWN, ep_sq, them);
+            const int cap_sq = (us == WHITE) ? to_sq - 8 : to_sq + 8;
+            remove_piece(PAWN, cap_sq, them);
         }
 
         // 3. ARRIVÉE DE LA PIÈCE (Promotion incluse)
@@ -275,8 +274,8 @@ struct EvalState
         }
         else if (m.get_flags() == Move::Flags::EN_PASSANT_CAP)
         {
-            const int ep_sq = m.get_prev_en_passant(us);
-            add_piece(PAWN, ep_sq, them);
+            const int cap_sq = (us == WHITE) ? to_sq - 8 : to_sq + 8;
+            add_piece(PAWN, cap_sq, them);
         }
 
         // 4. RETOUR À LA CASE DE DÉPART

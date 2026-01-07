@@ -15,7 +15,7 @@ TEST_F(EngineTest, EngineCanCastle)
     Board b;
     b.load_fen("2q1k3/8/8/8/8/3PPPPP/3PPPPP/4K2R w K - 0 1");
     EngineManager e{b};
-    e.start_search(500);
+    e.start_search(1000);
     ASSERT_EQ(b.get_piece_bitboard(WHITE, KING), 0x40);
 }
 

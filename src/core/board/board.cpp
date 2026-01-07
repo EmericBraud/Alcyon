@@ -55,6 +55,7 @@ bool Board::play(const Move move)
     const Color them = (Color)!us;
 
     bool is_irreversible = (from_piece == PAWN) || (to_piece != NO_PIECE);
+    eval_state.increment(move, us);
 
     if (is_irreversible)
     {
@@ -141,7 +142,6 @@ bool Board::play(const Move move)
 
     if (from_piece == KING)
         eval_state.king_sq[us] = to_sq;
-    eval_state.increment(move, us);
     switch_trait();
     return true;
 }
@@ -157,8 +157,6 @@ void Board::unplay(const Move move)
     switch_trait();
     const Color us = state.side_to_move;
     const Color them = (Color)!us;
-
-    eval_state.decrement(move, us);
 
     // 1. Inversion Bitboards
     U64 move_mask = (1ULL << from_sq) | (1ULL << to_sq);
@@ -214,6 +212,8 @@ void Board::unplay(const Move move)
     state.last_irreversible_index = info.last_irreversible_index;
     state.castling_rights = info.castling_rights;
     state.en_passant_sq = info.en_passant_sq;
+
+    eval_state.decrement(move, us);
 
     get_history()->pop_back();
 }

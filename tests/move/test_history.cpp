@@ -35,7 +35,7 @@ TEST_F(HistoryTest, StackHistory_NoDoubleFree)
 
         EXPECT_FALSE(IsOwned(b)) << "Le Board ne doit pas posséder l'historique de la pile.";
 
-        b.get_history()->push_back({12345, 0, 0, Move()});
+        b.get_history()->push_back({12345, 0, 0, Move(), b.state.en_passant_sq, b.state.castling_rights});
         EXPECT_EQ(stack_history.size(), 1);
     }
     // Si le destructeur de 'b' tente de delete stack_history, le test crashera ici.
@@ -46,7 +46,7 @@ TEST_F(HistoryTest, StackHistory_NoDoubleFree)
 TEST_F(HistoryTest, DeepCopy_IndependentHistory)
 {
     Board b1;
-    b1.get_history()->push_back({0xAAAA, 10, 0, Move()});
+    b1.get_history()->push_back({0xAAAA, 10, 0, Move(), b1.state.en_passant_sq, b1.state.castling_rights});
 
     // Copie de b1 vers b2
     Board b2 = b1;
@@ -57,7 +57,7 @@ TEST_F(HistoryTest, DeepCopy_IndependentHistory)
     EXPECT_EQ(b2.get_history()->back().zobrist_key, 0xAAAA);
 
     // Modifie b2 et vérifie que b1 ne change pas
-    b2.get_history()->push_back({0xBBBB, 11, 0, Move()});
+    b2.get_history()->push_back({0xBBBB, 11, 0, Move(), b2.state.en_passant_sq, b2.state.castling_rights});
     EXPECT_EQ(b1.get_history()->size(), 1);
     EXPECT_EQ(b2.get_history()->size(), 2);
 }
@@ -67,7 +67,7 @@ TEST_F(HistoryTest, MoveConstructor_TransfersOwnership)
 {
     Board b1;
     History *original_ptr = b1.get_history();
-    b1.get_history()->push_back({0x123, 1, 1, Move()});
+    b1.get_history()->push_back({0x123, 1, 1, Move(), b1.state.en_passant_sq, b1.state.castling_rights});
 
     Board b2(std::move(b1));
 
