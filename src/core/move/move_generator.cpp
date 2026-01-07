@@ -304,33 +304,64 @@ void MoveGen::generate_pseudo_legal_moves(Board &board, const Color color, MoveL
 
     generate_castle_moves(board, list);
 }
-
-void MoveGen::generate_pseudo_legal_captures(const Board &board, Color color, MoveList &list)
+template <Piece P>
+void generate_piece_captures(const Board &board, Color color, U64 opponent_occ, MoveList &list)
 {
-    const bitboard opponent_king_mask{~board.get_piece_bitboard(color == WHITE ? BLACK : WHITE, KING)};
-    const bitboard opponent_occ = board.get_occupancy(color == WHITE ? BLACK : WHITE) & opponent_king_mask;
+    // Récupération des pièces du type P pour la couleur donnée
+    U64 pieces = board.get_piece_bitboard(color, P);
 
-    for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
+    // Optimisation : Si pas de pièces de ce type, on sort tout de suite
+    if (!pieces)
+        return;
+
+    // Pour les pions, on doit inclure la case En Passant dans les cibles valides
+    // car elle n'est pas dans opponent_occ (la case est vide)
+    U64 valid_targets = opponent_occ;
+    if constexpr (P == PAWN)
     {
-        U64 piece_bitboard = board.get_piece_bitboard(color, piece_type);
-
-        while (piece_bitboard != 0)
+        if (board.get_en_passant_sq() != EN_PASSANT_SQ_NONE)
         {
-            int from_sq = pop_lsb(piece_bitboard);
-            U64 target_mask = get_pseudo_moves_mask(board, from_sq, color, static_cast<Piece>(piece_type)) & opponent_occ;
-
-            while (target_mask != 0)
-            {
-                int target_sq = pop_lsb(target_mask);
-                Move m{
-                    from_sq,
-                    target_sq,
-                    static_cast<Piece>(piece_type)};
-                MoveGen::init_move_flags(board, m);
-                list.push(m);
-            }
+            valid_targets |= sq_mask(board.get_en_passant_sq());
         }
     }
+
+    while (pieces)
+    {
+        const int from_sq = pop_lsb(pieces);
+
+        // Appel direct à la version template (très rapide)
+        // On filtre directement avec les cibles valides (captures + EP)
+        U64 attacks = MoveGen::get_pseudo_moves_mask<P>(board, from_sq, color) & valid_targets;
+
+        while (attacks)
+        {
+            const int to_sq = pop_lsb(attacks);
+
+            Move m(from_sq, to_sq, P);
+
+            // Optimisation : On sait déjà que c'est une capture (ou EP)
+            // On peut éviter MoveGen::init_move_flags complet si on veut,
+            // mais gardons-le pour la sécurité pour l'instant.
+            MoveGen::init_move_flags(board, m);
+
+            list.push(m);
+        }
+    }
+}
+void MoveGen::generate_pseudo_legal_captures(const Board &board, Color color, MoveList &list)
+{
+    // On définit les cibles : uniquement les pièces adverses (pas le Roi pour éviter les pseudo-moves illégaux de capture de roi)
+    const Color them = (color == WHITE ? BLACK : WHITE);
+
+    // On retire le Roi adverse des cibles valides (car on ne capture jamais le roi)
+    const U64 opponent_occ = board.get_occupancy(them) & ~board.get_piece_bitboard(them, KING);
+
+    generate_piece_captures<PAWN>(board, color, opponent_occ, list);
+    generate_piece_captures<KNIGHT>(board, color, opponent_occ, list);
+    generate_piece_captures<BISHOP>(board, color, opponent_occ, list);
+    generate_piece_captures<ROOK>(board, color, opponent_occ, list);
+    generate_piece_captures<QUEEN>(board, color, opponent_occ, list);
+    generate_piece_captures<KING>(board, color, opponent_occ, list);
 }
 
 /// @brief For GUI only (doesn't need high perfs)
@@ -344,7 +375,7 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
     if (info.second == NO_PIECE)
         return 0ULL;
 
-    U64 target_mask_pseudo = get_pseudo_moves_mask(board, from_sq, info.first, static_cast<Piece>(info.second));
+    U64 target_mask_pseudo = get_pseudo_moves_mask(board, from_sq);
     U64 target_mask = 0ULL;
     while (target_mask_pseudo != 0)
     {

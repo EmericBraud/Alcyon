@@ -55,14 +55,14 @@ namespace MoveGen
 
         return MoveGen::BishopAttacks[index + magic.index_start];
     }
-    inline U64 get_pseudo_moves_mask(const Board &board, const int sq, const Color color, const Piece piece_type)
+
+    template <Piece piece_type>
+    inline U64 get_pseudo_moves_mask(const Board &board, const int sq, const Color color)
     {
         const U64 occ = board.get_occupancy(NO_COLOR);
         U64 target_mask = 0;
 
-        switch (piece_type)
-        {
-        case PAWN:
+        if constexpr (piece_type == PAWN)
         {
             const int ep_sq = board.get_en_passant_sq();
             if (color == WHITE)
@@ -85,24 +85,30 @@ namespace MoveGen
                 if (ep_sq != EN_PASSANT_SQ_NONE)
                     target_mask |= PawnAttacksBlack[sq] & (1ULL << ep_sq);
             }
-            break;
         }
-        case KNIGHT:
+        else if constexpr (piece_type == KNIGHT)
+        {
             target_mask = KnightAttacks[sq];
-            break;
-        case BISHOP:
+        }
+        else if constexpr (piece_type == BISHOP)
+        {
             target_mask = generate_bishop_moves(sq, occ);
-            break;
-        case ROOK:
+        }
+        else if constexpr (piece_type == ROOK)
+        {
             target_mask = generate_rook_moves(sq, occ);
-            break;
-        case QUEEN:
+        }
+        else if constexpr (piece_type == QUEEN)
+        {
             target_mask = generate_rook_moves(sq, occ) | generate_bishop_moves(sq, occ);
-            break;
-        case KING:
+        }
+        else if constexpr (piece_type == KING)
+        {
             target_mask = KingAttacks[sq];
-            break;
-        default:
+        }
+        else
+        {
+
             throw std::logic_error("Piece type unsupported");
         }
 
@@ -113,11 +119,24 @@ namespace MoveGen
         const PieceInfo pair = board.get_piece_on_square(sq);
         const Color color = pair.first;
         const Piece piece_type = pair.second;
-        if (piece_type == NO_PIECE)
+
+        switch (piece_type)
         {
+        case PAWN:
+            return get_pseudo_moves_mask<PAWN>(board, sq, color);
+        case KNIGHT:
+            return get_pseudo_moves_mask<KNIGHT>(board, sq, color);
+        case BISHOP:
+            return get_pseudo_moves_mask<BISHOP>(board, sq, color);
+        case ROOK:
+            return get_pseudo_moves_mask<ROOK>(board, sq, color);
+        case QUEEN:
+            return get_pseudo_moves_mask<QUEEN>(board, sq, color);
+        case KING:
+            return get_pseudo_moves_mask<KING>(board, sq, color);
+        default:
             return 0ULL;
         }
-        return get_pseudo_moves_mask(board, sq, color, piece_type);
     }
     void initialize_rook_masks();
     void initialize_bishop_masks();
@@ -151,9 +170,6 @@ namespace MoveGen
         const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
         const Piece from_piece{move.get_from_piece()};
         const PieceInfo to_piece_info{board.get_piece_on_square(to_sq)};
-
-        move.set_prev_castling_rights(board.get_castling_rights());
-        move.set_prev_en_passant(board.get_en_passant_sq());
 
         move.set_to_piece(to_piece_info.second);
         if (to_piece_info.second != NO_PIECE)
@@ -192,7 +208,6 @@ namespace MoveGen
     }
     U64 attackers_to(int sq, U64 occupancy, const Board &b);
     U64 update_xrays(int sq, U64 occupied, const Board &board);
-
 }
 
 U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook);

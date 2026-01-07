@@ -119,61 +119,6 @@ public:
         return flags == get_flags();
     }
 
-    inline int get_prev_castling_rights() const
-    {
-        return (value >> 23) & 0xF;
-    }
-
-    inline void set_prev_castling_rights(uint32_t val)
-    {
-        constexpr uint32_t SHIFT = 23;
-        constexpr uint32_t MASK = 0xFu << SHIFT;
-
-        value = (value & ~MASK) | ((val & 0xFu) << SHIFT);
-    }
-
-    inline int get_prev_en_passant(const Color move_side) const
-    {
-        const bool prev_en_passant_flag = (value >> 28) & 0x01;
-        if (!prev_en_passant_flag)
-        {
-            return EN_PASSANT_SQ_NONE;
-        }
-        const int en_passant_file = (value >> 29) & 0x7;
-        if (move_side == WHITE)
-        {
-            return Square::a6 + en_passant_file; // Previous black double push
-        }
-        if (move_side == BLACK)
-        {
-            return Square::a3 + en_passant_file; // Previous white double push
-        }
-        throw std::logic_error("Move side can't be NONE when getting en passant sq");
-    }
-    inline void set_prev_en_passant(const int en_passant_sq)
-    {
-        if (en_passant_sq == EN_PASSANT_SQ_NONE)
-        {
-            value &= ~(1ULL << 28); // Set en passant flag to 0
-            return;
-        }
-        value |= (1ULL << 28); // Set en passant flag to 1
-        uint32_t mask = ~(0x07 << 29);
-        value = (mask & value) | (static_cast<uint32_t>(en_passant_sq % 8) << 29);
-    }
-
-    inline bool set_en_passant(const int en_passant_sq)
-    {
-        const Piece from_piece = get_from_piece();
-        const int to_sq = get_to_sq();
-        if (from_piece == PAWN && to_sq == en_passant_sq)
-        {
-            set_flags(Move::EN_PASSANT_CAP);
-            return true;
-        }
-        return false;
-    }
-
     inline bool set_promotion(const Color side_to_move)
     {
         const Piece from_piece = get_from_piece();
