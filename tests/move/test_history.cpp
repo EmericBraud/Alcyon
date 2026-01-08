@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "core/board.hpp"
+#include "core/move/move_generator.hpp"
 
 class HistoryTest : public ::testing::Test
 {
@@ -92,4 +92,82 @@ TEST_F(HistoryTest, PlayUnplay_HistoryIntegrity)
     b.unplay(m1);
     EXPECT_EQ(b.get_history()->size(), 0);
     EXPECT_EQ(b.get_hash(), initial_key) << "Zobrist Key corrompue après Unplay.";
+}
+
+TEST_F(HistoryTest, ZobristConsistency_DeepRandomSearch)
+{
+    Board b;
+    b.load_fen(STARTING_POS_FEN);
+
+    const int MAX_PLY = 50;     // Profondeur de la simulation
+    const int ITERATIONS = 100; // Nombre de parcours complets
+
+    std::mt19937 rng(42); // Seed fixe pour la reproductibilité
+
+    for (int i = 0; i < ITERATIONS; ++i)
+    {
+        U64 keys_at_ply[MAX_PLY + 1];
+        std::vector<Move> moves_played;
+
+        keys_at_ply[0] = b.get_hash();
+
+        // --- PHASE 1 : JOUER DES COUPS ---
+        int actual_plies = 0;
+        for (int p = 0; p < MAX_PLY; ++p)
+        {
+            MoveList list;
+            // Utilise ton wrapper dynamique pour gérer le template <Us>
+            if (b.get_side_to_move() == WHITE)
+                MoveGen::generate_legal_moves<WHITE>(b, list);
+            else
+                MoveGen::generate_legal_moves<BLACK>(b, list);
+
+            if (list.count == 0)
+                break; // Mat ou Pat
+
+            // Sélectionne un coup aléatoire
+            std::uniform_int_distribution<int> dist(0, list.count - 1);
+            Move m = list.moves[dist(rng)];
+
+            b.play(m);
+            moves_played.push_back(m);
+            actual_plies++;
+            keys_at_ply[actual_plies] = b.get_hash();
+
+            // Vérification optionnelle : la clé après play ne doit pas être
+            // identique à la clé avant play (sauf exception rarissime)
+            EXPECT_NE(keys_at_ply[actual_plies], keys_at_ply[actual_plies - 1])
+                << "Coup joué: " << m.to_uci() << " n'a pas modifié la Zobrist Key.";
+        }
+
+        // --- PHASE 2 : DÉFAIRE LES COUPS ---
+        for (int p = actual_plies - 1; p >= 0; --p)
+        {
+            Move m = moves_played[p];
+            b.unplay(m);
+
+            EXPECT_EQ(b.get_hash(), keys_at_ply[p])
+                << "Échec à la profondeur " << p
+                << " après avoir défait le coup " << m.to_uci();
+
+            // Vérification de l'intégrité structurelle (Mailbox vs Bitboards)
+            // Si la Zobrist est fausse, c'est souvent ici que ça casse
+            for (int sq = 0; sq < 64; ++sq)
+            {
+                Piece p_mailbox = b.get_p(sq); // supposant que ceci renvoie la pièce
+                if (p_mailbox != NO_PIECE)
+                {
+                    Color c = b.get_c(sq);
+                    // Vérifie que le bitboard de la pièce possède bien ce bit
+                    EXPECT_TRUE(b.get_piece_bitboard(c, p_mailbox) & (1ULL << sq))
+                        << "Incohérence Mailbox/Bitboard pour la pièce " << p_mailbox
+                        << " sur la case " << sq;
+                }
+            }
+        }
+
+        // --- PHASE FINALE : RETOUR AU DÉPART ---
+        EXPECT_EQ(b.get_hash(), keys_at_ply[0])
+            << "La clé finale après avoir tout annulé ne correspond pas à la clé initiale.";
+    }
 }

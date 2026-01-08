@@ -54,7 +54,18 @@ public:
     }
 
     // --- Méthodes de recherche ---
+    template <Color Us>
     int negamax(int depth, int alpha, int beta, int ply);
+    inline int negamax(int depth, int alpha, int beta, int ply)
+    {
+        if (board.get_side_to_move() == WHITE)
+        {
+            return negamax<WHITE>(depth, alpha, beta, ply);
+        }
+        return negamax<BLACK>(depth, alpha, beta, ply);
+    }
+
+    template <Color Us>
     int qsearch(int alpha, int beta, int ply);
 
     // --- Heuristiques ---

@@ -182,6 +182,22 @@ public:
         return get_piece_bitboard(color, static_cast<Piece>(type));
     }
 
+    template <Color Us, Piece p>
+    inline bitboard &get_piece_bitboard()
+    {
+        static_assert(p <= KING, "Invalid piece type");
+        constexpr size_t index = (Us * N_PIECES_TYPE_HALF) + p;
+        return pieces_occ[index];
+    }
+
+    template <Color Us, Piece p>
+    inline bitboard get_piece_bitboard() const
+    {
+        static_assert(p <= KING, "Invalid piece type");
+        constexpr size_t index = (Us * N_PIECES_TYPE_HALF) + p;
+        return pieces_occ[index];
+    }
+
     inline bitboard &get_occupancy(Color c)
     {
         return occupancies[c];
@@ -189,6 +205,12 @@ public:
     inline const bitboard &get_occupancy(Color c) const
     {
         return occupancies[c];
+    }
+
+    template <Color Us>
+    inline const bitboard &get_occupancy() const
+    {
+        return occupancies[Us];
     }
 
     inline void update_square_bitboard(Color color, Piece type, int square, bool fill)
@@ -231,8 +253,17 @@ public:
         uint8_t target = (color << COLOR_SHIFT) | piece;
         return val == target;
     }
-
+    template <Color Us>
     bool play(const Move move);
+
+    inline bool play(const Move move)
+    {
+        if (state.side_to_move == WHITE)
+        {
+            return play<WHITE>(move);
+        }
+        return play<BLACK>(move);
+    }
     bool is_move_legal(const Move move);
     char piece_to_char(Color color, Piece type) const;
     void show() const;
@@ -242,7 +273,18 @@ public:
         return is_occupied(sq, static_cast<Piece>(piece), color);
     }
 
+    template <Color Us>
     void unplay(const Move move);
+
+    inline void unplay(const Move move)
+    {
+        if (state.side_to_move == WHITE)
+        {
+            unplay<BLACK>(move);
+            return;
+        }
+        unplay<WHITE>(move);
+    }
 
     bool is_repetition() const;
 
@@ -327,8 +369,27 @@ public:
         return pieces_occ;
     }
 
-    bool is_king_attacked(Color c);
-    bool is_attacked(int sq, Color attacker) const;
+    inline bool is_king_attacked(Color c)
+    {
+        return is_attacked(eval_state.king_sq[c], (Color)!c);
+    }
+    template <Color Us>
+    inline bool is_king_attacked()
+    {
+        return is_attacked<!Us>(eval_state.king_sq[Us]);
+    }
+
+    template <Color Attacker>
+    bool is_attacked(int sq) const;
+
+    inline bool is_attacked(int sq, Color attacker) const
+    {
+        if (attacker == WHITE)
+        {
+            return is_attacked<WHITE>(sq);
+        }
+        return is_attacked<BLACK>(sq);
+    };
 
     inline U64 get_hash_after(Move m) const
     {

@@ -201,6 +201,37 @@ int Eval::eval(const Board &board, int alpha, int beta)
         eg_score += bonus * sign;
     }
 
+    if (std::abs(eg_score) > 200)
+    {
+        // On identifie qui gagne
+        const Color winner = (eg_score > 0) ? WHITE : BLACK;
+        const Color loser = (Color)!winner;
+
+        const int wk = state.king_sq[WHITE];
+        const int bk = state.king_sq[BLACK];
+
+        // 1. Bonus pour pousser le roi adverse vers le bord (Center Manhatten distance)
+        const int loser_king = state.king_sq[loser];
+        int k_file = loser_king & 7;
+        int k_rank = loser_king >> 3;
+
+        // Distance du centre (0 à 3)
+        int dist_from_center = std::max(std::abs(k_file - 3), std::abs(k_rank - 3));
+
+        // 2. Bonus pour approcher notre Roi du Roi adverse
+        int dist_between_kings = king_distance(wk, bk);
+
+        // On combine les deux :
+        // + on pousse au bord, + on gagne. + on est proche, + on gagne.
+        int mop_up = (dist_from_center * 10) + (14 - dist_between_kings) * 5;
+
+        // On applique le bonus selon le gagnant
+        if (winner == WHITE)
+            eg_score += mop_up;
+        else
+            eg_score -= mop_up;
+    }
+
     // 4. Interpolation finale (material_score a été fusionné à l'étape 1)
     return (mg_score * state.phase + eg_score * (totalPhase - state.phase)) / totalPhase;
 }
@@ -210,14 +241,4 @@ void Eval::print_pawn_stats()
     std::cout << " - Hits:   " << pawn_table.hits << std::endl;
     std::cout << " - Misses: " << pawn_table.misses << std::endl;
     std::cout << " - Rate:   " << pawn_table.get_hit_rate() << "%" << std::endl;
-}
-int Eval::lazy_eval_relative(const Board &board, Color us)
-{
-    const EvalState &state = board.get_eval_state();
-    const int mg_score = (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -
-                         (state.mg_pst[BLACK] + state.pieces_val[BLACK]);
-    const int eg_score = (state.eg_pst[WHITE] + state.pieces_val[WHITE]) -
-                         (state.eg_pst[BLACK] + state.pieces_val[BLACK]);
-    const int base_score = (mg_score * state.phase + eg_score * (totalPhase - state.phase)) / totalPhase;
-    return us == WHITE ? base_score : -base_score;
 }

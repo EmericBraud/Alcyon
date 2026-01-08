@@ -1,34 +1,31 @@
 #include "core/board.hpp"
 #include "core/move/move_generator.hpp"
 
-bool Board::is_king_attacked(Color c)
-{
-    return is_attacked(eval_state.king_sq[c], (Color)!c);
-}
-bool Board::is_attacked(int sq, Color attacker) const
+template <Color Attacker>
+bool Board::is_attacked(int sq) const
 {
     const bitboard occupied = occupancies[NO_COLOR];
 
     // 1. Pions et Cavaliers (Les plus rapides, on commence par eux)
-    if ((attacker == WHITE ? MoveGen::PawnAttacksBlack[sq] : MoveGen::PawnAttacksWhite[sq]) & get_piece_bitboard(attacker, PAWN))
+    if ((Attacker == WHITE ? MoveGen::PawnAttacksBlack[sq] : MoveGen::PawnAttacksWhite[sq]) & get_piece_bitboard<Attacker, PAWN>())
         return true;
 
-    if (MoveGen::KnightAttacks[sq] & get_piece_bitboard(attacker, KNIGHT))
+    if (MoveGen::KnightAttacks[sq] & get_piece_bitboard<Attacker, KNIGHT>())
         return true;
 
     // 2. Roi (Très rapide aussi)
-    if (MoveGen::KingAttacks[sq] & get_piece_bitboard(attacker, KING))
+    if (MoveGen::KingAttacks[sq] & get_piece_bitboard<Attacker, KING>())
         return true;
 
     // 3. Sliders : On combine les bitboards de l'attaquant pour limiter les tests
-    const bitboard queens = get_piece_bitboard(attacker, QUEEN);
+    const bitboard queens = get_piece_bitboard<Attacker, QUEEN>();
 
     // Diagonales (Fous + Dames)
-    if (MoveGen::generate_bishop_moves(sq, occupied) & (get_piece_bitboard(attacker, BISHOP) | queens))
+    if (MoveGen::generate_bishop_moves(sq, occupied) & (get_piece_bitboard<Attacker, BISHOP>() | queens))
         return true;
 
     // Lignes/Colonnes (Tours + Dames)
-    if (MoveGen::generate_rook_moves(sq, occupied) & (get_piece_bitboard(attacker, ROOK) | queens))
+    if (MoveGen::generate_rook_moves(sq, occupied) & (get_piece_bitboard<Attacker, ROOK>() | queens))
         return true;
 
     return false;
@@ -110,3 +107,6 @@ bool Board::is_move_legal(const Move move)
 
     return legal;
 }
+
+template bool Board::is_attacked<WHITE>(int sq) const;
+template bool Board::is_attacked<BLACK>(int sq) const;
