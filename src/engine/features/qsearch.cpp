@@ -1,10 +1,11 @@
 #include "engine/engine.hpp"
 #include "engine/engine.hpp"
 
+template <Color Us>
 int SearchWorker::qsearch(int alpha, int beta, int ply)
 {
     // 1. Vérification de l'arrêt et mise à jour des nœuds (Optimisé)
-    if (((++local_nodes) & 32767) == 0)
+    if ((local_nodes & 32767) == 0)
     {
         global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
         local_nodes = 0;
@@ -18,6 +19,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
         if (shared_stop.load(std::memory_order_relaxed))
             return alpha;
     }
+    ++local_nodes;
 
     // 2. Sondage de la Transposition Table (TT)
     // Utilisation du ply pour normaliser les scores de mat récupérés
@@ -26,15 +28,14 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move))
         return tt_score;
 
-    const Color player = board.get_side_to_move();
-    bool in_check = board.is_king_attacked(player);
+    bool in_check = board.is_king_attacked<Us>();
     int stand_pat = -INF;
 
     // 3. Standing Pat (Évaluation statique)
     // On ne l'utilise que si on n'est pas en échec, car une position en échec est instable
     if (!in_check)
     {
-        stand_pat = Eval::lazy_eval_relative(board, player);
+        stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
         if (stand_pat >= beta)
             return beta;
         if (stand_pat > alpha)
@@ -47,11 +48,11 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     {
         // Si on est en échec, on doit générer TOUTES les évasions (pas seulement les captures)
         // pour éviter d'être aveugle aux mats forcés.
-        MoveGen::generate_pseudo_legal_moves(board, player, list);
+        MoveGen::generate_pseudo_legal_moves<Us>(board, list);
     }
     else
     {
-        MoveGen::generate_pseudo_legal_captures(board, player, list);
+        MoveGen::generate_pseudo_legal_captures<Us>(board, list);
     }
 
     // 5. Tri des coups (SEE + MVV-LVA)
@@ -66,7 +67,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
         else
         {
             Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
-            int see_val = see(m.get_to_sq(), target, m.get_from_piece(), player, m.get_from_sq());
+            int see_val = see(m.get_to_sq(), target, m.get_from_piece(), Us, m.get_from_sq());
 
             if (see_val < 0)
                 list.scores[i] = -1000000; // Capture perdante
@@ -99,17 +100,17 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
                 continue;
         }
 
-        board.play(m);
-        if (board.is_king_attacked(player))
+        board.play<Us>(m);
+        if (board.is_king_attacked<Us>())
         {
-            board.unplay(m);
+            board.unplay<Us>(m);
             continue;
         }
 
         moves_searched++;
         // Appel récursif avec ply+1 pour la détection précise des mats
-        int score = -qsearch(-beta, -alpha, ply + 1);
-        board.unplay(m);
+        int score = -qsearch<!Us>(-beta, -alpha, ply + 1);
+        board.unplay<Us>(m);
 
         if (score >= beta)
         {
@@ -174,3 +175,6 @@ int SearchWorker::score_capture(const Move &move) const
 
     return score;
 }
+
+template int SearchWorker::qsearch<WHITE>(int alpha, int beta, int ply);
+template int SearchWorker::qsearch<BLACK>(int alpha, int beta, int ply);

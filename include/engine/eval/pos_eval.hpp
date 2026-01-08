@@ -74,10 +74,11 @@ namespace Eval
     void evaluate_pawns(Color color, const Board &board, int &mg, int &eg);
     int eval(const Board &board, int alpha, int beta);
 
-    inline int eval_relative(Color side_to_move, const Board &board, int alpha, int beta)
+    template <Color Us>
+    inline int eval_relative(const Board &board, int alpha, int beta)
     {
         int score = eval(board, alpha, beta);
-        return (side_to_move == WHITE) ? score : -score;
+        return (Us == WHITE) ? score : -score;
     }
 
     inline int get_piece_score(int piece)
@@ -87,5 +88,22 @@ namespace Eval
 
     void print_pawn_stats();
 
-    int lazy_eval_relative(const Board &board, Color us);
+    inline int king_distance(int sq1, int sq2)
+    {
+        int dx = std::abs((sq1 & 7) - (sq2 & 7));
+        int dy = std::abs((sq1 >> 3) - (sq2 >> 3));
+        return std::max(dx, dy);
+    }
+
+    template <Color Us>
+    int lazy_eval_relative(const Board &board)
+    {
+        const EvalState &state = board.get_eval_state();
+        const int mg_score = (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -
+                             (state.mg_pst[BLACK] + state.pieces_val[BLACK]);
+        const int eg_score = (state.eg_pst[WHITE] + state.pieces_val[WHITE]) -
+                             (state.eg_pst[BLACK] + state.pieces_val[BLACK]);
+        const int base_score = (mg_score * state.phase + eg_score * (totalPhase - state.phase)) / totalPhase;
+        return Us == WHITE ? base_score : -base_score;
+    }
 }

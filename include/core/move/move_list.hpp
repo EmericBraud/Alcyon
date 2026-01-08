@@ -16,7 +16,7 @@ struct MoveList
 
     MoveList() {}
 
-    void push(Move m)
+    inline void push(Move m)
     {
         assert(count < 256);
         moves[count++] = m;
@@ -24,7 +24,7 @@ struct MoveList
 
     Move &operator[](int index) { return moves[index]; }
 
-    Move &pick_best_move(int from_i)
+    inline Move &pick_best_move(int from_i)
     {
         int best_index = from_i;
         for (int j = from_i; j < count; ++j)

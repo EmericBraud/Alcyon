@@ -1,10 +1,7 @@
 #include "core/board.hpp"
 
-#include <iostream>
-#include <stdexcept>
 // clang-format off
 static constexpr uint8_t CastlingMask[64] = {
-    // Rank 1 (White)
     static_cast<uint8_t>(~WHITE_QUEENSIDE),                    15, 15, 15,
     static_cast<uint8_t>(~(WHITE_QUEENSIDE | WHITE_KINGSIDE)), 15, 15, static_cast<uint8_t>(~WHITE_KINGSIDE),
     15, 15, 15, 15, 15, 15, 15, 15,
@@ -41,6 +38,7 @@ void Board::clear()
         get_history()->clear();
     std::memset(mailbox, EMPTY_SQ, BOARD_SIZE);
 }
+template <Color Us>
 bool Board::play(const Move move)
 {
     // 1. Sauvegarde avant modification
@@ -51,11 +49,10 @@ bool Board::play(const Move move)
     const Piece from_piece = move.get_from_piece();
     const Piece to_piece = move.get_to_piece();
     const uint32_t flags = move.get_flags();
-    const Color us = state.side_to_move;
-    const Color them = (Color)!us;
+    const Color them = (Color)!Us;
 
     bool is_irreversible = (from_piece == PAWN) || (to_piece != NO_PIECE);
-    eval_state.increment(move, us);
+    eval_state.increment(move, Us);
 
     if (is_irreversible)
     {
@@ -75,8 +72,8 @@ bool Board::play(const Move move)
     const U64 from_mask = 1ULL << from_sq;
     const U64 to_mask = 1ULL << to_sq;
 
-    zobrist_key ^= zobrist_table[us * N_PIECES_TYPE_HALF + from_piece][from_sq];
-    get_piece_bitboard(us, from_piece) ^= from_mask;
+    zobrist_key ^= zobrist_table[Us * N_PIECES_TYPE_HALF + from_piece][from_sq];
+    get_piece_bitboard(Us, from_piece) ^= from_mask;
     mailbox[from_sq] = EMPTY_SQ;
 
     // 3. Gestion de la capture classique
@@ -103,9 +100,9 @@ bool Board::play(const Move move)
             break;
         case Move::Flags::EN_PASSANT_CAP:
         {
-            const int cap_sq = (us == WHITE) ? to_sq - 8 : to_sq + 8;
+            const int cap_sq = (Us == WHITE) ? to_sq - 8 : to_sq + 8;
             zobrist_key ^= zobrist_table[them * N_PIECES_TYPE_HALF + PAWN][cap_sq];
-            get_piece_bitboard(them, PAWN) ^= (1ULL << cap_sq);
+            get_piece_bitboard<them, PAWN>() ^= (1ULL << cap_sq);
             occupancies[them] ^= (1ULL << cap_sq);
             mailbox[cap_sq] = EMPTY_SQ;
             break;
@@ -114,26 +111,26 @@ bool Board::play(const Move move)
         case Move::Flags::QUEEN_CASTLE:
         {
             bool is_ks = (flags == Move::Flags::KING_CASTLE);
-            int r_f = is_ks ? (us == WHITE ? 7 : 63) : (us == WHITE ? 0 : 56);
-            int r_t = is_ks ? (us == WHITE ? 5 : 61) : (us == WHITE ? 3 : 59);
+            int r_f = is_ks ? (Us == WHITE ? 7 : 63) : (Us == WHITE ? 0 : 56);
+            int r_t = is_ks ? (Us == WHITE ? 5 : 61) : (Us == WHITE ? 3 : 59);
             U64 r_mask = (1ULL << r_f) | (1ULL << r_t);
-            zobrist_key ^= zobrist_table[us * N_PIECES_TYPE_HALF + ROOK][r_f] ^ zobrist_table[us * N_PIECES_TYPE_HALF + ROOK][r_t];
-            get_piece_bitboard(us, ROOK) ^= r_mask;
-            occupancies[us] ^= r_mask;
+            zobrist_key ^= zobrist_table[Us * N_PIECES_TYPE_HALF + ROOK][r_f] ^ zobrist_table[Us * N_PIECES_TYPE_HALF + ROOK][r_t];
+            get_piece_bitboard<Us, ROOK>() ^= r_mask;
+            occupancies[Us] ^= r_mask;
             mailbox[r_f] = EMPTY_SQ;
-            mailbox[r_t] = (us << COLOR_SHIFT) | ROOK;
+            mailbox[r_t] = (Us << COLOR_SHIFT) | ROOK;
             break;
         }
         }
     }
 
     // 5. Finalisation
-    zobrist_key ^= zobrist_table[us * N_PIECES_TYPE_HALF + final_piece][to_sq];
-    get_piece_bitboard(us, final_piece) |= to_mask;
-    mailbox[to_sq] = (us << COLOR_SHIFT) | final_piece;
+    zobrist_key ^= zobrist_table[Us * N_PIECES_TYPE_HALF + final_piece][to_sq];
+    get_piece_bitboard(Us, final_piece) |= to_mask;
+    mailbox[to_sq] = (Us << COLOR_SHIFT) | final_piece;
 
     // Mise à jour des occupations globales (Vital pour is_attacked et PinTest)
-    occupancies[us] ^= (from_mask | to_mask);
+    occupancies[Us] ^= (from_mask | to_mask);
     occupancies[NO_COLOR] = occupancies[WHITE] | occupancies[BLACK];
 
     state.castling_rights &= CastlingMask[from_sq] & CastlingMask[to_sq];
@@ -141,10 +138,11 @@ bool Board::play(const Move move)
     zobrist_key ^= zobrist_en_passant[state.en_passant_sq == EN_PASSANT_SQ_NONE ? 8 : state.en_passant_sq % 8];
 
     if (from_piece == KING)
-        eval_state.king_sq[us] = to_sq;
+        eval_state.king_sq[Us] = to_sq;
     switch_trait();
     return true;
 }
+template <Color Us>
 void Board::unplay(const Move move)
 {
     const uint32_t flags = move.get_flags();
@@ -155,21 +153,20 @@ void Board::unplay(const Move move)
     const Piece moved_p = (flags == Move::Flags::PROMOTION_MASK) ? QUEEN : from_piece;
 
     switch_trait();
-    const Color us = state.side_to_move;
-    const Color them = (Color)!us;
+    const Color them = (Color)!Us;
 
     // 1. Inversion Bitboards
     U64 move_mask = (1ULL << from_sq) | (1ULL << to_sq);
-    get_piece_bitboard(us, moved_p) ^= move_mask;
-    occupancies[us] ^= move_mask;
+    get_piece_bitboard(Us, moved_p) ^= move_mask;
+    occupancies[Us] ^= move_mask;
 
     // 2. Inversion Mailbox
-    mailbox[from_sq] = (us << COLOR_SHIFT) | from_piece;
+    mailbox[from_sq] = (Us << COLOR_SHIFT) | from_piece;
     if (flags == Move::Flags::EN_PASSANT_CAP)
     {
         mailbox[to_sq] = EMPTY_SQ;
-        const int cap_sq = (us == WHITE) ? to_sq - 8 : to_sq + 8;
-        get_piece_bitboard(them, PAWN) |= (1ULL << cap_sq);
+        const int cap_sq = (Us == WHITE) ? to_sq - 8 : to_sq + 8;
+        get_piece_bitboard<them, PAWN>() |= (1ULL << cap_sq);
         occupancies[them] |= (1ULL << cap_sq);
         mailbox[cap_sq] = (them << COLOR_SHIFT) | PAWN;
     }
@@ -187,24 +184,24 @@ void Board::unplay(const Move move)
     if (flags == Move::Flags::KING_CASTLE || flags == Move::Flags::QUEEN_CASTLE)
     {
         bool is_ks = (flags == Move::Flags::KING_CASTLE);
-        int r_f = is_ks ? (us == WHITE ? 7 : 63) : (us == WHITE ? 0 : 56);
-        int r_t = is_ks ? (us == WHITE ? 5 : 61) : (us == WHITE ? 3 : 59);
+        int r_f = is_ks ? (Us == WHITE ? 7 : 63) : (Us == WHITE ? 0 : 56);
+        int r_t = is_ks ? (Us == WHITE ? 5 : 61) : (Us == WHITE ? 3 : 59);
         U64 r_mask = (1ULL << r_f) | (1ULL << r_t);
-        get_piece_bitboard(us, ROOK) ^= r_mask;
-        occupancies[us] ^= r_mask;
-        mailbox[r_f] = (us << COLOR_SHIFT) | ROOK;
+        get_piece_bitboard<Us, ROOK>() ^= r_mask;
+        occupancies[Us] ^= r_mask;
+        mailbox[r_f] = (Us << COLOR_SHIFT) | ROOK;
         mailbox[r_t] = EMPTY_SQ;
     }
     else if (flags == Move::Flags::PROMOTION_MASK)
     {
-        get_piece_bitboard(us, QUEEN) ^= (1ULL << from_sq);
-        get_piece_bitboard(us, PAWN) |= (1ULL << from_sq);
+        get_piece_bitboard<Us, QUEEN>() ^= (1ULL << from_sq);
+        get_piece_bitboard<Us, PAWN>() |= (1ULL << from_sq);
     }
 
     // 4. Sync et Restauration
     occupancies[NO_COLOR] = occupancies[WHITE] | occupancies[BLACK];
     if (from_piece == KING)
-        eval_state.king_sq[us] = from_sq;
+        eval_state.king_sq[Us] = from_sq;
 
     const UndoInfo &info = get_history()->back();
     zobrist_key = info.zobrist_key;
@@ -213,7 +210,7 @@ void Board::unplay(const Move move)
     state.castling_rights = info.castling_rights;
     state.en_passant_sq = info.en_passant_sq;
 
-    eval_state.decrement(move, us);
+    eval_state.decrement(move, Us);
 
     get_history()->pop_back();
 }
@@ -231,3 +228,9 @@ bool Board::is_repetition() const
     }
     return false;
 }
+
+template bool Board::play<WHITE>(const Move move);
+template bool Board::play<BLACK>(const Move move);
+
+template void Board::unplay<WHITE>(const Move move);
+template void Board::unplay<BLACK>(const Move move);

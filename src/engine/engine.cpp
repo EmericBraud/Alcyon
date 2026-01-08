@@ -135,11 +135,12 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         }
     }
 }
+template <Color Us>
 int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
 {
     // 1. Vérification périodique de l'arrêt (Atomique)
     // On incrémente le compteur global de nœuds et on vérifie le temps
-    if (((++local_nodes) & 32767) == 0)
+    if (((local_nodes) & 32767) == 0)
     {
         global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
         local_nodes = 0;
@@ -156,6 +157,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         if (shared_stop.load(std::memory_order_relaxed))
             return alpha;
     }
+    ++local_nodes;
 
     // 2. Détection des nullités (Répétition / 50 coups)
     if (ply > 0)
@@ -177,7 +179,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     // 4. Quiescence Search à l'horizon
     if (depth <= 0)
     {
-        in_check = board.is_king_attacked(board.get_side_to_move());
+        in_check = board.is_king_attacked<Us>();
         in_check_tested = true;
         if (in_check && ply < MAX_DEPTH - 1)
         {
@@ -185,7 +187,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         }
         else
         {
-            return qsearch(alpha, beta, ply);
+            return qsearch<Us>(alpha, beta, ply);
         }
     }
 
@@ -193,33 +195,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     int best_score = -INF;
     Move best_move_this_node = 0;
     int moves_searched = 0;
-    const Color player = board.get_side_to_move();
 
-    if (tt_move.get_value() != 0)
-    {
-        board.play(tt_move);
-        if (!board.is_king_attacked(player))
-        {
-            ++moves_searched;
-            best_score = -negamax(depth - 1, -beta, -alpha, ply + 1);
-            board.unplay(tt_move);
-
-            if (best_score >= beta)
-                return best_score;
-            if (best_score > alpha)
-                alpha = best_score;
-            best_move_this_node = tt_move;
-        }
-        else
-        {
-            board.unplay(tt_move);
-        }
-    }
     if (!in_check_tested)
-        in_check = board.is_king_attacked(board.get_side_to_move());
+        in_check = board.is_king_attacked<Us>();
     if (depth <= 7 && !in_check && ply > 0)
     {
-        int static_eval = Eval::lazy_eval_relative(board, board.get_side_to_move());
+        int static_eval = Eval::lazy_eval_relative<Us>(board);
         int margin = 120 * depth;
         if (static_eval - margin >= beta)
             return beta;
@@ -231,7 +212,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         int stored_ep;
         board.play_null_move(stored_ep);
         int R = (depth > 6) ? 3 : 2;
-        int score = -negamax(depth - 1 - R, -beta, -beta + 1, ply + 1);
+        int score = -negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1);
         board.unplay_null_move(stored_ep);
 
         if (score >= beta)
@@ -245,7 +226,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     {
         // Calcul de la marge (ajustable selon ton évaluation)
         futil_margin = 120 + 100 * depth;
-        int static_eval = Eval::lazy_eval_relative(board, player);
+        int static_eval = Eval::lazy_eval_relative<Us>(board);
 
         if (static_eval + futil_margin <= alpha)
         {
@@ -255,7 +236,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
 
     // 6. Génération et tri des coups restants
     MoveList list;
-    MoveGen::generate_pseudo_legal_moves(board, player, list);
+    MoveGen::generate_pseudo_legal_moves<Us>(board, list);
 
     // Récupération du coup précédent pour les Counter-moves
     const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
@@ -270,8 +251,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     {
         Move &m = list.pick_best_move(i);
 
-        if (m.get_value() == tt_move.get_value())
-            continue;
         if (!board.is_move_legal(m))
             continue;
 
@@ -297,7 +276,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         }
         ++moves_searched;
 
-        board.play(m);
+        board.play<Us>(m);
 
         // --- LATE MOVE REDUCTION (LMR) ---
         if (depth >= 3 && moves_searched > 4 && !is_tactical && !in_check)
@@ -305,28 +284,28 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
             int r = static_cast<int>(lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
             r = std::clamp(r, 0, depth - 2);
 
-            score = -negamax(depth - 1 - r, -alpha - 1, -alpha, ply + 1);
+            score = -negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1);
 
             // Re-search si le coup réduit semble bon
             if (score > alpha)
-                score = -negamax(depth - 1, -alpha - 1, -alpha, ply + 1);
+                score = -negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1);
         }
         else if (moves_searched > 1) // Null Window Search pour PVS
         {
-            score = -negamax(depth - 1, -alpha - 1, -alpha, ply + 1);
+            score = -negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1);
         }
         else // Full Window Search (seulement si moves_searched == 1 et pas de TT move)
         {
-            score = -negamax(depth - 1, -beta, -alpha, ply + 1);
+            score = -negamax<!Us>(depth - 1, -beta, -alpha, ply + 1);
         }
 
         // Si le score est dans la fenêtre mais pas une coupure, on re-cherche normalement
         if (score > alpha && score < beta && moves_searched > 1)
         {
-            score = -negamax(depth - 1, -beta, -alpha, ply + 1);
+            score = -negamax<!Us>(depth - 1, -beta, -alpha, ply + 1);
         }
 
-        board.unplay(m);
+        board.unplay<Us>(m);
 
         // --- MISE À JOUR DES SCORES ET DES TABLES ---
         if (score >= beta)
@@ -338,7 +317,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
                 int bonus = depth * depth;
 
                 // On récompense le coup gagnant
-                history_moves[player][m.get_from_sq()][m.get_to_sq()] += bonus;
+                history_moves[Us][m.get_from_sq()][m.get_to_sq()] += bonus;
 
                 // MALUS : On punit tous les coups calmes testés AVANT et qui ont échoué
                 for (int j = 0; j < i; ++j)
@@ -347,7 +326,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
                     // On ne punit que les coups calmes (pas les captures/promotions)
                     if (list.scores[j] < 900000)
                     {
-                        history_moves[player][failed_move.get_from_sq()][failed_move.get_to_sq()] -= bonus;
+                        history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] -= bonus;
                     }
                 }
 
@@ -382,3 +361,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
 
     return best_score;
 }
+
+template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply);
+template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply);

@@ -163,38 +163,46 @@ public:
     bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move)
     {
         TTBucket &bucket = table[key & index_mask];
+        bool found_move = false;
+
         for (int i = 0; i < 4; ++i)
         {
             Move m;
             int16_t s;
             uint8_t d;
             uint8_t f;
-            if (bucket.entries[i].load(key, m, s, d, f))
+            if (!bucket.entries[i].load(key, m, s, d, f))
+                continue;
+
+            if (!found_move)
             {
                 best_move = m;
-                if (d >= depth)
-                {
-                    int score = score_from_tt(s, ply);
-                    uint8_t flag = f & 0x03;
-                    if (flag == TT_EXACT)
-                    {
-                        return_score = score;
-                        return true;
-                    }
-                    if (flag == TT_ALPHA && score <= alpha)
-                    {
-                        return_score = score;
-                        return true;
-                    }
-                    if (flag == TT_BETA && score >= beta)
-                    {
-                        return_score = score;
-                        return true;
-                    }
-                }
-                return false;
+                found_move = true;
+            }
+
+            if (d < depth)
+                continue;
+
+            int score = score_from_tt(s, ply);
+            uint8_t flag = f & 0x03;
+
+            if (flag == TT_EXACT)
+            {
+                return_score = score;
+                return true;
+            }
+            if (flag == TT_ALPHA && score <= alpha)
+            {
+                return_score = score;
+                return true;
+            }
+            if (flag == TT_BETA && score >= beta)
+            {
+                return_score = score;
+                return true;
             }
         }
+
         return false;
     }
 

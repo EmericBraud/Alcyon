@@ -59,7 +59,7 @@ namespace MoveGen
     template <Piece piece_type>
     inline U64 get_pseudo_moves_mask(const Board &board, const int sq, const Color color)
     {
-        const U64 occ = board.get_occupancy(NO_COLOR);
+        const U64 occ = board.get_occupancy<NO_COLOR>();
         U64 target_mask = 0;
 
         if constexpr (piece_type == PAWN)
@@ -142,14 +142,26 @@ namespace MoveGen
     void initialize_bishop_masks();
     void initialize_pawn_masks();
 
-    void generate_pseudo_legal_moves(Board &board, Color color, MoveList &list);
-    void generate_pseudo_legal_captures(const Board &board, Color color, MoveList &list);
+    template <Color Us>
+    void generate_pseudo_legal_moves(Board &board, MoveList &list);
+    template <Color Us>
+    void generate_castle_moves(Board &board, MoveList &list);
+    template <Color Us>
+    void generate_pseudo_legal_captures(const Board &board, MoveList &list);
     U64 get_legal_moves_mask(Board &board, int from_sq);
 
-    bool is_mask_attacked(const Board &board, const U64 mask, Color attacker);
-    void generate_castle_moves(Board &board, MoveList &list);
-
+    template <Color Us>
     void generate_legal_moves(Board &board, MoveList &list);
+
+    inline void generate_legal_moves(Board &board, MoveList &list)
+    {
+        if (board.get_side_to_move() == WHITE)
+        {
+            generate_legal_moves<WHITE>(board, list);
+            return;
+        }
+        generate_legal_moves<BLACK>(board, list);
+    }
 
     void export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook);
     void run_magic_searcher();

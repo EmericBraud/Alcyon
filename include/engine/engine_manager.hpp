@@ -13,15 +13,17 @@ class EngineManager
     // Paramètres de temps
     Clock::time_point start_time;
     int time_limit_ms;
+    Move root_best_move;
 
 public:
     EngineManager(Board &b) : main_board(b)
     {
-        tt.resize(1024);
+        tt.resize(64);
         init_lmr_table();
+        root_best_move = 0;
     }
 
-    void start_search(int time_ms = 20000)
+    void start_search(int time_ms = 30000)
     {
         stop_search = false;
         total_nodes = 0;
@@ -44,11 +46,11 @@ public:
         } // Fin du scope : std::jthread appelle join() ici automatiquement
 
         // --- APPLICATION DU COUP ---
-        Move best_move = tt.get_move(main_board.get_hash());
-        if (best_move.get_value() != 0)
+
+        if (root_best_move.get_value() != 0)
         {
-            std::cout << "bestmove " << best_move.to_uci() << std::endl;
-            main_board.play(best_move);
+            std::cout << "bestmove " << root_best_move.to_uci() << std::endl;
+            main_board.play(root_best_move);
         }
         else
         {
@@ -89,32 +91,49 @@ private:
 
         for (int current_depth = 1; current_depth <= MAX_DEPTH; ++current_depth)
         {
+            // 1. Vérification d'arrêt avant de lancer une nouvelle itération
             if (stop_search.load(std::memory_order_relaxed))
                 break;
 
-            // --- DIVERSIFICATION LAZY SMP ---
-            // Le thread 0 suit les profondeurs normalement.
-            // Les helpers explorent parfois des profondeurs décalées pour aider la TT.
+            // 2. Diversification Lazy SMP
             int search_depth = current_depth;
             if (thread_id > 0)
             {
-                // Exemple : threads impairs cherchent à depth + 1
-                search_depth = (thread_id % 2 == 0) ? current_depth : current_depth + 1;
+                // Décalage pour que les helpers explorent des branches différentes
+                // On ajoute un offset basé sur l'ID pour maximiser la couverture TT
+                search_depth = current_depth + (thread_id % 4);
             }
-            worker.age_history();
 
+            // Optionnel : On ne réduit l'historique que sur le thread maître pour garder les heuristiques helpers
+            if (thread_id == 0)
+                worker.age_history();
+
+            // 3. Lancement de la recherche
             int score = worker.negamax_with_aspiration(search_depth, last_score);
 
+            // 4. Vérification d'arrêt post-recherche
+            // Si le temps a expiré PENDANT negamax, le score et le coup sont potentiellement corrompus
             if (stop_search.load(std::memory_order_relaxed))
                 break;
 
-            // --- SEUL LE THREAD MAÎTRE COMMUNIQUE ---
+            // 5. Logique spécifique au Thread Maître (ID 0)
             if (thread_id == 0)
             {
-                last_score = score;
+                last_score = score; // Mise à jour pour la prochaine fenêtre d'aspiration
+
+                // --- EXTRACTION SÉCURISÉE DU MEILLEUR COUP ---
+                // On extrait le coup de la TT MAINTENANT, car il correspond au score obtenu
+
+                Move current_best = tt.get_move(main_board.get_hash());
+                if (current_best.get_value() != 0)
+                {
+                    // On stocke ce coup dans une variable membre de EngineManager
+                    this->root_best_move = current_best;
+                }
+
+                // --- AFFICHAGE UCI ---
                 auto now = Clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
-
                 long long nodes = total_nodes.load(std::memory_order_relaxed);
                 double nps = elapsed > 0 ? (nodes * 1000.0 / elapsed) : 0;
 
@@ -126,7 +145,7 @@ private:
                           << " pv " << worker.get_pv_line(current_depth)
                           << std::endl;
 
-                // Arrêt si Mat trouvé
+                // 6. Condition d'arrêt sur Mat
                 if (std::abs(score) >= MATE_SCORE - MAX_DEPTH)
                 {
                     stop_search.store(true, std::memory_order_relaxed);
