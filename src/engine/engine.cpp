@@ -1,4 +1,5 @@
 #include "engine/engine.hpp"
+#include "engine/engine_manager.hpp"
 //clang-format off
 static constexpr int MVV_LVA_TABLE[7][7] = {
     // Attaquants:  P      N      B      R      Q      K     NONE
@@ -114,20 +115,26 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         if (shared_stop.load(std::memory_order_relaxed))
             return score;
 
+        if (manager.should_stop())
+        {
+            shared_stop.store(true, std::memory_order_relaxed);
+            return score;
+        }
+
         if (score <= alpha)
-        { // Fail Low
+        {
             alpha = std::max(-INF, alpha - delta);
             beta = (alpha + beta) / 2; // Resserrage de beta pour aider l'élagage
             delta += delta / 3 + 5;
             if (thread_id == 0)
-                std::cout << "Fail Low\n";
+                std::println("info string fail low");
         }
         else if (score >= beta)
-        { // Fail High
+        {
             beta = std::min(INF, beta + delta);
             delta += delta / 4 + 5;
             if (thread_id == 0)
-                std::cout << "Fail High\n";
+                std::println("info string fail high");
         }
         else
         {
@@ -147,20 +154,15 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
 {
     // 1. Vérification périodique de l'arrêt (Atomique)
     // On incrémente le compteur global de nœuds et on vérifie le temps
-    if (((local_nodes) & 32767) == 0)
+    if ((local_nodes & 32767) == 0)
     {
         global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
         local_nodes = 0;
-        if (thread_id == 0)
+
+        if (thread_id == 0 && manager.should_stop())
         {
-            auto now = Clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_ref).count();
-            if (elapsed >= time_limit_ms_ref)
-            {
-                shared_stop.store(true, std::memory_order_relaxed);
-            }
+            shared_stop.store(true, std::memory_order_relaxed);
         }
-        // Si l'arrêt est demandé (par temps ou par un autre thread), on quitte
         if (shared_stop.load(std::memory_order_relaxed))
             return alpha;
     }
@@ -188,7 +190,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     {
         in_check = board.is_king_attacked<Us>();
         in_check_tested = true;
-        if (in_check && ply < MAX_DEPTH - 1)
+        if (in_check && ply < MAX_DEPTH - 5)
         {
             depth = 1;
         }
@@ -232,7 +234,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     if (depth <= 3 && !in_check && ply > 0 && (best_score > -MATE_SCORE + 100))
     {
         // Calcul de la marge (ajustable selon ton évaluation)
-        futil_margin = 120 + 100 * depth;
+        futil_margin = 175 + 110 * depth;
         int static_eval = Eval::lazy_eval_relative<Us>(board);
 
         if (static_eval + futil_margin <= alpha)
@@ -269,7 +271,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         if (!in_check && depth <= 4 && !is_tactical)
         {
             // Formule classique : on teste de plus en plus de coups avec la profondeur
-            int max_moves = 3 + (depth * depth);
+            int max_moves = 8 + (depth * depth * 2);
             if (moves_searched >= max_moves)
             {
                 continue; // On ignore les coups calmes restants
@@ -352,7 +354,15 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
             best_score = score;
             best_move_this_node = m;
             if (score > alpha)
+            {
                 alpha = score;
+
+                if (ply == 0)
+                {
+
+                    this->best_root_move = m;
+                }
+            }
         }
     }
 

@@ -38,4 +38,13 @@ struct MoveList
         std::swap(scores[from_i], scores[best_index]);
         return moves[from_i];
     }
+    inline int size() const
+    {
+        return count;
+    }
+
+    inline bool empty() const
+    {
+        return count == 0;
+    }
 };

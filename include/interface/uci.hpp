@@ -5,6 +5,7 @@ class UCI
 {
     Board b;
     EngineManager e;
+    bool ponder_enabled = false;
 
     std::expected<int, Move::MoveError> parse_position(Board &board, std::istringstream &is)
     {
@@ -41,6 +42,7 @@ class UCI
                 {
                     std::println(std::cerr, "info string Error parsing move {}: error code {}",
                                  token, (int)expected_move.error());
+                    std::cerr << std::flush;
                     return std::unexpected(expected_move.error());
                 }
             }
@@ -51,11 +53,15 @@ class UCI
     void parse_go(Board &board, EngineManager &engine, std::istringstream &is)
     {
         std::string token;
+        bool is_ponder = false;
+        bool is_infinite = false;
         int wtime = -1, btime = -1, winc = 0, binc = 0, movetime = -1, depth = -1;
 
         while (is >> token)
         {
-            if (token == "wtime")
+            if (token == "ponder")
+                is_ponder = true;
+            else if (token == "wtime")
                 is >> wtime;
             else if (token == "btime")
                 is >> btime;
@@ -67,6 +73,8 @@ class UCI
                 is >> movetime;
             else if (token == "depth")
                 is >> depth;
+            else if (token == "infinite")
+                is_infinite = true;
         }
 
         int time_to_think = 5000; // Valeur par défaut (5s)
@@ -90,8 +98,12 @@ class UCI
         if (time_to_think < 20)
             time_to_think = 20;
 
-        // Lancement de la recherche (dans ton EngineManager)
-        engine.start_search(time_to_think);
+        if (is_infinite)
+        {
+            engine.start_search(0, false, true);
+            return;
+        }
+        engine.start_search(time_to_think, is_ponder && ponder_enabled);
     }
 
 public:
@@ -105,6 +117,9 @@ public:
 
         while (std::getline(std::cin, line))
         {
+            std::cout << "info string << " << line << std::endl;
+            std::cout << std::flush;
+
             std::istringstream is(line);
             token.clear();
             is >> token;
@@ -113,11 +128,44 @@ public:
             {
                 std::println("id name Chess26");
                 std::println("id author Emeric");
-                std::println("option name Hash type spin default 64 min 1 max 2048");
+                std::println("option name Hash type spin default 512 min 1 max 2048");
                 std::println("option name Move Overhead type spin default 100 min 0 max 1000");
                 std::println("option name Ponder type check default false");
                 std::println("option name Threads type spin default 16 min 1 max 16");
                 std::println("uciok");
+                std::cout << std::flush;
+            }
+            else if (token == "setoption")
+            {
+                std::string word;
+                std::string name, value;
+
+                while (is >> word)
+                {
+                    if (word == "name")
+                    {
+                        name.clear();
+                        while (is >> word && word != "value")
+                            name += word + " ";
+                    }
+                    if (word == "value")
+                    {
+                        value.clear();
+                        while (is >> word)
+                            value += word + " ";
+                    }
+                }
+
+                if (name == "Ponder ")
+                    ponder_enabled = (value == "true ");
+            }
+            else if (token == "ponderhit")
+            {
+                e.convert_ponder_to_real();
+            }
+            else if (token == "stop")
+            {
+                e.stop();
             }
             else if (token == "isready")
             {
@@ -125,11 +173,12 @@ public:
             }
             else if (token == "ucinewgame")
             {
-                b.load_fen(FEN_INIT_POS);
                 e.clear();
+                b.load_fen(FEN_INIT_POS);
             }
             else if (token == "position")
             {
+                e.stop();
                 parse_position(b, is);
             }
             else if (token == "go")
