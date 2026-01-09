@@ -3,3 +3,5 @@ chess26
 build/
 
 Testing/Temporary/
+
+.env

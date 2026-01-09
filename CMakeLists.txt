@@ -2,10 +2,13 @@ cmake_minimum_required(VERSION 3.14)
 
 project(Chess26 VERSION 1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_compile_options(-Wall -Wextra -DNDEBUG -flto -O3 -march=native )
+set(CHESS26_DATA_FULL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data/")
+add_definitions(-DDATA_PATH="${CHESS26_DATA_FULL_PATH}")
+
+add_compile_options(-Wall -Wextra -DNDEBUG -flto -O3 -march=native -mbmi2)
 #add_compile_options(-Wall -Wextra -flto -O3 -march=native -ggdb3 -fno-omit-frame-pointer)
 
 # -------------------------------------------------------------------
@@ -84,3 +87,4 @@ add_custom_command(
 
 include(GoogleTest)
 gtest_discover_tests(chess_tests)
+

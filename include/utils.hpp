@@ -20,6 +20,8 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
+#include <expected>
+#include <print>
 #include <immintrin.h>
 #include <xmmintrin.h> //x86 / intel only
 
@@ -27,7 +29,6 @@
 #define STARTING_POS_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 #define ROOK_ATTACKS_SIZE 102400
 #define BISHOP_ATTACKS_SIZE 5248
-#define DATA_PATH "../data/"
 #define EN_PASSANT_SQ_NONE 255
 #define N_PIECES_TYPE 12
 #define N_PIECES_TYPE_HALF 6
@@ -39,6 +40,15 @@ constexpr int MATE_SCORE = 10000;
 
 using U64 = std::uint64_t;
 using bitboard = std::uint64_t;
+
+inline std::string get_data_path(std::string_view filename)
+{
+    std::string path;
+    path.reserve(std::string_view(DATA_PATH).size() + filename.size());
+    path += DATA_PATH;
+    path += filename;
+    return path;
+}
 
 namespace masks
 {

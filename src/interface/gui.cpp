@@ -1,4 +1,4 @@
-#include "gui.hpp"
+#include "interface/gui.hpp"
 
 void GUI::run()
 {
@@ -10,7 +10,6 @@ void GUI::run()
         {
             std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
             computer.start_search();
-            std::cout << "Move played" << std::endl;
         }
         while (window.pollEvent(event))
         {
@@ -65,7 +64,6 @@ void GUI::run()
             {
                 std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
                 computer.start_search();
-                std::cout << "Move played" << std::endl;
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::U)
             {

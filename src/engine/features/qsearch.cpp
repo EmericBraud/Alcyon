@@ -170,7 +170,7 @@ int SearchWorker::score_capture(const Move &move) const
     // Bonus Promotion
     if (move.get_flags() == Move::PROMOTION_MASK)
     {
-        score += Eval::get_piece_score(QUEEN);
+        score += Eval::get_piece_score(move.get_promo_piece());
     }
 
     return score;

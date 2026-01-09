@@ -8,6 +8,13 @@ private:
     uint32_t value;
 
 public:
+    enum class MoveError
+    {
+        InvalidFormat,
+        IllegalMove,
+        SquareOutOfBounds
+    };
+
     enum Flags : uint32_t
     {
         NONE = 0x00,
@@ -22,33 +29,27 @@ public:
 
         // Promotion flag (Promotion and capture + promotion are differentiated later)
         PROMOTION_MASK = 0x06,
-
-        // ... more specific masks for piece promotion type (N, B, R, Q)
     };
 
     // Default constructor (creates an invalid/null move)
     Move() = default;
 
     // Constructor to encode a move from its components
-    Move(int from_sq, int to_sq, Piece from_piece, Flags flags = NONE, Piece to_piece = NO_PIECE, int prev_castling_rights = 0, bool prev_en_passant_flag = false, int prev_en_passant_file = 0)
+    Move(int from_sq, int to_sq, Piece from_piece, Flags flags = NONE, Piece to_piece = NO_PIECE, Piece prom_piece = QUEEN)
     {
         // [0..5] : From Square (6 bits)
         // [6..11]: To Square (6 bits)
         // [12..15]: Flags / Move Type (4 bits)
         // [16..19]: From Piece (4 bits)
         // [20..22]: To Piece (3 bits)
-        // [23..27]: Prev castling rights (4 bits)
-        // [28..29]: Prev en passant flag (1 bit)
-        // [29..32]: Prev En Passant File (3 bits) (> Usefull if En passant flag set to 1)
+        // [23..26]: Promotion piece
 
         value = (uint32_t)(from_sq) |
                 ((uint32_t)(to_sq) << 6) |
                 ((uint32_t)(flags) << 12) |
                 ((uint32_t)(from_piece) << 16) |
                 ((uint32_t)(to_piece) << 20) |
-                ((uint32_t)(prev_castling_rights) << 23) |
-                ((uint32_t)(prev_en_passant_flag)) << 28 |
-                ((uint32_t)(prev_en_passant_file)) << 29;
+                ((uint32_t)(prom_piece) << 23);
     }
 
     Move(uint32_t raw_value) : value(raw_value) {}
@@ -108,35 +109,11 @@ public:
         const uint32_t mask = ~(0x7 << 20);
         value = (mask & value) | (static_cast<uint32_t>(piece) << 20);
     }
-
-    inline void set_capture(Piece piece)
-    {
-        set_to_piece(piece);
-    }
-
     inline bool has_flag(const Flags flags) const
     {
         return flags == get_flags();
     }
 
-    inline bool set_promotion(const Color side_to_move)
-    {
-        const Piece from_piece = get_from_piece();
-        const int to_sq = get_to_sq();
-        if (!from_piece == PAWN)
-            return false;
-        if (side_to_move == WHITE && to_sq / 8 == 7)
-        {
-            set_flags(Move::PROMOTION_MASK);
-            return true;
-        }
-        if (side_to_move == BLACK && to_sq / 8 == 0)
-        {
-            set_flags(Move::PROMOTION_MASK);
-            return true;
-        }
-        return false;
-    }
     std::string to_uci() const
     {
         if (value == 0)
@@ -156,21 +133,32 @@ public:
         // Gestion de la promotion (UCI exige d'indiquer la pièce de promotion en minuscule)
         if (is_promotion())
         {
-            // Note: Selon ton encodage, tu devras peut-être stocker quelle pièce est choisie.
-            // Si ton moteur promeut par défaut en Dame (Queen) :
-            uci += 'q';
-
-            /* Si tu gères plusieurs types de promotion, il faudra extraire l'info de tes flags :
-            switch (get_promotion_piece()) {
-                case KNIGHT: uci += 'n'; break;
-                case BISHOP: uci += 'b'; break;
-                case ROOK:   uci += 'r'; break;
-                default:     uci += 'q'; break;
+            switch (get_promo_piece())
+            {
+            case QUEEN:
+                uci += 'q';
+                break;
+            case KNIGHT:
+                uci += 'n';
+                break;
+            case BISHOP:
+                uci += 'b';
+                break;
+            case ROOK:
+                uci += 'r';
+                break;
+            default:
+                throw std::logic_error("Unsupported promotion piece type");
             }
-            */
         }
 
         return uci;
+    }
+
+    Piece get_promo_piece() const
+    {
+        const Piece piece = static_cast<Piece>((value >> 23) & 0xF);
+        return piece;
     }
 };
 

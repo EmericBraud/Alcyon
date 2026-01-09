@@ -93,7 +93,7 @@ bool Board::play(const Move move)
         switch (flags)
         {
         case Move::Flags::PROMOTION_MASK:
-            final_piece = QUEEN;
+            final_piece = move.get_promo_piece();
             break;
         case Move::Flags::DOUBLE_PUSH:
             state.en_passant_sq = (from_sq + to_sq) >> 1;
@@ -150,7 +150,7 @@ void Board::unplay(const Move move)
     const Piece to_piece = move.get_to_piece();
     const int from_sq = move.get_from_sq();
     const int to_sq = move.get_to_sq();
-    const Piece moved_p = (flags == Move::Flags::PROMOTION_MASK) ? QUEEN : from_piece;
+    const Piece moved_p = (flags == Move::Flags::PROMOTION_MASK) ? move.get_promo_piece() : from_piece;
 
     switch_trait();
     const Color them = (Color)!Us;
@@ -194,7 +194,7 @@ void Board::unplay(const Move move)
     }
     else if (flags == Move::Flags::PROMOTION_MASK)
     {
-        get_piece_bitboard<Us, QUEEN>() ^= (1ULL << from_sq);
+        get_piece_bitboard(Us, move.get_promo_piece()) ^= (1ULL << from_sq);
         get_piece_bitboard<Us, PAWN>() |= (1ULL << from_sq);
     }
 

@@ -1,9 +1,9 @@
 #include "core/move/move_generator.hpp"
 
-constexpr const char *ROOK_ATTACKS_FILE = DATA_PATH "rook_attacks.bin";
-constexpr const char *BISHOP_ATTACKS_FILE = DATA_PATH "bishop_attacks.bin";
-constexpr const char *ROOK_MAGICS_FILE = DATA_PATH "rook_m.bin";
-constexpr const char *BISHOP_MAGICS_FILE = DATA_PATH "bishop_m.bin";
+static constexpr const char *ROOK_ATTACKS_FILE = DATA_PATH "rook_attacks.bin";
+static constexpr const char *BISHOP_ATTACKS_FILE = DATA_PATH "bishop_attacks.bin";
+static constexpr const char *ROOK_MAGICS_FILE = DATA_PATH "rook_m.bin";
+static constexpr const char *BISHOP_MAGICS_FILE = DATA_PATH "bishop_m.bin";
 
 namespace MoveGen
 {
@@ -197,9 +197,7 @@ void MoveGen::generate_pawn_moves(Board &board, const Color color, MoveList &lis
     const bitboard enemies = board.get_occupancy((Color)!color);
     const int ep_sq = board.get_en_passant_sq();
 
-    const int current_cr = board.get_castling_rights();
     const bool ep_flag = (ep_sq != EN_PASSANT_SQ_NONE);
-    const int ep_file = ep_flag ? (ep_sq % 8) : 0;
 
     // --- Paramètres de direction selon la couleur ---
     const int dir = (color == WHITE) ? 8 : -8;
@@ -220,17 +218,20 @@ void MoveGen::generate_pawn_moves(Board &board, const Color color, MoveList &lis
         {
             if (rank == promo_rank)
             {
-                list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, current_cr, ep_flag, ep_file});
+                list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, QUEEN});
+                list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, KNIGHT});
+                list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, ROOK});
+                list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, BISHOP});
             }
             else
             {
-                list.push(Move{from, to, PAWN, Move::Flags::NONE, NO_PIECE, current_cr, ep_flag, ep_file});
+                list.push(Move{from, to, PAWN, Move::Flags::NONE, NO_PIECE});
 
                 // Double poussée
                 int double_to = to + dir;
                 if (rank == start_rank && !(occ & (1ULL << double_to)))
                 {
-                    list.push(Move{from, double_to, PAWN, Move::Flags::DOUBLE_PUSH, NO_PIECE, current_cr, ep_flag, ep_file});
+                    list.push(Move{from, double_to, PAWN, Move::Flags::DOUBLE_PUSH, NO_PIECE});
                 }
             }
         }
@@ -240,16 +241,23 @@ void MoveGen::generate_pawn_moves(Board &board, const Color color, MoveList &lis
         while (attacks)
         {
             int target = pop_lsb(attacks);
+            const Piece target_p = board.get_p(target);
             if (rank == promo_rank)
-                list.push(Move{from, target, PAWN, Move::Flags::PROMOTION_MASK, board.get_p(target), current_cr, ep_flag, ep_file});
+            {
+                list.push(Move{from, target, PAWN, Move::Flags::PROMOTION_MASK, target_p, QUEEN});
+                list.push(Move{from, target, PAWN, Move::Flags::PROMOTION_MASK, target_p, KNIGHT});
+                list.push(Move{from, target, PAWN, Move::Flags::PROMOTION_MASK, target_p, ROOK});
+                list.push(Move{from, target, PAWN, Move::Flags::PROMOTION_MASK, target_p, BISHOP});
+            }
+
             else
-                list.push(Move{from, target, PAWN, Move::Flags::CAPTURE, board.get_p(target), current_cr, ep_flag, ep_file});
+                list.push(Move{from, target, PAWN, Move::Flags::CAPTURE, target_p});
         }
 
         // 3. Capture En Passant
         if (ep_flag && (pawn_attacks[from] & (1ULL << ep_sq)))
         {
-            list.push(Move{from, ep_sq, PAWN, Move::Flags::EN_PASSANT_CAP, PAWN, current_cr, ep_flag, ep_file});
+            list.push(Move{from, ep_sq, PAWN, Move::Flags::EN_PASSANT_CAP, PAWN});
         }
     }
 }
@@ -349,12 +357,6 @@ void MoveGen::generate_castle_moves(Board &board, MoveList &list)
     const uint8_t castling_rights = board.get_castling_rights();
     const bitboard occupancy = board.get_occupancy<NO_COLOR>();
 
-    // On prépare les infos d'En Passant
-    const bool ep_flag = board.get_en_passant_sq() != EN_PASSANT_SQ_NONE;
-    const int ep_file = ep_flag ? board.get_en_passant_sq() % 8 : 0;
-
-    // On identifie l'adversaire pour éviter switch_trait()
-
     if constexpr (Us == WHITE)
     {
         // PETIT ROQUE BLANC (h1)
@@ -363,7 +365,7 @@ void MoveGen::generate_castle_moves(Board &board, MoveList &list)
         {
             if (!is_mask_attacked<!Us>(board, 0x70ULL)) // e1, f1, g1
             {
-                list.push(Move(4, 6, KING, Move::Flags::KING_CASTLE, NO_PIECE, castling_rights, ep_flag, ep_file));
+                list.push(Move(4, 6, KING, Move::Flags::KING_CASTLE, NO_PIECE));
             }
         }
         // GRAND ROQUE BLANC (a1)
@@ -372,7 +374,7 @@ void MoveGen::generate_castle_moves(Board &board, MoveList &list)
         {
             if (!is_mask_attacked<!Us>(board, 0x1CULL)) // c1, d1, e1
             {
-                list.push(Move(4, 2, KING, Move::Flags::QUEEN_CASTLE, NO_PIECE, castling_rights, ep_flag, ep_file));
+                list.push(Move(4, 2, KING, Move::Flags::QUEEN_CASTLE, NO_PIECE));
             }
         }
     }
@@ -383,7 +385,7 @@ void MoveGen::generate_castle_moves(Board &board, MoveList &list)
         {
             if (!is_mask_attacked<!Us>(board, 0x7000000000000000ULL)) // e8, f8, g8
             {
-                list.push(Move(60, 62, KING, Move::Flags::KING_CASTLE, NO_PIECE, castling_rights, ep_flag, ep_file));
+                list.push(Move(60, 62, KING, Move::Flags::KING_CASTLE, NO_PIECE));
             }
         }
         // GRAND ROQUE NOIR (a8)
@@ -391,7 +393,7 @@ void MoveGen::generate_castle_moves(Board &board, MoveList &list)
         {
             if (!is_mask_attacked<!Us>(board, 0x1C00000000000000ULL)) // c8, d8, e8
             {
-                list.push(Move(60, 58, KING, Move::Flags::QUEEN_CASTLE, NO_PIECE, castling_rights, ep_flag, ep_file));
+                list.push(Move(60, 58, KING, Move::Flags::QUEEN_CASTLE, NO_PIECE));
             }
         }
     }
