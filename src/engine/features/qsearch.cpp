@@ -1,5 +1,5 @@
 #include "engine/engine.hpp"
-#include "engine/engine.hpp"
+#include "engine/engine_manager.hpp"
 
 template <Color Us>
 int SearchWorker::qsearch(int alpha, int beta, int ply)
@@ -9,12 +9,10 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     {
         global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
         local_nodes = 0;
-        if (thread_id == 0)
+
+        if (thread_id == 0 && manager.should_stop())
         {
-            auto now = Clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time_ref).count();
-            if (elapsed >= time_limit_ms_ref)
-                shared_stop.store(true, std::memory_order_relaxed);
+            shared_stop.store(true, std::memory_order_relaxed);
         }
         if (shared_stop.load(std::memory_order_relaxed))
             return alpha;

@@ -4,11 +4,14 @@
 #define MAX_DEPTH 50
 constexpr int INF = 10000;
 
+class EngineManager;
+
 using Clock = std::chrono::steady_clock;
 
 class SearchWorker
 {
 private:
+    const EngineManager &manager;
     // Ressources locales (Copie pour éviter les Data Races)
     Board board;
 
@@ -31,17 +34,22 @@ private:
     int thread_id;
 
 public:
+    Move best_root_move = 0;
+
     // CONSTRUCTEUR PRINCIPAL
     // Appelé par l'orchestrateur pour chaque thread
-    SearchWorker(const Board &b,
-                 TranspositionTable &tt,
-                 std::atomic<bool> &stop,
-                 std::atomic<long long> &nodes,
-                 const Clock::time_point &start_time,
-                 const int &time_limit,
-                 const double (&lmr)[64][64],
-                 int id)
-        : board(b), // Copie physique du plateau
+    SearchWorker(
+        const EngineManager &e,
+        const Board &b,
+        TranspositionTable &tt,
+        std::atomic<bool> &stop,
+        std::atomic<long long> &nodes,
+        const Clock::time_point &start_time,
+        const int &time_limit,
+        const double (&lmr)[64][64],
+        int id)
+        : manager(e),
+          board(b), // Copie physique du plateau
           shared_tt(tt),
           shared_stop(stop),
           global_nodes(nodes),
@@ -90,4 +98,9 @@ public:
     int see(int sq, Piece target, Piece attacker, Color side, int from_sq) const;
     std::string get_pv_line(int depth);
     int negamax_with_aspiration(int depth, int last_score);
+
+    inline Board &get_board()
+    {
+        return board;
+    }
 };
