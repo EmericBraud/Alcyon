@@ -23,7 +23,14 @@ public:
         root_best_move = 0;
     }
 
-    void start_search(int time_ms = 30000)
+    void clear()
+    {
+        tt.clear();
+        stop_search.store(false);
+        total_nodes.store(0);
+    }
+
+    void start_search(int time_ms = 5000)
     {
         stop_search = false;
         total_nodes = 0;
@@ -121,9 +128,6 @@ private:
             {
                 last_score = score; // Mise à jour pour la prochaine fenêtre d'aspiration
 
-                // --- EXTRACTION SÉCURISÉE DU MEILLEUR COUP ---
-                // On extrait le coup de la TT MAINTENANT, car il correspond au score obtenu
-
                 Move current_best = tt.get_move(main_board.get_hash());
                 if (current_best.get_value() != 0)
                 {
@@ -144,13 +148,6 @@ private:
                           << " hashfull " << tt.get_hashfull()
                           << " pv " << worker.get_pv_line(current_depth)
                           << std::endl;
-
-                // 6. Condition d'arrêt sur Mat
-                if (std::abs(score) >= MATE_SCORE - MAX_DEPTH)
-                {
-                    stop_search.store(true, std::memory_order_relaxed);
-                    break;
-                }
             }
         }
     }

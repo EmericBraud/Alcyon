@@ -34,7 +34,7 @@ TEST_F(CastlingTest, UndoCastle)
     b.load_fen("r3k2r/pppqbppp/2npbn2/4p3/4P3/P1NPBN2/1PPQBPPP/R3K2R w KQkq - 1 9");
     MoveList list;
     MoveGen::generate_castle_moves<WHITE>(b, list);
-    Move m(Square::e1, Square::g1, Piece::KING, Move::Flags::KING_CASTLE, NO_PIECE, b.get_castling_rights());
+    Move m(Square::e1, Square::g1, Piece::KING, Move::Flags::KING_CASTLE, NO_PIECE);
     b.play(m);
     b.unplay(m);
     ASSERT_EQ(b.get_piece_bitboard(WHITE, ROOK), 0x81);

@@ -128,6 +128,78 @@ public:
     }
     bool load_fen(const std::string_view fen_string);
 
+    static std::expected<Move, Move::MoveError> parse_move_uci(std::string_view uci, const Board &board)
+    {
+        if (uci.length() < 4 || uci.length() > 5)
+            return std::unexpected(Move::MoveError::InvalidFormat);
+
+        int from_f = uci[0] - 'a';
+        int from_r = uci[1] - '1';
+        int to_f = uci[2] - 'a';
+        int to_r = uci[3] - '1';
+
+        if (from_f < 0 || from_f > 7 || from_r < 0 || from_r > 7 ||
+            to_f < 0 || to_f > 7 || to_r < 0 || to_r > 7)
+            return std::unexpected(Move::MoveError::SquareOutOfBounds);
+
+        int from_sq = from_r * 8 + from_f;
+        int to_sq = to_r * 8 + to_f;
+
+        Piece from_piece = board.get_p(from_sq);
+        if (from_piece == NO_PIECE)
+            return std::unexpected(Move::MoveError::IllegalMove);
+
+        Piece to_piece = board.get_p(to_sq);
+        Move::Flags flags = Move::Flags::NONE;
+        if (to_piece != NO_PIECE)
+            flags = Move::Flags::CAPTURE;
+
+        // --- DETECTION DES COUPS SPECIAUX ---
+
+        // 1. Double poussée de pion
+        if (from_piece == PAWN && std::abs(from_r - to_r) == 2)
+            flags = Move::Flags::DOUBLE_PUSH;
+
+        // 2. Roque (détecté par le mouvement du Roi sur 2 colonnes)
+        if (from_piece == KING && std::abs(from_f - to_f) == 2)
+        {
+            flags = (to_f > from_f) ? Move::Flags::KING_CASTLE : Move::Flags::QUEEN_CASTLE;
+        }
+
+        // 3. Capture En Passant (Pion qui bouge en diagonale sur une case vide)
+        if (from_piece == PAWN && from_f != to_f && to_piece == NO_PIECE)
+        {
+            flags = Move::Flags::EN_PASSANT_CAP;
+            to_piece = PAWN; // La pièce capturée est un pion
+        }
+
+        // 4. Promotion
+        Piece prom_piece = NO_PIECE;
+        if (uci.length() == 5)
+        {
+            flags = Move::Flags::PROMOTION_MASK;
+            switch (uci[4])
+            {
+            case 'q':
+                prom_piece = QUEEN;
+                break;
+            case 'r':
+                prom_piece = ROOK;
+                break;
+            case 'b':
+                prom_piece = BISHOP;
+                break;
+            case 'n':
+                prom_piece = KNIGHT;
+                break;
+            default:
+                return std::unexpected(Move::MoveError::InvalidFormat);
+            }
+        }
+
+        return Move(from_sq, to_sq, from_piece, flags, to_piece, prom_piece);
+    }
+
     void attach_history(History *h)
     {
         if (history_tagged && owns_history())

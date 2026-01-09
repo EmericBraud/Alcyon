@@ -46,7 +46,7 @@ public:
         {
             for (int piece{PAWN}; piece <= KING; ++piece)
             {
-                const std::string fullPath = std::string(DATA_PATH) + PIECE_IMAGE_PATHS[color][piece];
+                const std::string fullPath = get_data_path(PIECE_IMAGE_PATHS[color][piece]);
 
                 if (!m_piece_textures[color][piece].loadFromFile(fullPath))
                 {

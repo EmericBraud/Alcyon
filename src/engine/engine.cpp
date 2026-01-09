@@ -30,8 +30,15 @@ int SearchWorker::score_move(const Move &move, const Board &board, const Move &t
         if (move.is_promotion())
         {
             // Priorise la promotion Dame
-            int promo_piece = QUEEN;
-            return 15000000 + (promo_piece == QUEEN ? 1000 : promo_piece);
+            const int promo_piece = move.get_promo_piece();
+            if (promo_piece == QUEEN)
+                return 15000000 + 1000;
+            if (promo_piece == KNIGHT)
+                return 15000000;
+            if (promo_piece == ROOK)
+                return 1000000;
+            if (promo_piece == BISHOP)
+                return 1000000;
         }
 
         // On n'appelle SEE que si c'est potentiellement perdant (LVA prend MVV)

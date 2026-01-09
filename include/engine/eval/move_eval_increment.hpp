@@ -206,7 +206,7 @@ struct EvalState
         }
 
         // 3. ARRIVÉE DE LA PIÈCE (Promotion incluse)
-        Piece final_piece = m.is_promotion() ? QUEEN : from_piece;
+        Piece final_piece = m.is_promotion() ? m.get_promo_piece() : from_piece;
         add_piece(final_piece, to_sq, us);
 
         if (m.is_promotion())
@@ -239,7 +239,7 @@ struct EvalState
 
         // 1. ANNULER L'ARRIVÉE SUR LA CASE 'TO'
         // Si c'était une promotion, on retire la Dame, sinon on retire la pièce d'origine
-        Piece final_piece = m.is_promotion() ? QUEEN : from_piece;
+        Piece final_piece = m.is_promotion() ? m.get_promo_piece() : from_piece;
         remove_piece(final_piece, to_sq, us);
 
         if (m.is_promotion())
