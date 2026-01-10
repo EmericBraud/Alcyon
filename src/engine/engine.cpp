@@ -16,7 +16,7 @@ int SearchWorker::score_move(const Move &move, const Board &board, const Move &t
 {
     const uint32_t move_val = move.get_value();
     if (move_val == tt_move.get_value())
-        return 20000000; // Augmenté
+        return 9600;
 
     const Piece from_piece = move.get_from_piece();
     const Piece to_piece = move.get_to_piece();
@@ -33,36 +33,36 @@ int SearchWorker::score_move(const Move &move, const Board &board, const Move &t
             // Priorise la promotion Dame
             const int promo_piece = move.get_promo_piece();
             if (promo_piece == QUEEN)
-                return 15000000 + 1000;
+                return 9300;
             if (promo_piece == KNIGHT)
-                return 15000000;
+                return 8050;
             if (promo_piece == ROOK)
-                return 1000000;
+                return 8000;
             if (promo_piece == BISHOP)
-                return 1000000;
+                return 8000;
         }
 
         // On n'appelle SEE que si c'est potentiellement perdant (LVA prend MVV)
         if (Eval::get_piece_score(from_piece) > Eval::get_piece_score(target))
         {
             if (see(move.get_to_sq(), target, from_piece, board.get_side_to_move(), move.get_from_sq()) < 0)
-                return -2000000 + mvv_lva; // Clairement perdant
+                return 7000 + mvv_lva; // Clairement perdant
         }
 
-        return 10000000 + mvv_lva; // Captures normales/gagnantes
+        return 8600 + mvv_lva; // Captures normales/gagnantes
     }
 
     // 2. Coups calmes prioritaires
     if (move_val == killer_moves[ply][0].get_value())
-        return 9000000;
+        return 8000;
     if (move_val == killer_moves[ply][1].get_value())
-        return 8000000;
+        return 8000;
 
     const Color us = board.get_side_to_move();
 
     // Counter-move
     if (ply > 0 && prev_move != 0 && move_val == counter_moves[us][prev_move.get_from_piece()][prev_move.get_to_sq()].get_value())
-        return 7000000;
+        return 7500;
 
     // Bonus spécial pour les échecs "calmes" (Crucial pour mat en 11)
     // Attention : nécessite que ta MoveGen ou une fonction légère détecte l'échec
@@ -149,8 +149,36 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         }
     }
 }
+void SearchWorker::iterative_deepening()
+{
+    int last_score = 0;
+    for (int depth = 0; depth < MAX_DEPTH; ++depth)
+    {
+        last_score = negamax_with_aspiration(depth, last_score);
+        if (thread_id == 0)
+        {
+            auto elapsed_ms = std::max<long long>(1,
+                                                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                      std::chrono::steady_clock::now() - start_time_ref)
+                                                      .count());
+
+            long long nodes = global_nodes.load(std::memory_order_relaxed);
+            long long nps = nodes * 1000 / elapsed_ms;
+            std::cout
+                << "info depth " << depth
+                << " score cp " << last_score
+                << " nodes " << nodes
+                << " nps " << nps
+                << " hashfull " << shared_tt.get_hashfull()
+                << " pv " << best_root_move.to_uci()
+                << std::endl;
+        }
+        if (shared_stop.load(std::memory_order_relaxed))
+            return;
+    }
+}
 template <Color Us>
-int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
+int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null)
 {
     // 1. Vérification périodique de l'arrêt (Atomique)
     // On incrémente le compteur global de nœuds et on vérifie le temps
@@ -200,7 +228,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
         }
     }
 
-    // --- RECHERCHE DU TT MOVE (PV Move) ---
     int best_score = -INF;
     Move best_move_this_node = 0;
     int moves_searched = 0;
@@ -215,13 +242,27 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
             return beta;
     }
 
+    // --- Internal Iterative Deepening (IID) ---
+    // Si on est dans un noeud PV, qu'on a de la profondeur, mais pas de coup TT
+    if (tt_move == 0 && depth >= 6 && (beta - alpha > 1)) // Condition PV Node approximative
+    {
+        // On fait une recherche moins profonde pour trouver le meilleur coup
+        int new_depth = depth - 4;
+
+        // Appel récursif (note: on ne retourne pas le score, on veut juste remplir la TT)
+        negamax<Us>(new_depth, alpha, beta, ply, true);
+
+        // On récupère le coup que la recherche vient de trouver
+        tt_move = shared_tt.get_move(board.get_hash());
+    }
+
     // 5. Null Move Pruning (NMP)
-    if (depth >= 3 && ply > 0 && !in_check && beta < 9000 && alpha > -9000)
+    if (depth >= 3 && ply > 0 && allow_null && !in_check && beta < 9000 && alpha > -9000)
     {
         int stored_ep;
         board.play_null_move(stored_ep);
         int R = (depth > 6) ? 3 : 2;
-        int score = -negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1);
+        int score = -negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false);
         board.unplay_null_move(stored_ep);
 
         if (score >= beta)
@@ -250,9 +291,18 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     // Récupération du coup précédent pour les Counter-moves
     const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
 
-    for (int i = 0; i < list.count; ++i)
-        list.scores[i] = score_move(list.moves[i], board, tt_move, ply, prev_m);
-
+    if (thread_id != 0 && ply > 5)
+        for (int i = 0; i < list.count; ++i)
+        {
+            // Here we randomize the move scoring to include some randomness in the search
+            int base = score_move(list.moves[i], board, tt_move, ply, prev_m);
+            int delta = std::max(1, std::abs(base) / 8);
+            int noise = std::uniform_int_distribution<int>(-delta, delta)(gen);
+            list.scores[i] = base + noise;
+        }
+    else // For the master thread, we want to pick the best moves
+        for (int i = 0; i < list.count; ++i)
+            list.scores[i] = score_move(list.moves[i], board, tt_move, ply, prev_m);
     int alpha_orig = alpha;
 
     // 7. BOUCLE PVS (Principal Variation Search)
@@ -293,25 +343,25 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
             int r = static_cast<int>(lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
             r = std::clamp(r, 0, depth - 2);
 
-            score = -negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1);
+            score = -negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1, true);
 
             // Re-search si le coup réduit semble bon
             if (score > alpha)
-                score = -negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1);
+                score = -negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true);
         }
         else if (moves_searched > 1) // Null Window Search pour PVS
         {
-            score = -negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1);
+            score = -negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true);
         }
         else // Full Window Search (seulement si moves_searched == 1 et pas de TT move)
         {
-            score = -negamax<!Us>(depth - 1, -beta, -alpha, ply + 1);
+            score = -negamax<!Us>(depth - 1, -beta, -alpha, ply + 1, true);
         }
 
         // Si le score est dans la fenêtre mais pas une coupure, on re-cherche normalement
         if (score > alpha && score < beta && moves_searched > 1)
         {
-            score = -negamax<!Us>(depth - 1, -beta, -alpha, ply + 1);
+            score = -negamax<!Us>(depth - 1, -beta, -alpha, ply + 1, true);
         }
 
         board.unplay<Us>(m);
@@ -333,9 +383,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
                 {
                     Move failed_move = list.moves[j];
                     // On ne punit que les coups calmes (pas les captures/promotions)
-                    if (list.scores[j] < 900000)
+                    if (list.scores[j] < 8500)
                     {
-                        history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] -= bonus;
+                        history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] = std::max(history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] - bonus, -10000);
                     }
                 }
 
@@ -379,5 +429,5 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply)
     return best_score;
 }
 
-template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply);
-template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply);
+template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply, bool allow_null);
+template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply, bool allow_null);

@@ -32,6 +32,8 @@ private:
     // Métriques locales
     long long local_nodes = 0;
     int thread_id;
+    std::mt19937 gen;
+    std::uniform_int_distribution<int> dist;
 
 public:
     Move best_root_move = 0;
@@ -59,18 +61,20 @@ public:
           thread_id(id)
     {
         clear_heuristics();
+        gen = std::mt19937(std::random_device{}() ^ (thread_id + 0x9e3779b9));
+        dist = std::uniform_int_distribution<int>(-100000, 100000);
     }
 
     // --- Méthodes de recherche ---
     template <Color Us>
-    int negamax(int depth, int alpha, int beta, int ply);
+    int negamax(int depth, int alpha, int beta, int ply, bool allow_null);
     inline int negamax(int depth, int alpha, int beta, int ply)
     {
         if (board.get_side_to_move() == WHITE)
         {
-            return negamax<WHITE>(depth, alpha, beta, ply);
+            return negamax<WHITE>(depth, alpha, beta, ply, true);
         }
-        return negamax<BLACK>(depth, alpha, beta, ply);
+        return negamax<BLACK>(depth, alpha, beta, ply, true);
     }
 
     template <Color Us>
@@ -103,4 +107,6 @@ public:
     {
         return board;
     }
+
+    void iterative_deepening();
 };

@@ -69,7 +69,7 @@ public:
         time_limit.store(time_ms, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
         search_thread = std::jthread([this]()
-                                     { this->iterative_deepening(); });
+                                     { this->start_workers(); });
     }
 
     bool should_stop() const
@@ -126,31 +126,11 @@ private:
                 lmr_table[d][m] = 0.5 + log(d) * log(m) / 2.25;
     }
 
-    void iterative_deepening()
+    void start_workers()
     {
-        MoveList moves;
-        MoveGen::generate_legal_moves(main_board, moves);
-        if (moves.empty())
-        {
-            std::cout << "bestmove 0000\n";
-            return;
-        }
-
-        std::vector<RootMove> root_moves;
-        root_moves.reserve(moves.size());
-        for (Move m : moves)
-            root_moves.emplace_back(m);
 
         const int num_threads = std::max(1u, std::thread::hardware_concurrency());
-        const int root_sign = (main_board.get_side_to_move() == WHITE) ? +1 : -1;
-
-        Move best_move = root_moves[0].move;
-        int best_score = -INF;
-
-        // =========================
-        // SMP : file de coups root atomique
-        // =========================
-        std::atomic<int> root_index{0};
+        Move best_move;
 
         // =========================
         // Création des workers
@@ -160,90 +140,18 @@ private:
         for (int t = 0; t < num_threads; ++t)
             workers.emplace_back(*this, main_board, tt, stop_search, total_nodes, start_time, time_limit, lmr_table, t);
 
-        auto worker_fn = [&](int tid, int depth)
-        {
-            SearchWorker &worker = workers[tid];
-            Board &board = worker.get_board();
+        std::vector<std::jthread> threads;
+        threads.reserve(num_threads);
 
-            while (!should_stop())
-            {
-                int idx = root_index.fetch_add(1, std::memory_order_relaxed);
-                if (idx >= (int)root_moves.size())
-                    break;
+        for (auto &worker : workers)
+            threads.emplace_back(&SearchWorker::iterative_deepening, &worker);
 
-                RootMove &rm = root_moves[idx];
-                board.play(rm.move);
+        for (auto &th : threads)
+            th.join();
 
-                int score;
-                if (depth > 5)
-                    score = -worker.negamax_with_aspiration(depth - 1, -rm.score);
-                else
-                    score = -worker.negamax(depth - 1, -INF, INF, 0);
-
-                board.unplay(rm.move);
-
-                rm.score = score;
-
-                // mise à jour best move global
-                {
-                    std::lock_guard<std::mutex> lock(root_mutex);
-                    if (score > best_score)
-                    {
-                        best_score = score;
-                        best_move = rm.move;
-                    }
-                }
-            }
-        };
+        best_move = workers[0].best_root_move;
 
         // =========================
-        // Iterative Deepening
-        // =========================
-        for (int depth = 1; depth <= MAX_DEPTH; ++depth)
-        {
-            if (should_stop())
-                break;
-
-            // PV-first root ordering tous les 3 niveaux
-
-            std::sort(root_moves.begin(), root_moves.end(),
-                      [](const RootMove &a, const RootMove &b)
-                      { return a.score > b.score; });
-
-            root_index.store(0, std::memory_order_relaxed);
-            best_score = -INF;
-            best_move = root_moves[0].move;
-
-            std::vector<std::jthread> threads;
-            threads.reserve(num_threads);
-            for (int t = 0; t < num_threads; ++t)
-                threads.emplace_back(worker_fn, t, depth);
-
-            // join tous les threads
-            for (auto &th : threads)
-                th.join();
-
-            // =========================
-            // INFO UCI
-            // =========================
-            auto elapsed_ms = std::max<long long>(1,
-                                                  std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                      std::chrono::steady_clock::now() - start_time)
-                                                      .count());
-
-            long long nodes = total_nodes.load(std::memory_order_relaxed);
-            long long nps = nodes * 1000 / elapsed_ms;
-
-            std::cout
-                << "info depth " << depth
-                << " score cp " << best_score
-                << " nodes " << nodes
-                << " nps " << nps
-                << " hashfull " << tt.get_hashfull()
-                << " pv " << best_move.to_uci()
-                << std::endl;
-        }
-
         root_best_move.store(best_move, std::memory_order_relaxed);
         std::cout << "bestmove " << best_move.to_uci() << std::endl;
     }
