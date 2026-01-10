@@ -22,6 +22,7 @@
 #include <thread>
 #include <expected>
 #include <print>
+#include <deque>
 #include <immintrin.h>
 #include <xmmintrin.h> //x86 / intel only
 
