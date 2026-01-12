@@ -1,4 +1,5 @@
 #include "core/board.hpp"
+#include "../move/move_generator.cpp"
 
 // clang-format off
 static constexpr uint8_t CastlingMask[64] = {
@@ -234,3 +235,117 @@ template bool Board::play<BLACK>(const Move move);
 
 template void Board::unplay<WHITE>(const Move move);
 template void Board::unplay<BLACK>(const Move move);
+
+bool Board::is_move_pseudo_legal(const Move &move) const
+{
+    // 1. Vérifications de base (Sanity Checks)
+    const int from = move.get_from_sq();
+    const int to = move.get_to_sq();
+    const Piece p = move.get_from_piece();
+    const Color us = state.side_to_move;
+
+    // La pièce de départ doit exister et appartenir au joueur dont c'est le tour
+    // Note : get_piece_at et get_color_at sont supposées exister dans votre Board
+    // Si vous stockez les bitboards, vous pouvez vérifier :
+    // if (!(get_piece_bitboard(us, p) & (1ULL << from))) return false;
+    PieceInfo info = get_piece_on_square(from); // Votre fonction existante
+    if (info.second != p || info.first != us)
+        return false;
+
+    // La case d'arrivée ne doit pas contenir une de nos propres pièces
+    // (Capture amicale impossible)
+    if (occupancies[us] & (1ULL << to))
+        return false;
+
+    const U64 occ = occupancies[NO_COLOR];
+    const U64 to_mask = (1ULL << to);
+
+    // 2. Logique par type de pièce
+    switch (p)
+    {
+    case KNIGHT:
+        // Vérifie si 'to' est dans la table d'attaque du cavalier depuis 'from'
+        return MoveGen::KnightAttacks[from] & to_mask;
+
+    case KING:
+        // Cas spécial : Roque
+        if (move.get_flags() == Move::Flags::KING_CASTLE || move.get_flags() == Move::Flags::QUEEN_CASTLE)
+        {
+            // Vérification des droits de roque et des cases vides
+            // (La sécurité du roi est gérée par is_move_legal, donc on vérifie juste la mécanique)
+            if (us == WHITE)
+            {
+                if (move.get_flags() == Move::Flags::KING_CASTLE)
+                    return (state.castling_rights & WHITE_KINGSIDE) && !(occ & 0x60ULL) && (to == 6);
+                else
+                    return (state.castling_rights & WHITE_QUEENSIDE) && !(occ & 0x0EULL) && (to == 2);
+            }
+            else
+            {
+                if (move.get_flags() == Move::Flags::KING_CASTLE)
+                    return (state.castling_rights & BLACK_KINGSIDE) && !(occ & 0x6000000000000000ULL) && (to == 62);
+                else
+                    return (state.castling_rights & BLACK_QUEENSIDE) && !(occ & 0x0E00000000000000ULL) && (to == 58);
+            }
+        }
+        // Mouvement normal du roi
+        return MoveGen::KingAttacks[from] & to_mask;
+
+    case BISHOP:
+        // Utilisation des Magics pour vérifier si le chemin est libre
+        return MoveGen::generate_bishop_moves(from, occ) & to_mask;
+
+    case ROOK:
+        return MoveGen::generate_rook_moves(from, occ) & to_mask;
+
+    case QUEEN:
+        return (MoveGen::generate_bishop_moves(from, occ) | MoveGen::generate_rook_moves(from, occ)) & to_mask;
+
+    case PAWN:
+    {
+        const int dir = (us == WHITE) ? 8 : -8;
+        const int start_rank = (us == WHITE) ? 1 : 6;
+
+        // a. Poussée simple
+        if (to == from + dir)
+        {
+            // La case doit être vide
+            return !(occ & to_mask) && (move.get_flags() == Move::Flags::NONE || move.get_flags() == Move::Flags::PROMOTION_MASK);
+        }
+
+        // b. Double poussée
+        if (move.get_flags() == Move::Flags::DOUBLE_PUSH)
+        {
+            if ((from / 8) != start_rank)
+                return false;
+            if (to != from + 2 * dir)
+                return false;
+            // Case intermédiaire et finale doivent être vides
+            return !(occ & to_mask) && !(occ & (1ULL << (from + dir)));
+        }
+
+        // c. Captures (y compris En Passant)
+        // Vérifier que 'to' est une diagonale valide
+        const U64 pawn_attacks = (us == WHITE) ? MoveGen::PawnAttacksWhite[from] : MoveGen::PawnAttacksBlack[from];
+        if (!(pawn_attacks & to_mask))
+            return false;
+
+        // Si capture normale : doit y avoir un ennemi
+        if (move.get_flags() == Move::Flags::CAPTURE || move.get_flags() == Move::Flags::PROMOTION_MASK)
+        {
+            return (occupancies[!us] & to_mask);
+        }
+
+        // Si En Passant
+        if (move.get_flags() == Move::Flags::EN_PASSANT_CAP)
+        {
+            return (state.en_passant_sq != EN_PASSANT_SQ_NONE) && (to == state.en_passant_sq);
+        }
+
+        return false;
+    }
+
+    default:
+        return false;
+    }
+}

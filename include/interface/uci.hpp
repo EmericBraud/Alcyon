@@ -1,5 +1,6 @@
 #pragma once
 #include "interface/gui.hpp"
+#include "engine/book.hpp"
 
 class UCI
 {
@@ -57,6 +58,7 @@ class UCI
         bool is_infinite = false;
         int wtime = -1, btime = -1, winc = 0, binc = 0, movetime = -1, depth = -1;
 
+        // Lecture des options UCI
         while (is >> token)
         {
             if (token == "ponder")
@@ -77,24 +79,42 @@ class UCI
                 is_infinite = true;
         }
 
-        int time_to_think = 5000; // Valeur par défaut (5s)
+        logs::debug << "info string DEBUG: Checking Book..." << std::endl;
+        logs::debug << "info string DEBUG: My Hash is " << std::hex << board.polyglot_key() << std::dec << std::endl;
+        if (!is_infinite && !is_ponder)
+        {
+            Move book_move = Book::probe(board);
+
+            if (book_move.get_value() != 0)
+            {
+                logs::debug << "info string DEBUG: Book Move Found!" << std::endl;
+                if (board.is_move_pseudo_legal(book_move) && board.is_move_legal(book_move))
+                {
+                    logs::uci << "bestmove " << book_move.to_uci() << std::endl;
+                    return;
+                }
+            }
+            else
+            {
+                logs::debug << "info string DEBUG: No move found in book." << std::endl;
+            }
+        }
+
+        // Time Management
+        int time_to_think = 5000;
 
         if (movetime != -1)
         {
-            time_to_think = movetime - 50; // On retire 50ms de marge de sécurité
+            time_to_think = movetime - 50;
         }
         else if (wtime != -1)
         {
-            // Logique de gestion du temps (Time Management)
             int my_time = (board.get_side_to_move() == WHITE) ? wtime : btime;
             int my_inc = (board.get_side_to_move() == WHITE) ? winc : binc;
 
-            // Formule simple : (Temps restant / 40) + Incrément
-            // On divise par 40 car une partie dure en moyenne 40 coups
-            time_to_think = (my_time / 40) + my_inc - 50;
+            time_to_think = (my_time / 30) + (my_inc / 2);
         }
 
-        // Sécurité : ne jamais descendre en dessous de 20ms
         if (time_to_think < 20)
             time_to_think = 20;
 
@@ -110,6 +130,7 @@ public:
     UCI() : b(), e(b)
     {
         b.load_fen(FEN_INIT_POS);
+        Book::init(DATA_PATH "komodo.bin");
     }
     void loop()
     {
@@ -117,8 +138,7 @@ public:
 
         while (std::getline(std::cin, line))
         {
-            std::cout << "info string << " << line << std::endl;
-            std::cout << std::flush;
+            logs::debug << "info string << " << line << std::endl;
 
             std::istringstream is(line);
             token.clear();
@@ -126,14 +146,13 @@ public:
 
             if (token == "uci")
             {
-                std::println("id name Chess26");
-                std::println("id author Emeric");
-                std::println("option name Hash type spin default 512 min 1 max 2048");
-                std::println("option name Move Overhead type spin default 100 min 0 max 1000");
-                std::println("option name Ponder type check default false");
-                std::println("option name Threads type spin default 16 min 1 max 16");
-                std::println("uciok");
-                std::cout << std::flush;
+                logs::uci << "id name Chess26" << std::endl;
+                logs::uci << "id author Emeric" << std::endl;
+                logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
+                logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl;
+                logs::uci << "option name Ponder type check default false" << std::endl;
+                logs::uci << "option name Threads type spin default 16 min 1 max 16" << std::endl;
+                logs::uci << "uciok" << std::endl;
             }
             else if (token == "setoption")
             {
@@ -169,7 +188,7 @@ public:
             }
             else if (token == "isready")
             {
-                std::cout << "readyok" << std::endl;
+                logs::uci << "readyok" << std::endl;
             }
             else if (token == "ucinewgame")
             {

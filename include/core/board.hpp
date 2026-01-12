@@ -213,7 +213,7 @@ public:
 
     inline void switch_trait()
     {
-        zobrist_key ^= zobrist_black_to_move;
+        zobrist_key ^= zobrist_side_to_move;
         state.side_to_move = static_cast<Color>(1 - static_cast<int>(state.side_to_move));
     }
 
@@ -337,8 +337,13 @@ public:
         return play<BLACK>(move);
     }
     bool is_move_legal(const Move move);
+    void compute_full_hash();
     char piece_to_char(Color color, Piece type) const;
     void show() const;
+
+    bool en_passant_capture_possible() const;
+
+    uint64_t polyglot_key() const;
 
     bool is_occupied(const int sq, const int piece, const Color color) const
     {
@@ -360,6 +365,8 @@ public:
 
     bool is_repetition() const;
 
+    bool is_move_pseudo_legal(const Move &move) const;
+
     inline uint8_t get_castling_rights() const
     {
         return state.castling_rights;
@@ -373,8 +380,6 @@ public:
     {
         return zobrist_key;
     }
-
-    void compute_full_hash();
 
     inline void play_null_move(int &stored_ep_sq)
     {
@@ -469,7 +474,7 @@ public:
 
         // 1. Inversion du trait (OBLIGATOIRE)
         // On XOR la clé qui représente le tour de jouer
-        h ^= zobrist_black_to_move;
+        h ^= zobrist_side_to_move;
 
         // 2. Déplacement de la pièce
         h ^= zobrist_table[state.side_to_move * N_PIECES_TYPE_HALF + m.get_from_piece()][m.get_from_sq()];

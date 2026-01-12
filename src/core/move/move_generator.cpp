@@ -188,7 +188,7 @@ void MoveGen::initialize_bitboard_tables()
     MoveGen::initialize_bishop_masks();
     MoveGen::initialize_pawn_masks();
 
-    std::cout << "Bitboard tables initialized." << std::endl;
+    logs::debug << "Bitboard tables initialized." << std::endl;
 }
 void MoveGen::generate_pawn_moves(Board &board, const Color color, MoveList &list)
 {
@@ -679,7 +679,7 @@ static MoveGen::Magic find_magic(int sq, bool is_rook, int max_iterations, long 
 
         if (!collision_found)
         {
-            std::cout << "Magic found for sq " << sq << " after " << iter << " iterations." << std::endl;
+            logs::debug << "Magic found for sq " << sq << " after " << iter << " iterations." << std::endl;
             return {mask, magic_candidate, shift, index_start};
         }
     }
@@ -715,12 +715,12 @@ void MoveGen::export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m
     }
     piece_attacks.write(reinterpret_cast<const char *>(output_v.data()), output_v.size() * sizeof(U64));
 
-    std::cout << "--- Exported attack table for " << (is_rook ? "rook" : "bishop") << " piece ---" << std::endl;
+    logs::debug << "--- Exported attack table for " << (is_rook ? "rook" : "bishop") << " piece ---" << std::endl;
 }
 
 void MoveGen::run_magic_searcher()
 {
-    std::cout << "--- Searching Magic Numbers ---" << std::endl;
+    logs::debug << "--- Searching Magic Numbers ---" << std::endl;
     MoveGen::initialize_rook_masks();
     MoveGen::initialize_bishop_masks();
 
@@ -760,7 +760,7 @@ void MoveGen::run_magic_searcher()
         reinterpret_cast<const char *>(bishop_m_array.data()),
         bishop_m_array.size() * sizeof(MoveGen::Magic));
 
-    std::cout << "--- Magic Numbers Exported ---" << std::endl;
+    logs::debug << "--- Magic Numbers Exported ---" << std::endl;
     MoveGen::export_attack_table(rook_m_array, true);
     MoveGen::export_attack_table(bishop_m_array, false);
 }
@@ -779,7 +779,7 @@ void MoveGen::get_sizes(bool is_rook)
     {
         throw std::runtime_error("Attack file size isn't a mutliple of U64 size");
     }
-    std::cout << (is_rook ? "Rook " : "Bishop ") << "file size : " << attacks_file_sz << std::endl;
+    logs::debug << (is_rook ? "Rook " : "Bishop ") << "file size : " << attacks_file_sz << std::endl;
 }
 void MoveGen::load_magics(bool is_rook)
 {
@@ -882,7 +882,7 @@ static bool perform_initial_data_loading()
 
     MoveGen::load_attacks();
 
-    std::cout << "--- All bitboard tables loaded successfully ! ---" << std::endl;
+    logs::debug << "--- All bitboard tables loaded successfully ! ---" << std::endl;
     return true;
 }
 

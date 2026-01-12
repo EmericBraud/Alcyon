@@ -32,8 +32,6 @@ private:
     // Métriques locales
     long long local_nodes = 0;
     int thread_id;
-    std::mt19937 gen;
-    std::uniform_int_distribution<int> dist;
 
 public:
     Move best_root_move = 0;
@@ -61,8 +59,6 @@ public:
           thread_id(id)
     {
         clear_heuristics();
-        gen = std::mt19937(std::random_device{}() ^ (thread_id + 0x9e3779b9));
-        dist = std::uniform_int_distribution<int>(-100000, 100000);
     }
 
     // --- Méthodes de recherche ---

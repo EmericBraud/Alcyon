@@ -8,7 +8,7 @@ void GUI::run()
         // computer.play();
         if (auto_play && board.get_side_to_move() == computer_side)
         {
-            std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
+            logs::debug << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
             computer.start_search();
         }
         while (window.pollEvent(event))
@@ -56,19 +56,19 @@ void GUI::run()
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::E)
             {
-                std::cout << "Evaluating position with depth " << MAX_DEPTH << " ..." << std::endl;
+                logs::debug << "Evaluating position with depth " << MAX_DEPTH << " ..." << std::endl;
                 const int score{computer.evaluate_position(5000)};
-                std::cout << "Position score : " << score << std::endl;
+                logs::debug << "Position score : " << score << std::endl;
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::P)
             {
-                std::cout << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
-                computer.start_search();
+                logs::debug << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
+                computer.start_search(20000, false, false, true);
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::U)
             {
                 board.undo_last_move();
-                std::cout << "Move undone" << std::endl;
+                logs::debug << "Move undone" << std::endl;
             }
         }
         window.clear(BG_COLOR);

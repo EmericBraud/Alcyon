@@ -12,6 +12,8 @@ static constexpr int MVV_LVA_TABLE[7][7] = {
     /* NONE   */ {0, 0, 0, 0, 0, 0, 0}};
 //clang-format on
 
+static constexpr int TACTICAL_SCORE = 7000;
+
 int SearchWorker::score_move(const Move &move, const Board &board, const Move &tt_move, int ply, const Move &prev_move) const
 {
     const uint32_t move_val = move.get_value();
@@ -46,7 +48,7 @@ int SearchWorker::score_move(const Move &move, const Board &board, const Move &t
         if (Eval::get_piece_score(from_piece) > Eval::get_piece_score(target))
         {
             if (see(move.get_to_sq(), target, from_piece, board.get_side_to_move(), move.get_from_sq()) < 0)
-                return 7000 + mvv_lva; // Clairement perdant
+                return -1000 + mvv_lva; // Clairement perdant
         }
 
         return 8600 + mvv_lva; // Captures normales/gagnantes
@@ -75,19 +77,43 @@ std::string SearchWorker::get_pv_line(int depth)
 {
     std::string pv_line = "";
     std::vector<Move> moves_to_unplay;
+    std::vector<uint64_t> visited_hashes;
 
     for (int i = 0; i < depth; i++)
     {
         Move m = shared_tt.get_move(board.get_hash());
-        if (m == 0)
+
+        // 1. Si le coup est 0 (Nœud terminal, Mat, ou pas d'entrée), on arrête.
+        if (m.get_value() == 0)
             break;
+
+        // 2. Vérification de pseudo-légalité AVANT de toucher au board
+        // Cela évite les asserts ou crashs dans is_move_legal si m est corrompu
+        if (!board.is_move_pseudo_legal(m))
+            break;
+
+        if (!board.is_move_legal(m))
+            break;
+
+        // Détection de cycle
+        uint64_t h = board.get_hash();
+        bool cycle_detected = false;
+        for (uint64_t v : visited_hashes)
+            if (v == h)
+            {
+                cycle_detected = true;
+                break;
+            }
+        if (cycle_detected)
+            break;
+
+        visited_hashes.push_back(h);
 
         pv_line += m.to_uci() + " ";
         board.play(m);
         moves_to_unplay.push_back(m);
     }
 
-    // On restaure l'état original sans aucune copie
     for (int i = (int)moves_to_unplay.size() - 1; i >= 0; i--)
     {
         board.unplay(moves_to_unplay[i]);
@@ -112,6 +138,11 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
     {
         int score = negamax(depth, alpha, beta, 0);
 
+        if (depth >= 12 && std::abs(score) >= MATE_SCORE - 100)
+        {
+            return score;
+        }
+
         if (shared_stop.load(std::memory_order_relaxed))
             return score;
 
@@ -124,17 +155,20 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         if (score <= alpha)
         {
             alpha = std::max(-INF, alpha - delta);
-            beta = (alpha + beta) / 2; // Resserrage de beta pour aider l'élagage
-            delta += delta / 3 + 5;
+            delta += delta / 4 + 5;
+#ifndef NDEBUG
             if (thread_id == 0)
                 std::println("info string fail low");
+#endif
         }
         else if (score >= beta)
         {
             beta = std::min(INF, beta + delta);
             delta += delta / 4 + 5;
+#ifndef NDEBUG
             if (thread_id == 0)
                 std::println("info string fail high");
+#endif
         }
         else
         {
@@ -152,7 +186,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 void SearchWorker::iterative_deepening()
 {
     int last_score = 0;
-    for (int depth = 0; depth < MAX_DEPTH; ++depth)
+    for (int depth = 1; depth < MAX_DEPTH; ++depth)
     {
         last_score = negamax_with_aspiration(depth, last_score);
         if (thread_id == 0)
@@ -164,13 +198,13 @@ void SearchWorker::iterative_deepening()
 
             long long nodes = global_nodes.load(std::memory_order_relaxed);
             long long nps = nodes * 1000 / elapsed_ms;
-            std::cout
+            logs::uci
                 << "info depth " << depth
                 << " score cp " << last_score
                 << " nodes " << nodes
                 << " nps " << nps
                 << " hashfull " << shared_tt.get_hashfull()
-                << " pv " << best_root_move.to_uci()
+                << " pv " << get_pv_line(depth)
                 << std::endl;
         }
         if (shared_stop.load(std::memory_order_relaxed))
@@ -291,18 +325,28 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // Récupération du coup précédent pour les Counter-moves
     const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
 
+    uint64_t posKey = board.get_hash() ^ (uint64_t(thread_id) << 32);
+
     if (thread_id != 0 && ply > 5)
         for (int i = 0; i < list.count; ++i)
         {
-            // Here we randomize the move scoring to include some randomness in the search
             int base = score_move(list.moves[i], board, tt_move, ply, prev_m);
-            int delta = std::max(1, std::abs(base) / 8);
-            int noise = std::uniform_int_distribution<int>(-delta, delta)(gen);
+
+            uint64_t moveKey = (uint64_t)list.moves[i].get_value() * 0x9e3779b97f4a7c15ULL;
+            uint64_t h = posKey ^ moveKey;
+
+            uint64_t r = splitmix64(h);
+
+            int delta = std::max(1, std::abs(base) / 12);
+            int noise = int(r & 1023) - 512; // [-512 .. 511]
+            noise = noise * delta / 512;
+
             list.scores[i] = base + noise;
         }
-    else // For the master thread, we want to pick the best moves
+    else
         for (int i = 0; i < list.count; ++i)
             list.scores[i] = score_move(list.moves[i], board, tt_move, ply, prev_m);
+
     int alpha_orig = alpha;
 
     // 7. BOUCLE PVS (Principal Variation Search)
@@ -314,7 +358,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             continue;
 
         int score;
-        bool is_tactical = (list.scores[i] >= 900000);
+        bool is_tactical = (list.scores[i] >= TACTICAL_SCORE);
 
         // --- LATE MOVE PRUNING (LMP) ---
         // Si on n'est pas en échec, à faible profondeur, on limite le nombre de coups calmes
@@ -406,20 +450,22 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             if (score > alpha)
             {
                 alpha = score;
-
-                if (ply == 0)
-                {
-
-                    this->best_root_move = m;
-                }
             }
         }
+    }
+
+    if (ply == 0 && !shared_stop.load(std::memory_order_relaxed))
+    {
+
+        this->best_root_move = best_move_this_node;
     }
 
     // 8. Gestion des Mats et Pats
     if (moves_searched == 0)
     {
-        return in_check ? -MATE_SCORE + ply : 0;
+        int score = in_check ? -MATE_SCORE + ply : 0;
+        shared_tt.store(board.get_hash(), depth, ply, score, TT_EXACT, 0);
+        return score;
     }
 
     // 9. Sauvegarde TT Finale

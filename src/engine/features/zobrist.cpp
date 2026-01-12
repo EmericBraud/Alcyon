@@ -3,7 +3,7 @@
 uint64_t zobrist_table[12][64];
 uint64_t zobrist_castling[16];
 uint64_t zobrist_en_passant[9];
-uint64_t zobrist_black_to_move;
+uint64_t zobrist_side_to_move;
 
 void init_zobrist()
 {
@@ -22,5 +22,5 @@ void init_zobrist()
         zobrist_castling[i] = dist(gen);
     for (int i = 0; i < 9; ++i)
         zobrist_en_passant[i] = dist(gen);
-    zobrist_black_to_move = dist(gen);
+    zobrist_side_to_move = dist(gen);
 }

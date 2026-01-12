@@ -30,6 +30,10 @@ class EngineManager
     int depth_best_score;
 
 public:
+    inline Move get_root_best_move() const
+    {
+        return root_best_move;
+    }
     EngineManager(Board &b) : main_board(b)
     {
         tt.resize(512);
@@ -51,7 +55,7 @@ public:
         root_best_move.store(0);
     }
 
-    void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false)
+    void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false, bool play_move = false)
     {
         stop();
         if (search_thread.joinable())
@@ -70,6 +74,11 @@ public:
         start_time = std::chrono::steady_clock::now();
         search_thread = std::jthread([this]()
                                      { this->start_workers(); });
+        search_thread.join();
+        if (play_move)
+        {
+            main_board.play(root_best_move);
+        }
     }
 
     bool should_stop() const
@@ -151,8 +160,30 @@ private:
 
         best_move = workers[0].best_root_move;
 
+        if (best_move.get_value() == 0)
+        {
+            // On essaie de trouver n'importe quel coup légal pour ne pas crash
+            MoveList list;
+            MoveGen::generate_legal_moves(main_board, list); // Suppose que tu as cette fonction ou similaire
+
+            if (list.count > 0)
+            {
+                // Panic mode : on joue le premier coup légal trouvé
+                best_move = list.moves[0];
+                logs::debug << "info string WARNING: Search returned 0, playing emergency move." << std::endl;
+            }
+            else
+            {
+                // Vraiment aucun coup (Mat ou Pat)
+                // UCI requiert "bestmove (none)" dans certains cas, ou juste null
+                logs::uci << "bestmove (none)" << std::endl;
+                root_best_move.store(0, std::memory_order_relaxed);
+                return;
+            }
+        }
+
         // =========================
         root_best_move.store(best_move, std::memory_order_relaxed);
-        std::cout << "bestmove " << best_move.to_uci() << std::endl;
+        logs::uci << "bestmove " << best_move.to_uci() << std::endl;
     }
 };
