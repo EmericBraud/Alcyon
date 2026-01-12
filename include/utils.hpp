@@ -23,6 +23,8 @@
 #include <expected>
 #include <print>
 #include <deque>
+#include <optional>
+
 #include <immintrin.h>
 #include <xmmintrin.h> //x86 / intel only
 
@@ -42,6 +44,61 @@ constexpr int MATE_SCORE = 10000;
 using U64 = std::uint64_t;
 using bitboard = std::uint64_t;
 
+namespace logs
+{
+    class DebugLogger
+    {
+    public:
+#ifndef NDEBUG
+        template <typename T>
+        DebugLogger &operator<<(const T &v)
+        {
+            std::cout << v;
+            return *this;
+        }
+
+        // for std::endl
+        DebugLogger &operator<<(std::ostream &(*pf)(std::ostream &))
+        {
+            std::cout << pf;
+            return *this;
+        }
+#else
+        template <typename T>
+        DebugLogger &operator<<(const T &)
+        {
+            return *this;
+        }
+
+        DebugLogger &operator<<(std::ostream &(*)(std::ostream &))
+        {
+            return *this;
+        }
+#endif
+    };
+
+    extern DebugLogger debug;
+
+    class UCILogger
+    {
+    public:
+        template <typename T>
+        UCILogger &operator<<(const T &v)
+        {
+            std::cout << v;
+            return *this;
+        }
+
+        UCILogger &operator<<(std::ostream &(*pf)(std::ostream &))
+        {
+            std::cout << pf;
+            return *this;
+        }
+    };
+
+    extern UCILogger uci;
+}
+
 inline std::string get_data_path(std::string_view filename)
 {
     std::string path;
@@ -49,6 +106,14 @@ inline std::string get_data_path(std::string_view filename)
     path += DATA_PATH;
     path += filename;
     return path;
+}
+
+static inline uint64_t splitmix64(uint64_t x)
+{
+    x += 0x9e3779b97f4a7c15;
+    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9;
+    x = (x ^ (x >> 27)) * 0x94d049bb133111eb;
+    return x ^ (x >> 31);
 }
 
 namespace masks

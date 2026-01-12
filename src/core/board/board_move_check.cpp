@@ -32,6 +32,7 @@ bool Board::is_attacked(int sq) const
 }
 /*
  * Plays and unplays the move without considering zobrist key / EvalState, just in order to check if the move is legal
+ * (assuming that the move is already pseudo-legal)
  */
 bool Board::is_move_legal(const Move move)
 {

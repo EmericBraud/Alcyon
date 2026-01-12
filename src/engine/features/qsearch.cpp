@@ -65,12 +65,18 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
         else
         {
             Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
+
+            // 1. On calcule le SEE pour savoir si l'échange est gagnant/neutre
             int see_val = see(m.get_to_sq(), target, m.get_from_piece(), Us, m.get_from_sq());
 
             if (see_val < 0)
-                list.scores[i] = -1000000; // Capture perdante
+            {
+                list.scores[i] = -1000;
+            }
             else
-                list.scores[i] = 1000000 + see_val + score_capture(m);
+            {
+                list.scores[i] = score_capture(m);
+            }
         }
     }
 
@@ -128,9 +134,15 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
         }
     }
 
-    // 7. Détection de Mat (Si aucun coup n'a pu être joué alors qu'on est en échec)
-    if (in_check && moves_searched == 0)
-        return -MATE_SCORE + ply;
+    if (moves_searched == 0)
+    {
+        if (in_check)
+        {
+            int score = -MATE_SCORE + ply;
+            shared_tt.store(board.get_hash(), 0, ply, score, TT_EXACT, 0);
+            return score;
+        }
+    }
 
     // 8. Sauvegarde TT finale
     TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;

@@ -237,8 +237,8 @@ int Eval::eval(const Board &board, int alpha, int beta)
 }
 void Eval::print_pawn_stats()
 {
-    std::cout << "Pawn Table Stats:" << std::endl;
-    std::cout << " - Hits:   " << pawn_table.hits << std::endl;
-    std::cout << " - Misses: " << pawn_table.misses << std::endl;
-    std::cout << " - Rate:   " << pawn_table.get_hit_rate() << "%" << std::endl;
+    logs::debug << "Pawn Table Stats:" << std::endl;
+    logs::debug << " - Hits:   " << pawn_table.hits << std::endl;
+    logs::debug << " - Misses: " << pawn_table.misses << std::endl;
+    logs::debug << " - Rate:   " << pawn_table.get_hit_rate() << "%" << std::endl;
 }

@@ -11,10 +11,7 @@ enum TTFlag : uint8_t
 struct TTEntry
 {
     uint64_t key;
-    uint64_t data; // [Move: 32 | Score: 16 | Depth: 8 | Flag/Age: 8]
-
-    // Le XOR permet de s'assurer que si la clé appartient à une écriture
-    // et la data à une autre, le résultat sera invalide.
+    uint64_t data;
     void save(uint64_t k, Move m, int16_t s, uint8_t d, uint8_t f)
     {
         uint64_t d_pack = (uint64_t)m.get_value() |
@@ -28,12 +25,12 @@ struct TTEntry
 
     bool load(uint64_t k_target, Move &m, int16_t &s, uint8_t &d, uint8_t &f) const
     {
-        uint64_t k = key;
-        uint64_t d_xor = data;
-        uint64_t d_pack = d_xor ^ k; // On retrouve la data originale
+        const uint64_t k = key;
 
         if (k == k_target)
         {
+            const uint64_t d_xor = data;
+            const uint64_t d_pack = d_xor ^ k;
             m = Move(static_cast<uint32_t>(d_pack & 0xFFFFFFFF));
             s = static_cast<int16_t>((d_pack >> 32) & 0xFFFF);
             d = static_cast<uint8_t>((d_pack >> 48) & 0xFF);
