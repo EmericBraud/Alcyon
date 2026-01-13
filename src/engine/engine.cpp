@@ -2,7 +2,7 @@
 #include "engine/engine_manager.hpp"
 //clang-format off
 static constexpr int MVV_LVA_TABLE[7][7] = {
-    // Attaquants:  P      N      B      R      Q      K     NONE
+    // Attaquants:  P   N    B    R    Q    K  NONE
     /* PAWN   */ {105, 104, 103, 102, 101, 100, 0},
     /* KNIGHT */ {205, 204, 203, 202, 201, 200, 0},
     /* BISHOP */ {305, 304, 303, 302, 301, 300, 0},
@@ -156,22 +156,21 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         {
             alpha = std::max(-INF, alpha - delta);
             delta += delta / 4 + 5;
-#ifndef NDEBUG
             if (thread_id == 0)
-                std::println("info string fail low");
-#endif
+                logs::debug << "info string fail low" << std::endl;
+            ;
         }
         else if (score >= beta)
         {
             beta = std::min(INF, beta + delta);
             delta += delta / 4 + 5;
-#ifndef NDEBUG
             if (thread_id == 0)
-                std::println("info string fail high");
-#endif
+                logs::debug << "info string fail high" << std::endl;
         }
         else
         {
+            if (!shared_stop.load(std::memory_order_relaxed))
+                this->best_root_move = this->out_move;
             return score; // Succès : score dans la fenêtre
         }
 
@@ -189,6 +188,8 @@ void SearchWorker::iterative_deepening()
     for (int depth = 1; depth < MAX_DEPTH; ++depth)
     {
         last_score = negamax_with_aspiration(depth, last_score);
+        if (shared_stop.load(std::memory_order_relaxed))
+            return;
         if (thread_id == 0)
         {
             auto elapsed_ms = std::max<long long>(1,
@@ -207,8 +208,6 @@ void SearchWorker::iterative_deepening()
                 << " pv " << get_pv_line(depth)
                 << std::endl;
         }
-        if (shared_stop.load(std::memory_order_relaxed))
-            return;
     }
 }
 template <Color Us>
@@ -457,7 +456,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (ply == 0 && !shared_stop.load(std::memory_order_relaxed))
     {
 
-        this->best_root_move = best_move_this_node;
+        this->out_move = best_move_this_node;
     }
 
     // 8. Gestion des Mats et Pats
