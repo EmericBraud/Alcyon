@@ -126,6 +126,41 @@ class UCI
         engine.start_search(time_to_think, is_ponder && ponder_enabled);
     }
 
+    void set_option(std::istringstream &is)
+    {
+        std::string word, name, value, option;
+
+        while (is >> word)
+        {
+            if (word == "name")
+            {
+                name.clear();
+                while (is >> word && word != "value")
+                    name += word + " ";
+            }
+            if (word == "value")
+            {
+                value.clear();
+                while (is >> word)
+                    value += word + " ";
+            }
+        }
+
+        if (name == "Ponder ")
+            ponder_enabled = (value == "true ");
+        else if (name == "Hash ")
+        {
+            int size = std::stoi(value);
+            e.get_tt().resize(size);
+            logs::debug << "info string Hash table resized" << std::endl;
+        }
+        else if (name == "Clear Hash ")
+        {
+            e.get_tt().clear();
+            logs::debug << "info string Hash table cleared" << std::endl;
+        }
+    }
+
 public:
     UCI() : b(), e(b)
     {
@@ -156,27 +191,7 @@ public:
             }
             else if (token == "setoption")
             {
-                std::string word;
-                std::string name, value;
-
-                while (is >> word)
-                {
-                    if (word == "name")
-                    {
-                        name.clear();
-                        while (is >> word && word != "value")
-                            name += word + " ";
-                    }
-                    if (word == "value")
-                    {
-                        value.clear();
-                        while (is >> word)
-                            value += word + " ";
-                    }
-                }
-
-                if (name == "Ponder ")
-                    ponder_enabled = (value == "true ");
+                set_option(is);
             }
             else if (token == "ponderhit")
             {

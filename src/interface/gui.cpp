@@ -63,7 +63,8 @@ void GUI::run()
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::P)
             {
                 logs::debug << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
-                computer.start_search(20000, false, false, true);
+                computer.start_search(20000, false, false);
+                board.play(computer.get_root_best_move());
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::U)
             {

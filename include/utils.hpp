@@ -57,7 +57,7 @@ namespace logs
             return *this;
         }
 
-        // for std::endl
+        // for std::endl, std::flush
         DebugLogger &operator<<(std::ostream &(*pf)(std::ostream &))
         {
             std::cout << pf;

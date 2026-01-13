@@ -25,14 +25,13 @@ class EngineManager
     std::atomic<int> time_limit{0};
     std::atomic<Move> root_best_move;
 
-    std::mutex root_mutex;
     Move depth_best_move;
     int depth_best_score;
 
 public:
     inline Move get_root_best_move() const
     {
-        return root_best_move;
+        return root_best_move.load(std::memory_order_relaxed);
     }
     EngineManager(Board &b) : main_board(b)
     {
@@ -55,7 +54,7 @@ public:
         root_best_move.store(0);
     }
 
-    void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false, bool play_move = false)
+    void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false)
     {
         stop();
         if (search_thread.joinable())
@@ -74,11 +73,6 @@ public:
         start_time = std::chrono::steady_clock::now();
         search_thread = std::jthread([this]()
                                      { this->start_workers(); });
-        search_thread.join();
-        if (play_move)
-        {
-            main_board.play(root_best_move);
-        }
     }
 
     bool should_stop() const
@@ -125,6 +119,19 @@ public:
     {
         is_pondering = false;
         start_time = std::chrono::steady_clock::now();
+    }
+
+    inline TranspositionTable &get_tt()
+    {
+        return tt;
+    }
+
+    void wait()
+    {
+        if (search_thread.joinable())
+        {
+            search_thread.join();
+        }
     }
 
 private:

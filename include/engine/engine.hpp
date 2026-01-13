@@ -35,6 +35,7 @@ private:
 
 public:
     Move best_root_move = 0;
+    Move out_move = 0;
 
     // CONSTRUCTEUR PRINCIPAL
     // Appelé par l'orchestrateur pour chaque thread
