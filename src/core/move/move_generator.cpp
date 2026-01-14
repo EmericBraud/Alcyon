@@ -2,30 +2,27 @@
 
 namespace MoveGen
 {
-    std::array<U64, BOARD_SIZE> KnightAttacks;
-    std::array<U64, BOARD_SIZE> KingAttacks;
-    std::array<U64, BOARD_SIZE> RookMasks;
-    std::array<U64, BOARD_SIZE> BishopMasks;
-    std::array<U64, BOARD_SIZE> PawnAttacksWhite;
-    std::array<U64, BOARD_SIZE> PawnAttacksBlack;
-    std::array<U64, BOARD_SIZE> PawnPushWhite;
-    std::array<U64, BOARD_SIZE> PawnPushBlack;
-    std::array<U64, BOARD_SIZE> PawnPush2White;
-    std::array<U64, BOARD_SIZE> PawnPush2Black;
-
-    std::vector<U64> RookAttacksProcessing;
-    std::vector<U64> BishopAttacksProcessing;
+    alignas(64) std::array<U64, BOARD_SIZE> KnightAttacks;
+    alignas(64) std::array<U64, BOARD_SIZE> KingAttacks;
+    alignas(64) std::array<U64, BOARD_SIZE> RookMasks;
+    alignas(64) std::array<U64, BOARD_SIZE> BishopMasks;
+    alignas(64) std::array<U64, BOARD_SIZE> PawnAttacksWhite;
+    alignas(64) std::array<U64, BOARD_SIZE> PawnAttacksBlack;
+    alignas(64) std::array<U64, BOARD_SIZE> PawnPushWhite;
+    alignas(64) std::array<U64, BOARD_SIZE> PawnPushBlack;
+    alignas(64) std::array<U64, BOARD_SIZE> PawnPush2White;
+    alignas(64) std::array<U64, BOARD_SIZE> PawnPush2Black;
 
 #ifdef __BMI2__
-    std::array<MagicPEXT, BOARD_SIZE> RookMagics;
+    alignas(64) std::array<MagicPEXT, BOARD_SIZE> RookMagics;
     std::array<MagicPEXT, BOARD_SIZE> BishopMagics;
 #else
-    std::array<Magic, BOARD_SIZE> RookMagics;
-    std::array<Magic, BOARD_SIZE> BishopMagics;
+    alignas(64) std::array<Magic, BOARD_SIZE> RookMagics;
+    alignas(64) std::array<Magic, BOARD_SIZE> BishopMagics;
 #endif
 
-    std::array<U64, ROOK_ATTACKS_SIZE> RookAttacks;
-    std::array<U64, BISHOP_ATTACKS_SIZE> BishopAttacks;
+    alignas(64) std::array<U64, ROOK_ATTACKS_SIZE> RookAttacks;
+    alignas(64) std::array<U64, BISHOP_ATTACKS_SIZE> BishopAttacks;
 
 }
 /**

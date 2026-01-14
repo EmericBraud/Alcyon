@@ -235,6 +235,6 @@ public:
 
     inline void prefetch(uint64_t hash)
     {
-        _mm_prefetch((const char *)&table[hash & index_mask], _MM_HINT_T0);
+        cpu::prefetch(&table[hash & index_mask], true, 1);
     }
 };
