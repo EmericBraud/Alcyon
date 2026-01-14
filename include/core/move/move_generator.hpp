@@ -15,6 +15,16 @@ namespace MoveGen
     extern std::array<U64, BOARD_SIZE> PawnPush2White;
     extern std::array<U64, BOARD_SIZE> PawnPush2Black;
 
+#ifdef __BMI2__
+    struct MagicPEXT
+    {
+        U64 mask;
+        long unsigned int index_start;
+    };
+    extern std::array<MagicPEXT, BOARD_SIZE> RookMagics;
+    extern std::array<MagicPEXT, BOARD_SIZE> BishopMagics;
+
+#else
     struct Magic
     {
         U64 mask;
@@ -25,6 +35,8 @@ namespace MoveGen
 
     extern std::array<Magic, BOARD_SIZE> RookMagics;
     extern std::array<Magic, BOARD_SIZE> BishopMagics;
+
+#endif
 
     extern std::array<U64, ROOK_ATTACKS_SIZE> RookAttacks;
     extern std::array<U64, BISHOP_ATTACKS_SIZE> BishopAttacks;
@@ -40,20 +52,35 @@ namespace MoveGen
     void generate_pawn_moves(Board &board, const Color color, MoveList &list);
     inline U64 generate_rook_moves(int from_sq, const bitboard occupancy)
     {
+#ifdef __BMI2__
+        const MoveGen::MagicPEXT magic = MoveGen::RookMagics[from_sq];
+
+        int index = (int)_pext_u64(occupancy, magic.mask);
+        return RookAttacks[magic.index_start + index];
+
+#else
         const MoveGen::Magic magic = MoveGen::RookMagics[from_sq];
 
         const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
 
         return MoveGen::RookAttacks[index + magic.index_start];
+#endif
     }
 
     inline U64 generate_bishop_moves(int from_sq, const bitboard occupancy)
     {
+#ifdef __BMI2__
+        const MoveGen::MagicPEXT magic = MoveGen::BishopMagics[from_sq];
+
+        int index = (int)_pext_u64(occupancy, magic.mask);
+        return BishopAttacks[magic.index_start + index];
+#else
         const MoveGen::Magic magic = MoveGen::BishopMagics[from_sq];
 
         const U64 index = (((occupancy & magic.mask) * magic.magic) >> magic.shift);
 
         return MoveGen::BishopAttacks[index + magic.index_start];
+#endif
     }
 
     template <Piece piece_type>
@@ -162,7 +189,11 @@ namespace MoveGen
         }
         generate_legal_moves<BLACK>(board, list);
     }
+#ifdef __BMI2__
+    void export_attack_tables();
+    void load_attack_tables();
 
+#else
     void export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook);
     void run_magic_searcher();
 
@@ -176,6 +207,8 @@ namespace MoveGen
     void load_attacks_rook();
     void load_attacks_bishop();
     void load_attacks();
+
+#endif
 
     inline void init_move_flags(const Board &board, Move &move)
     {
