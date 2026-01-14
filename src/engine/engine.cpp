@@ -236,6 +236,17 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (board.is_repetition() || board.get_halfmove_clock() >= 100)
             return (board.get_history_size() < 20) ? -25 : 0;
     }
+    const bool is_pv = (beta - alpha > 1);
+    const bool in_check = board.is_king_attacked<Us>();
+    // Razoring
+    if (!in_check && !is_pv && depth <= 3)
+    {
+        int static_eval = Eval::lazy_eval_relative<Us>(board);
+        int margin = 100 * depth;
+        if (static_eval + margin <= alpha)
+            return qsearch<Us>(alpha, beta, ply);
+    }
+
     // 3. Sondage de la Transposition Table (TT)
     int tt_score;
     Move tt_move = 0;
@@ -244,14 +255,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (tt_hit && ply > 0)
         return tt_score;
 
-    bool in_check;
-    bool in_check_tested = false;
-
     // 4. Quiescence Search à l'horizon
     if (depth <= 0)
     {
-        in_check = board.is_king_attacked<Us>();
-        in_check_tested = true;
         if (in_check && ply < MAX_DEPTH - 5)
         {
             depth = 1;
@@ -266,8 +272,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     Move best_move_this_node = 0;
     int moves_searched = 0;
 
-    if (!in_check_tested)
-        in_check = board.is_king_attacked<Us>();
     if (depth <= 7 && !in_check && ply > 0)
     {
         int static_eval = Eval::lazy_eval_relative<Us>(board);
@@ -278,7 +282,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     // --- Internal Iterative Deepening (IID) ---
     // Si on est dans un noeud PV, qu'on a de la profondeur, mais pas de coup TT
-    if (tt_move == 0 && depth >= 6 && (beta - alpha > 1)) // Condition PV Node approximative
+    if (tt_move == 0 && depth >= 6 && is_pv) // Condition PV Node approximative
     {
         // On fait une recherche moins profonde pour trouver le meilleur coup
         int new_depth = depth - 4;
@@ -295,7 +299,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     {
         int stored_ep;
         board.play_null_move(stored_ep);
-        int R = (depth > 6) ? 3 : 2;
+        int R = 2 + depth / 6;
+        R = std::min(R, depth - 1);
         int score = -negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false);
         board.unplay_null_move(stored_ep);
 
@@ -308,7 +313,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     if (depth <= 3 && !in_check && ply > 0 && (best_score > -MATE_SCORE + 100))
     {
-        // Calcul de la marge (ajustable selon ton évaluation)
         futil_margin = 175 + 110 * depth;
         int static_eval = Eval::lazy_eval_relative<Us>(board);
 
@@ -377,6 +381,28 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             // On ne l'incrémente pas car on ne le cherche pas
             continue;
         }
+        if (!in_check && !is_pv &&
+            depth <= 6 &&
+            moves_searched > 1 &&
+            m != tt_move &&
+            m.is_capture())
+        {
+            if (Eval::get_piece_score(m.get_from_piece()) > Eval::get_piece_score(m.get_to_piece()))
+            {
+                int see_score = see(
+                    m.get_to_sq(),
+                    m.get_to_piece(),
+                    m.get_from_piece(),
+                    Us,
+                    m.get_from_sq());
+
+                int threshold = -15 * depth - Eval::get_piece_score(m.get_to_piece()) / 2;
+
+                if (see_score < threshold)
+                    continue;
+            }
+        }
+
         ++moves_searched;
 
         board.play<Us>(m);
