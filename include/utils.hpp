@@ -25,6 +25,7 @@
 #include <deque>
 #include <optional>
 #include <experimental/scope>
+#include <cstddef>
 
 #ifdef __BMI2__
 #include <immintrin.h>
@@ -47,6 +48,16 @@ constexpr int MATE_SCORE = 10000;
 
 using U64 = std::uint64_t;
 using bitboard = std::uint64_t;
+
+namespace cpu
+{
+    template <typename T>
+    inline void prefetch(const T *ptr, bool write = false, int locality = 3)
+    {
+        // __builtin_prefetch attend un const void* ou const char*
+        __builtin_prefetch(static_cast<const void *>(ptr), write ? 1 : 0, locality);
+    }
+}
 
 namespace logs
 {

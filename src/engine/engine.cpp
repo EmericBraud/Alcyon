@@ -123,25 +123,27 @@ std::string SearchWorker::get_pv_line(int depth)
 
 int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 {
-    int delta = 16;
+    int delta = (depth >= 12) ? 100 : (depth >= 8) ? 50
+                                                   : 16;
     int alpha = -INF;
     int beta = INF;
 
-    // On n'active l'aspiration qu'après une profondeur minimale
     if (depth >= 5)
     {
-        alpha = std::max(-INF, last_score - delta);
-        beta = std::min(INF, last_score + delta);
+        alpha = last_score - delta;
+        beta = last_score + delta;
     }
+
+    int iterations = 0;
+    const int max_iterations = 5;
 
     while (true)
     {
+        ++iterations;
         int score = negamax(depth, alpha, beta, 0);
 
         if (depth >= 12 && std::abs(score) >= MATE_SCORE - 100)
-        {
             return score;
-        }
 
         if (shared_stop.load(std::memory_order_relaxed))
             return score;
@@ -152,36 +154,40 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
             return score;
         }
 
+        // Succès : score dans la fenêtre
+        if (score > alpha && score < beta)
+        {
+            best_root_move = out_move;
+            return score;
+        }
+
+        // Ajustement delta intelligent
         if (score <= alpha)
         {
+            // Fail-low
+            delta = std::max(delta * 2, 50);
             alpha = std::max(-INF, alpha - delta);
-            delta += delta / 4 + 5;
             if (thread_id == 0)
                 logs::debug << "info string fail low" << std::endl;
-            ;
         }
         else if (score >= beta)
         {
+            // Fail-high
+            delta = std::max(delta * 2, 50);
             beta = std::min(INF, beta + delta);
-            delta += delta / 4 + 5;
             if (thread_id == 0)
                 logs::debug << "info string fail high" << std::endl;
         }
-        else
-        {
-            if (!shared_stop.load(std::memory_order_relaxed))
-                this->best_root_move = this->out_move;
-            return score; // Succès : score dans la fenêtre
-        }
 
-        // Sécurité pour éviter les boucles infinies hors limites
-        if (delta > 2000)
+        // Sécurité
+        if (iterations >= max_iterations || delta > 2000)
         {
             alpha = -INF;
             beta = INF;
         }
     }
 }
+
 void SearchWorker::iterative_deepening()
 {
     int last_score = 0;
@@ -193,6 +199,10 @@ void SearchWorker::iterative_deepening()
             return;
         if (thread_id == 0)
         {
+            if (depth == MAX_DEPTH)
+            {
+                shared_stop.store(true, std::memory_order_relaxed);
+            }
             auto elapsed_ms = std::max<long long>(1,
                                                   std::chrono::duration_cast<std::chrono::milliseconds>(
                                                       std::chrono::steady_clock::now() - start_time_ref)
@@ -238,6 +248,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     }
     const bool is_pv = (beta - alpha > 1);
     const bool in_check = board.is_king_attacked<Us>();
+    const bool is_mate_node = (alpha < MATE_SCORE && beta > -MATE_SCORE && in_check);
+
     // Razoring
     if (!in_check && !is_pv && depth <= 3)
     {
@@ -298,6 +310,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (depth >= 3 && ply > 0 && allow_null && !in_check && beta < 9000 && alpha > -9000)
     {
         int stored_ep;
+        shared_tt.prefetch(board.get_hash());
         board.play_null_move(stored_ep);
         int R = 2 + depth / 6;
         R = std::min(R, depth - 1);
@@ -311,7 +324,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     bool futil_pruning = false;
     int futil_margin = 0;
 
-    if (depth <= 3 && !in_check && ply > 0 && (best_score > -MATE_SCORE + 100))
+    if (depth <= 3 && !in_check && ply > 0 && (best_score > -MATE_SCORE + 100) && !is_mate_node)
     {
         futil_margin = 175 + 110 * depth;
         int static_eval = Eval::lazy_eval_relative<Us>(board);
@@ -357,6 +370,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     for (int i = 0; i < list.count; ++i)
     {
         Move &m = list.pick_best_move(i);
+        shared_tt.prefetch(board.get_hash_after(m));
 
         if (!board.is_move_legal(m))
             continue;

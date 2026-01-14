@@ -1,7 +1,7 @@
 #pragma once
 #include "engine/eval/pos_eval.hpp"
 
-#define MAX_DEPTH 50
+#define MAX_DEPTH 128
 constexpr int INF = 10000;
 
 class EngineManager;

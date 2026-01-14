@@ -4,16 +4,16 @@
 
 namespace MoveGen
 {
-    extern std::array<U64, BOARD_SIZE> KnightAttacks;
-    extern std::array<U64, BOARD_SIZE> KingAttacks;
-    extern std::array<U64, BOARD_SIZE> RookMasks;
-    extern std::array<U64, BOARD_SIZE> BishopMasks;
-    extern std::array<U64, BOARD_SIZE> PawnAttacksWhite;
-    extern std::array<U64, BOARD_SIZE> PawnAttacksBlack;
-    extern std::array<U64, BOARD_SIZE> PawnPushWhite;
-    extern std::array<U64, BOARD_SIZE> PawnPushBlack;
-    extern std::array<U64, BOARD_SIZE> PawnPush2White;
-    extern std::array<U64, BOARD_SIZE> PawnPush2Black;
+    alignas(64) extern std::array<U64, BOARD_SIZE> KnightAttacks;
+    alignas(64) extern std::array<U64, BOARD_SIZE> KingAttacks;
+    alignas(64) extern std::array<U64, BOARD_SIZE> RookMasks;
+    alignas(64) extern std::array<U64, BOARD_SIZE> BishopMasks;
+    alignas(64) extern std::array<U64, BOARD_SIZE> PawnAttacksWhite;
+    alignas(64) extern std::array<U64, BOARD_SIZE> PawnAttacksBlack;
+    alignas(64) extern std::array<U64, BOARD_SIZE> PawnPushWhite;
+    alignas(64) extern std::array<U64, BOARD_SIZE> PawnPushBlack;
+    alignas(64) extern std::array<U64, BOARD_SIZE> PawnPush2White;
+    alignas(64) extern std::array<U64, BOARD_SIZE> PawnPush2Black;
 
 #ifdef __BMI2__
     struct MagicPEXT
@@ -40,12 +40,6 @@ namespace MoveGen
 
     extern std::array<U64, ROOK_ATTACKS_SIZE> RookAttacks;
     extern std::array<U64, BISHOP_ATTACKS_SIZE> BishopAttacks;
-
-    /// @brief Used for processing rook attacks tables (unused on prod)
-    extern std::vector<U64>
-        RookAttacksProcessing;
-    /// @brief Used for processing bishop attacks tables (unused on prod)
-    extern std::vector<U64> BishopAttacksProcessing;
 
     void initialize_bitboard_tables();
 
