@@ -114,6 +114,11 @@ public:
         return flags == get_flags();
     }
 
+    inline bool is_capture() const
+    {
+        return get_to_piece() != NO_PIECE;
+    }
+
     std::string to_uci() const
     {
         if (value == 0)
