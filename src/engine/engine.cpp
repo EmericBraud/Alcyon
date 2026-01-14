@@ -187,6 +187,7 @@ void SearchWorker::iterative_deepening()
     int last_score = 0;
     for (int depth = 1; depth < MAX_DEPTH; ++depth)
     {
+        age_history();
         last_score = negamax_with_aspiration(depth, last_score);
         if (shared_stop.load(std::memory_order_relaxed))
             return;
@@ -446,17 +447,16 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         {
             best_score = score;
             best_move_this_node = m;
+
+            if (ply == 0)
+            {
+                this->out_move = best_move_this_node;
+            }
             if (score > alpha)
             {
                 alpha = score;
             }
         }
-    }
-
-    if (ply == 0 && !shared_stop.load(std::memory_order_relaxed))
-    {
-
-        this->out_move = best_move_this_node;
     }
 
     // 8. Gestion des Mats et Pats

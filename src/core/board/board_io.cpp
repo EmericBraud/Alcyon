@@ -4,8 +4,6 @@
 bool Board::load_fen(const std::string_view fen_string)
 {
     clear();
-    init_zobrist();
-
     std::string fen(fen_string);
     std::istringstream ss(fen);
     int square{Square::a8};

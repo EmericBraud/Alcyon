@@ -6,7 +6,7 @@ class UCI
 {
     Board b;
     EngineManager e;
-    bool ponder_enabled = false;
+    bool ponder_enabled = true;
 
     std::expected<int, Move::MoveError> parse_position(Board &board, std::istringstream &is)
     {
@@ -123,7 +123,7 @@ class UCI
             engine.start_search(0, false, true);
             return;
         }
-        engine.start_search(time_to_think, is_ponder && ponder_enabled);
+        engine.start_search(time_to_think, is_ponder && ponder_enabled, is_infinite, ponder_enabled);
     }
 
     void set_option(std::istringstream &is)
@@ -164,6 +164,8 @@ class UCI
 public:
     UCI() : b(), e(b)
     {
+        MoveGen::initialize_bitboard_tables();
+        init_zobrist();
         b.load_fen(FEN_INIT_POS);
         Book::init(DATA_PATH "komodo.bin");
     }
