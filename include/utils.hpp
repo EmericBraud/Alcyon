@@ -24,6 +24,7 @@
 #include <print>
 #include <deque>
 #include <optional>
+#include <experimental/scope>
 
 #include <immintrin.h>
 #include <xmmintrin.h> //x86 / intel only

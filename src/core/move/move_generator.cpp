@@ -882,6 +882,8 @@ static bool perform_initial_data_loading()
 
     MoveGen::load_attacks();
 
+    init_zobrist();
+
     logs::debug << "--- All bitboard tables loaded successfully ! ---" << std::endl;
     return true;
 }

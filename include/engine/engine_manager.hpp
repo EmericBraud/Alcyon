@@ -20,6 +20,7 @@ class EngineManager
     alignas(64) std::atomic<bool> is_pondering{false};
     alignas(64) std::atomic<long long> total_nodes{0};
     alignas(64) std::atomic<bool> is_infinite{false};
+    alignas(64) std::atomic<bool> ponder_enabled{false};
 
     std::chrono::time_point<std::chrono::steady_clock> start_time;
     std::atomic<int> time_limit{0};
@@ -42,6 +43,7 @@ public:
 
     void stop()
     {
+        is_pondering.store(false, std::memory_order_relaxed);
         stop_search.store(true, std::memory_order_relaxed);
     }
 
@@ -54,7 +56,7 @@ public:
         root_best_move.store(0);
     }
 
-    void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false)
+    void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false, bool ponder_enabled = false)
     {
         stop();
         if (search_thread.joinable())
@@ -62,10 +64,12 @@ public:
             stop_search.store(true);
             search_thread.join();
         }
+        tt.next_generation();
 
         stop_search.store(false, std::memory_order_relaxed);
         is_pondering.store(ponder, std::memory_order_relaxed);
         is_infinite.store(infinite, std::memory_order_relaxed);
+        this->ponder_enabled.store(ponder_enabled, std::memory_order_relaxed);
         total_nodes.store(0, std::memory_order_relaxed);
         root_best_move.store(0);
 
@@ -117,7 +121,7 @@ public:
 
     void convert_ponder_to_real()
     {
-        is_pondering = false;
+        is_pondering.store(false, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
     }
 
@@ -167,16 +171,28 @@ private:
 
         best_move = workers[0].best_root_move;
 
-        if (best_move.get_value() == 0)
+        if (best_move.get_value() == 0) [[unlikely]]
         {
-            // On essaie de trouver n'importe quel coup légal pour ne pas crash
-            MoveList list;
-            MoveGen::generate_legal_moves(main_board, list); // Suppose que tu as cette fonction ou similaire
-
-            if (list.count > 0)
+            logs::uci << "PANICK MODE" << std::endl;
+            // Panick mode : we try to find the best possible legal move
+            // First attempt : transp table
+            best_move = tt.get_move(main_board.get_hash());
+            if (main_board.is_move_pseudo_legal(best_move) && main_board.is_move_legal(best_move))
             {
-                // Panic mode : on joue le premier coup légal trouvé
-                best_move = list.moves[0];
+                logs::uci << "bestmove " << best_move.to_uci() << std::endl;
+                return;
+            }
+
+            // Second attempt : we pick the most promising move
+            MoveList list;
+            MoveGen::generate_legal_moves(main_board, list);
+            for (int i = 0; i < list.size(); ++i)
+                list.scores[i] = workers[0].score_move(list.moves[i], main_board, 0, 0, 0);
+
+            if (list.count > 0) [[likely]]
+            {
+                // Panic mode : on joue le coup le plus prometteur
+                best_move = list.pick_best_move(0);
                 logs::debug << "info string WARNING: Search returned 0, playing emergency move." << std::endl;
             }
             else
@@ -191,6 +207,22 @@ private:
 
         // =========================
         root_best_move.store(best_move, std::memory_order_relaxed);
+
+        if (is_pondering.load(std::memory_order_relaxed))
+            return;
+
+        if (ponder_enabled.load(std::memory_order_relaxed))
+        {
+            main_board.play(best_move);
+            auto guard = std::experimental::scope_exit([&best_move, this]
+                                                       { main_board.unplay(best_move); });
+            Move second_move = tt.get_move(main_board.get_hash());
+            if (main_board.is_move_pseudo_legal(second_move) && main_board.is_move_legal(second_move))
+            {
+                logs::uci << "bestmove " << best_move.to_uci() << " ponder " << second_move.to_uci() << std::endl;
+                return;
+            }
+        }
         logs::uci << "bestmove " << best_move.to_uci() << std::endl;
     }
 };
