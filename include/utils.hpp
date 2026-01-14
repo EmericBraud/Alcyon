@@ -26,9 +26,12 @@
 #include <optional>
 #include <experimental/scope>
 
+#ifdef __BMI2__
 #include <immintrin.h>
-#include <xmmintrin.h> //x86 / intel only
-
+#endif
+#ifdef __SSE2__
+#include <xmmintrin.h>
+#endif
 #define BOARD_SIZE 64
 #define STARTING_POS_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 #define ROOK_ATTACKS_SIZE 102400
@@ -109,7 +112,7 @@ inline std::string get_data_path(std::string_view filename)
     return path;
 }
 
-static inline uint64_t splitmix64(uint64_t x)
+static inline uint64_t splitmix64(uint64_t x) // Used for deterministic random noise generation in negamax move ordering
 {
     x += 0x9e3779b97f4a7c15;
     x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9;
