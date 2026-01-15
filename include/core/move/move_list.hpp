@@ -1,13 +1,12 @@
 #pragma once
 
+#include "core/utils/constants.hpp"
 #include "move.hpp"
-
-#define MAX_MOVES 256
 
 struct MoveList
 {
-    Move moves[MAX_MOVES];
-    int scores[MAX_MOVES];
+    Move moves[core::constants::MaxMoves];
+    int scores[core::constants::MaxMoves];
 
     int count = 0;
 

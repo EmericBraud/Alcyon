@@ -1,6 +1,17 @@
 #pragma once
-#include "interface/gui.hpp"
+
+#include <expected>
+#include <iostream>
+
+#include "core/utils/logger.hpp"
+#include "core/board.hpp"
+#include "core/move/move_generator.hpp"
+
+#include "engine/zobrist.hpp"
 #include "engine/book.hpp"
+#include "engine/engine_manager.hpp"
+
+#include "interface/gui.hpp"
 
 class UCI
 {
@@ -15,7 +26,7 @@ class UCI
 
         if (token == "startpos")
         {
-            board.load_fen(FEN_INIT_POS);
+            board.load_fen(core::constants::FenInitPos);
         }
         else if (token == "fen")
         {
@@ -79,24 +90,24 @@ class UCI
                 is_infinite = true;
         }
 
-        logs::debug << "info string DEBUG: Checking Book..." << std::endl;
-        logs::debug << "info string DEBUG: My Hash is " << std::hex << board.polyglot_key() << std::dec << std::endl;
+        core::logs::debug << "info string DEBUG: Checking Book..." << std::endl;
+        core::logs::debug << "info string DEBUG: My Hash is " << std::hex << board.polyglot_key() << std::dec << std::endl;
         if (!is_infinite && !is_ponder)
         {
             Move book_move = Book::probe(board);
 
             if (book_move.get_value() != 0)
             {
-                logs::debug << "info string DEBUG: Book Move Found!" << std::endl;
+                core::logs::debug << "info string DEBUG: Book Move Found!" << std::endl;
                 if (board.is_move_pseudo_legal(book_move) && board.is_move_legal(book_move))
                 {
-                    logs::uci << "bestmove " << book_move.to_uci() << std::endl;
+                    core::logs::uci << "bestmove " << book_move.to_uci() << std::endl;
                     return;
                 }
             }
             else
             {
-                logs::debug << "info string DEBUG: No move found in book." << std::endl;
+                core::logs::debug << "info string DEBUG: No move found in book." << std::endl;
             }
         }
 
@@ -152,12 +163,12 @@ class UCI
         {
             int size = std::stoi(value);
             e.get_tt().resize(size);
-            logs::debug << "info string Hash table resized" << std::endl;
+            core::logs::debug << "info string Hash table resized" << std::endl;
         }
         else if (name == "Clear Hash ")
         {
             e.get_tt().clear();
-            logs::debug << "info string Hash table cleared" << std::endl;
+            core::logs::debug << "info string Hash table cleared" << std::endl;
         }
     }
 
@@ -166,7 +177,7 @@ public:
     {
         MoveGen::initialize_bitboard_tables();
         init_zobrist();
-        b.load_fen(FEN_INIT_POS);
+        b.load_fen(core::constants::FenInitPos);
         Book::init(DATA_PATH "komodo.bin");
     }
     void loop()
@@ -175,7 +186,7 @@ public:
 
         while (std::getline(std::cin, line))
         {
-            logs::debug << "info string << " << line << std::endl;
+            core::logs::debug << "info string << " << line << std::endl;
 
             std::istringstream is(line);
             token.clear();
@@ -183,13 +194,13 @@ public:
 
             if (token == "uci")
             {
-                logs::uci << "id name Chess26" << std::endl;
-                logs::uci << "id author Emeric" << std::endl;
-                logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
-                logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl;
-                logs::uci << "option name Ponder type check default false" << std::endl;
-                logs::uci << "option name Threads type spin default 16 min 1 max 16" << std::endl;
-                logs::uci << "uciok" << std::endl;
+                core::logs::uci << "id name Chess26" << std::endl;
+                core::logs::uci << "id author Emeric" << std::endl;
+                core::logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
+                core::logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl;
+                core::logs::uci << "option name Ponder type check default false" << std::endl;
+                core::logs::uci << "option name Threads type spin default 16 min 1 max 16" << std::endl;
+                core::logs::uci << "uciok" << std::endl;
             }
             else if (token == "setoption")
             {
@@ -205,12 +216,12 @@ public:
             }
             else if (token == "isready")
             {
-                logs::uci << "readyok" << std::endl;
+                core::logs::uci << "readyok" << std::endl;
             }
             else if (token == "ucinewgame")
             {
                 e.clear();
-                b.load_fen(FEN_INIT_POS);
+                b.load_fen(core::constants::FenInitPos);
             }
             else if (token == "position")
             {

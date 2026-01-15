@@ -1,12 +1,15 @@
 #pragma once
 
-#include "utils.hpp"
+#include <cstdint>
+#include <vector>
+
+#include "core/utils/mask.hpp"
 
 struct PawnEntry
 {
-    uint64_t key; // La pawn_key de EvalState
-    int16_t mg;   // Score global des pions (mg_white - mg_black)
-    int16_t eg;   // Score global des pions (eg_white - eg_black)
+    U64 key;
+    std::int16_t mg;
+    std::int16_t eg;
 };
 
 class PawnTable
@@ -15,8 +18,8 @@ class PawnTable
     size_t index_mask;
 
 public:
-    uint64_t hits = 0;
-    uint64_t misses = 0;
+    U64 hits = 0;
+    U64 misses = 0;
 
     void resize(size_t mb)
     {
@@ -29,7 +32,7 @@ public:
         index_mask = size - 1;
     }
 
-    bool probe(uint64_t key, int &mg, int &eg)
+    bool probe(U64 key, int &mg, int &eg)
     {
         PawnEntry &entry = table[key & index_mask];
         if (entry.key == key)
@@ -43,9 +46,9 @@ public:
         return false;
     }
 
-    void store(uint64_t key, int mg, int eg)
+    void store(U64 key, int mg, int eg)
     {
-        table[key & index_mask] = {key, (int16_t)mg, (int16_t)eg};
+        table[key & index_mask] = {key, (std::int16_t)mg, (std::int16_t)eg};
     }
     void reset_stats()
     {
@@ -55,7 +58,7 @@ public:
 
     double get_hit_rate() const
     {
-        uint64_t total = hits + misses;
+        U64 total = hits + misses;
         if (total == 0)
             return 0.0;
         return (double)hits / total * 100.0;

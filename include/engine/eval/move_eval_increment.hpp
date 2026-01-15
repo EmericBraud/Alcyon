@@ -1,139 +1,12 @@
 #pragma once
+
+#include "core/utils/constants.hpp"
+#include "core/utils/cpu.hpp"
+#include "core/piece/color.hpp"
+#include "core/piece/piece.hpp"
+#include "core/move/move.hpp"
+#include "engine/config/eval.hpp"
 #include "engine/zobrist.hpp"
-
-static constexpr int mg_pawn_table[64] = {
-    0, 0, 0, 0, 0, 0, 0, 0,
-    5, 5, 5, 5, 5, 5, 5, 5,
-    6, 6, 8, 10, 10, 8, 6, 6,
-    8, 8, 12, 14, 14, 12, 8, 8,
-    10, 10, 14, 16, 16, 14, 10, 10,
-    12, 12, 16, 18, 18, 16, 12, 12,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0};
-
-static constexpr int mg_knight_table[64] = {
-    -30, -20, -10, -10, -10, -10, -20, -30,
-    -20, -5, 0, 5, 5, 0, -5, -20,
-    -10, 5, 10, 15, 15, 10, 5, -10,
-    -10, 5, 15, 20, 20, 15, 5, -10,
-    -10, 5, 15, 20, 20, 15, 5, -10,
-    -10, 5, 10, 15, 15, 10, 5, -10,
-    -20, -5, 0, 5, 5, 0, -5, -20,
-    -30, -20, -10, -10, -10, -10, -20, -30};
-static constexpr int mg_bishop_table[64] = {
-    -15, -10, -10, -10, -10, -10, -10, -15,
-    -10, 0, 0, 5, 5, 0, 0, -10,
-    -10, 5, 10, 10, 10, 10, 5, -10,
-    -10, 5, 10, 15, 15, 10, 5, -10,
-    -10, 5, 10, 15, 15, 10, 5, -10,
-    -10, 5, 10, 10, 10, 10, 5, -10,
-    -10, 0, 0, 5, 5, 0, 0, -10,
-    -15, -10, -10, -10, -10, -10, -10, -15};
-
-static constexpr int mg_rook_table[64] = {
-    0, 0, 0, 5, 5, 0, 0, 0,
-    5, 10, 15, 15, 15, 15, 10, 5, // 2e rangée
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    5, 10, 15, 15, 15, 15, 10, 5, // 7e rangée (après miroir)
-    0, 0, 0, 5, 5, 0, 0, 0};
-
-static constexpr int mg_queen_table[64] = {
-    -20, -10, -10, -5, -5, -10, -10, -20,
-    -10, 0, 0, 0, 0, 0, 0, -10,
-    -10, 0, 5, 5, 5, 5, 0, -10,
-    -5, 0, 5, 5, 5, 5, 0, -5,
-    0, 0, 5, 5, 5, 5, 0, -5,
-    -10, 5, 5, 5, 5, 5, 0, -10,
-    -10, 0, 5, 0, 0, 0, 0, -10,
-    -20, -10, -10, -5, -5, -10, -10, -20};
-
-static constexpr int mg_king_table[64] = {
-    30, 40, 20, 0, 0, 20, 40, 30,
-    20, 30, 10, 0, 0, 10, 30, 20,
-    0, 10, -10, -20, -20, -10, 10, 0,
-    -10, -20, -30, -40, -40, -30, -20, -10,
-    -20, -30, -40, -50, -50, -40, -30, -20,
-    -20, -30, -40, -50, -50, -40, -30, -20,
-    -20, -30, -40, -50, -50, -40, -30, -20,
-    -20, -30, -40, -50, -50, -40, -30, -20};
-static constexpr int eg_king_table[64] = {
-    -10, -5, 0, -5, -5, 0, -5, -10,
-    -5, -5, 0, 5, 7, 5, -5, -5,
-    -5, -5, 5, 10, 10, 5, -5, -5,
-    -5, 0, 10, 15, 15, 10, 0, -5,
-    -5, 0, 10, 15, 15, 10, 0, -5,
-    -10, -5, 5, 10, 10, 5, -5, -10,
-    -15, -10, -5, 0, 0, -5, -10, -15,
-    -20, -15, -10, -5, -5, -10, -15, -20};
-static constexpr int eg_pawn_table[64] = {
-    0, 0, 0, 0, 0, 0, 0, 0,
-    5, 6, 7, 8, 8, 7, 6, 5,
-    10, 12, 14, 16, 16, 14, 12, 10,
-    18, 20, 22, 24, 24, 22, 20, 18,
-    26, 28, 30, 32, 32, 30, 28, 26,
-    34, 36, 38, 40, 40, 38, 36, 34,
-    45, 45, 45, 45, 45, 45, 45, 45,
-    0, 0, 0, 0, 0, 0, 0, 0};
-
-static constexpr int eg_knight_table[64] = {
-    -30, -20, -10, -10, -10, -10, -20, -30,
-    -20, -5, 0, 5, 5, 0, -5, -20,
-    -10, 5, 10, 15, 15, 10, 5, -10,
-    -10, 5, 15, 20, 20, 15, 5, -10,
-    -10, 5, 15, 20, 20, 15, 5, -10,
-    -10, 5, 10, 15, 15, 10, 5, -10,
-    -20, -5, 0, 5, 5, 0, -5, -20,
-    -30, -20, -10, -10, -10, -10, -20, -30};
-static constexpr int eg_bishop_table[64] = {
-    -15, -10, -10, -10, -10, -10, -10, -15,
-    -10, 0, 0, 5, 5, 0, 0, -10,
-    -10, 5, 10, 10, 10, 10, 5, -10,
-    -10, 5, 10, 15, 15, 10, 5, -10,
-    -10, 5, 10, 15, 15, 10, 5, -10,
-    -10, 5, 10, 10, 10, 10, 5, -10,
-    -10, 0, 0, 5, 5, 0, 0, -10,
-    -15, -10, -10, -10, -10, -10, -10, -15};
-
-static constexpr int eg_rook_table[64] = {
-    0, 0, 0, 5, 5, 0, 0, 0,
-    5, 10, 15, 15, 15, 15, 10, 5, // 2e rangée
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    -5, 0, 0, 0, 0, 0, 0, -5,
-    5, 10, 15, 15, 15, 15, 10, 5, // 7e rangée (après miroir)
-    0, 0, 0, 5, 5, 0, 0, 0};
-static constexpr int eg_queen_table[64] = {
-    -20, -10, -10, -5, -5, -10, -10, -20,
-    -10, 0, 5, 5, 5, 5, 0, -10,
-    -10, 5, 10, 10, 10, 10, 5, -10,
-    -5, 5, 10, 15, 15, 10, 5, -5,
-    -5, 5, 10, 15, 15, 10, 5, -5,
-    -10, 5, 10, 10, 10, 10, 5, -10,
-    -10, 0, 5, 5, 5, 5, 0, -10,
-    -20, -10, -10, -5, -5, -10, -10, -20};
-
-static constexpr std::array<int, N_PIECES_TYPE_HALF> pieces_score = {
-    100, 300, 300, 500, 900, 10000};
-
-// Table de correspondance pour le milieu de jeu
-static const int *mg_tables[] = {
-    mg_pawn_table, mg_knight_table, mg_bishop_table, mg_rook_table, mg_queen_table, mg_king_table};
-
-static const int *eg_tables[] = {
-    eg_pawn_table, eg_knight_table, eg_bishop_table, eg_rook_table, eg_queen_table, eg_king_table};
-
-static const int pawnPhase = 0;
-static const int knightPhase = 1;
-static const int bishopPhase = 1;
-static const int rookPhase = 2;
-static const int queenPhase = 4;
-static const int totalPhase = 24;
-
-static const int phase_values[] = {pawnPhase, knightPhase, bishopPhase, rookPhase, queenPhase, totalPhase};
 
 struct EvalState
 {
@@ -145,7 +18,7 @@ struct EvalState
     int16_t pieces_val[2];
 
     EvalState() = default;
-    EvalState(const std::array<bitboard, N_PIECES_TYPE> occupancy)
+    EvalState(const std::array<U64, core::constants::NumPieceVariants> occupancy)
     {
         mg_pst[0] = mg_pst[1] = eg_pst[0] = eg_pst[1] = 0;
         pieces_val[0] = pieces_val[1] = 0;
@@ -156,29 +29,29 @@ struct EvalState
         {
             for (int j = PAWN; j <= KING; ++j)
             {
-                U64 mask = occupancy[j + i * N_PIECES_TYPE_HALF];
+                U64 mask = occupancy[j + i * core::constants::PieceTypeCount];
                 while (mask)
                 {
-                    int sq = pop_lsb(mask);
+                    int sq = core::cpu::pop_lsb(mask);
                     add_piece(static_cast<Piece>(j), sq, static_cast<Color>(i));
 
                     if (j != PAWN && j != KING)
                     {
                         if (j == KNIGHT)
-                            phase += knightPhase;
+                            phase += engine::config::eval::knightPhase;
                         else if (j == BISHOP)
-                            phase += bishopPhase;
+                            phase += engine::config::eval::bishopPhase;
                         else if (j == ROOK)
-                            phase += rookPhase;
+                            phase += engine::config::eval::rookPhase;
                         else if (j == QUEEN)
-                            phase += queenPhase;
+                            phase += engine::config::eval::queenPhase;
                     }
                 }
             }
         }
-        if (phase > totalPhase)
+        if (phase > engine::config::eval::totalPhase)
         {
-            phase = totalPhase;
+            phase = engine::config::eval::totalPhase;
         }
     }
 
@@ -288,12 +161,12 @@ private:
         int mirror = (c == WHITE) ? sq : sq ^ 56;
 
         // Utilisation des tables respectives MG et EG
-        int pst_mg = mg_tables[p][mirror];
-        int pst_eg = eg_tables[p][mirror];
+        int pst_mg = engine::config::eval::mg_tables[p][mirror];
+        int pst_eg = engine::config::eval::eg_tables[p][mirror];
 
         mg_pst[c] += pst_mg;
         eg_pst[c] += pst_eg;
-        pieces_val[c] += pieces_score[p];
+        pieces_val[c] += engine::config::eval::pieces_score[p];
 
         if (p == PAWN)
             pawn_key ^= zobrist_table[PAWN + (c == BLACK ? 6 : 0)][sq];
@@ -305,12 +178,12 @@ private:
     {
         int mirror = (c == WHITE) ? sq : sq ^ 56;
 
-        int pst_mg = mg_tables[p][mirror];
-        int pst_eg = eg_tables[p][mirror];
+        int pst_mg = engine::config::eval::mg_tables[p][mirror];
+        int pst_eg = engine::config::eval::eg_tables[p][mirror];
 
         mg_pst[c] -= pst_mg;
         eg_pst[c] -= pst_eg;
-        pieces_val[c] -= pieces_score[p];
+        pieces_val[c] -= engine::config::eval::pieces_score[p];
 
         if (p == PAWN)
             pawn_key ^= zobrist_table[PAWN + (c == BLACK ? 6 : 0)][sq];
@@ -320,16 +193,16 @@ private:
         switch (p)
         {
         case KNIGHT:
-            phase -= knightPhase;
+            phase -= engine::config::eval::knightPhase;
             break;
         case BISHOP:
-            phase -= bishopPhase;
+            phase -= engine::config::eval::bishopPhase;
             break;
         case ROOK:
-            phase -= rookPhase;
+            phase -= engine::config::eval::rookPhase;
             break;
         case QUEEN:
-            phase -= queenPhase;
+            phase -= engine::config::eval::queenPhase;
             break;
         default:
             break;
@@ -339,30 +212,30 @@ private:
     }
     inline void update_phase_on_promotion()
     {
-        phase += queenPhase;
-        if (phase > totalPhase)
-            phase = totalPhase;
+        phase += engine::config::eval::queenPhase;
+        if (phase > engine::config::eval::totalPhase)
+            phase = engine::config::eval::totalPhase;
     }
 
     inline void restore_phase_on_capture(Piece p)
     {
         if (p == KNIGHT)
-            phase += knightPhase;
+            phase += engine::config::eval::knightPhase;
         else if (p == BISHOP)
-            phase += bishopPhase;
+            phase += engine::config::eval::bishopPhase;
         else if (p == ROOK)
-            phase += rookPhase;
+            phase += engine::config::eval::rookPhase;
         else if (p == QUEEN)
-            phase += queenPhase;
+            phase += engine::config::eval::queenPhase;
 
-        if (phase > totalPhase)
-            phase = totalPhase;
+        if (phase > engine::config::eval::totalPhase)
+            phase = engine::config::eval::totalPhase;
     }
 
     inline void restore_phase_on_promotion()
     {
         // On retire la phase de la Dame qui a été annulée
-        phase -= queenPhase;
+        phase -= engine::config::eval::queenPhase;
         if (phase < 0)
             phase = 0;
     }

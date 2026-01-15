@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <stdexcept>
+
 #include "core/piece/piece.hpp"
 
 class Move

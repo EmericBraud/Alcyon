@@ -154,7 +154,7 @@ TEST_F(MoveGenTest, EnPassantAfterCheckTest)
     b.play(m2);
     ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0xef00);
     ASSERT_EQ(b.get_piece_bitboard(BLACK, PAWN), 0xdf000000100000);
-    ASSERT_EQ(b.get_en_passant_sq(), EN_PASSANT_SQ_NONE);
+    ASSERT_EQ(b.get_en_passant_sq(), core::constants::EnPassantSqNone);
 }
 
 U64 Perft(Board &b, int depth)

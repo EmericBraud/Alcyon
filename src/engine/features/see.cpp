@@ -1,4 +1,7 @@
 #include "engine/engine.hpp"
+
+#include "core/move/move_generator.hpp"
+
 int SearchWorker::see(int sq, Piece target, Piece attacker, Color side, int from_sq) const
 {
     int value[32];

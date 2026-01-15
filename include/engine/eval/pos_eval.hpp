@@ -1,29 +1,21 @@
 #pragma once
 
-#include "core/move/move_generator.hpp"
-#include "engine/eval/pawn_entry.hpp"
+#include <array>
 
+#include "core/utils/mask.hpp"
+#include "core/piece/color.hpp"
+#include "core/piece/piece.hpp"
+#include "core/board.hpp"
+
+#include "engine/config/eval.hpp"
 namespace Eval
 {
 
-    static constexpr int knight_mob[9] = {
-        -20, -10, 0, 5, 10, 15, 20, 25, 30};
-
-    static constexpr int bishop_mob[14] = {
-        -20, -10, 0, 10, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65};
-
-    static constexpr int rook_mob[15] = {
-        -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55};
-
-    static constexpr int queen_mob[28] = {
-        -20, -15, -10, -5, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20,
-        22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46};
-
     struct PawnMasks
     {
-        std::array<bitboard, 8> file;
-        std::array<bitboard, 8> adjacent;
-        std::array<std::array<bitboard, 64>, 2> passed;
+        std::array<U64, 8> file;
+        std::array<U64, 8> adjacent;
+        std::array<std::array<U64, 64>, 2> passed;
     };
     constexpr PawnMasks generate_masks()
     {
@@ -83,7 +75,7 @@ namespace Eval
 
     inline int get_piece_score(int piece)
     {
-        return pieces_score[piece];
+        return engine::config::eval::pieces_score[piece];
     }
 
     void print_pawn_stats();
@@ -103,7 +95,7 @@ namespace Eval
                              (state.mg_pst[BLACK] + state.pieces_val[BLACK]);
         const int eg_score = (state.eg_pst[WHITE] + state.pieces_val[WHITE]) -
                              (state.eg_pst[BLACK] + state.pieces_val[BLACK]);
-        const int base_score = (mg_score * state.phase + eg_score * (totalPhase - state.phase)) / totalPhase;
+        const int base_score = (mg_score * state.phase + eg_score * (engine::config::eval::totalPhase - state.phase)) / engine::config::eval::totalPhase;
         return Us == WHITE ? base_score : -base_score;
     }
 }

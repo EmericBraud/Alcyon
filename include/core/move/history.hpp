@@ -1,6 +1,10 @@
 #pragma once
-#include "engine/eval/move_eval_increment.hpp"
-#define MAX_ELE 256
+
+#include <cassert>
+
+#include "core/utils/constants.hpp"
+#include "core/utils/mask.hpp"
+#include "core/move/move.hpp"
 
 struct alignas(16) UndoInfo
 {
@@ -14,7 +18,7 @@ struct alignas(16) UndoInfo
 
 struct History
 {
-    UndoInfo list[MAX_ELE];
+    UndoInfo list[core::constants::MaxHistorySize];
     size_t count = 0;
 
     inline void push_back(const UndoInfo &u)

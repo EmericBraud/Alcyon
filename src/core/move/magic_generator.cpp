@@ -10,6 +10,10 @@ static constexpr const char *BISHOP_MAGICS_FILE = DATA_PATH "bishop_m.bin";
 
 #include "core/move/move_generator.hpp"
 
+#include <vector>
+
+#include "core/utils/logger.hpp"
+
 static void generate_all_blocker_occupancies(int sq, U64 mask, bool is_rook,
                                              std::vector<U64> &occupancy_list,
                                              std::vector<U64> &attack_list)
@@ -87,7 +91,7 @@ static MoveGen::Magic find_magic(int sq, bool is_rook, int max_iterations, long 
 
         if (!collision_found)
         {
-            logs::debug << "Magic found for sq " << sq << " after " << iter << " iterations." << std::endl;
+            core::logs::debug << "Magic found for sq " << sq << " after " << iter << " iterations." << std::endl;
             return {mask, magic_candidate, shift, index_start};
         }
     }
@@ -123,12 +127,12 @@ void MoveGen::export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m
     }
     piece_attacks.write(reinterpret_cast<const char *>(output_v.data()), output_v.size() * sizeof(U64));
 
-    logs::debug << "--- Exported attack table for " << (is_rook ? "rook" : "bishop") << " piece ---" << std::endl;
+    core::logs::debug << "--- Exported attack table for " << (is_rook ? "rook" : "bishop") << " piece ---" << std::endl;
 }
 
 void MoveGen::run_magic_searcher()
 {
-    logs::debug << "--- Searching Magic Numbers ---" << std::endl;
+    core::logs::debug << "--- Searching Magic Numbers ---" << std::endl;
     MoveGen::initialize_rook_masks();
     MoveGen::initialize_bishop_masks();
 
@@ -168,7 +172,7 @@ void MoveGen::run_magic_searcher()
         reinterpret_cast<const char *>(bishop_m_array.data()),
         bishop_m_array.size() * sizeof(MoveGen::Magic));
 
-    logs::debug << "--- Magic Numbers Exported ---" << std::endl;
+    core::logs::debug << "--- Magic Numbers Exported ---" << std::endl;
     MoveGen::export_attack_table(rook_m_array, true);
     MoveGen::export_attack_table(bishop_m_array, false);
 }
@@ -187,7 +191,7 @@ void MoveGen::get_sizes(bool is_rook)
     {
         throw std::runtime_error("Attack file size isn't a mutliple of U64 size");
     }
-    logs::debug << (is_rook ? "Rook " : "Bishop ") << "file size : " << attacks_file_sz << std::endl;
+    core::logs::debug << (is_rook ? "Rook " : "Bishop ") << "file size : " << attacks_file_sz << std::endl;
 }
 void MoveGen::load_magics(bool is_rook)
 {

@@ -1,14 +1,16 @@
 #include "engine/zobrist.hpp"
 
-uint64_t zobrist_table[12][64];
-uint64_t zobrist_castling[16];
-uint64_t zobrist_en_passant[9];
-uint64_t zobrist_side_to_move;
+#include <random>
+
+U64 zobrist_table[12][64];
+U64 zobrist_castling[16];
+U64 zobrist_en_passant[9];
+U64 zobrist_side_to_move;
 
 void init_zobrist()
 {
     std::mt19937_64 gen(12345);
-    std::uniform_int_distribution<uint64_t> dist;
+    std::uniform_int_distribution<U64> dist;
 
     for (int p = 0; p < 12; ++p)
     {

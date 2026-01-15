@@ -1,6 +1,11 @@
 #include "engine/book.hpp"
 #include "core/move/move_generator.hpp"
 
+#include "core/utils/logger.hpp"
+
+#include <random>
+#include <fstream>
+
 std::vector<Book::Entry> Book::entries;
 
 void Book::init(const std::string &path)
@@ -39,7 +44,7 @@ void Book::init(const std::string &path)
     std::sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b)
               { return a.key < b.key; });
 
-    logs::debug << ">>> SUCCES BOOK: " << num_entries << " coups chargés." << std::endl;
+    core::logs::debug << ">>> SUCCES BOOK: " << num_entries << " coups chargés." << std::endl;
 }
 
 uint16_t Book::swap_endian_16(uint16_t val) { return (val << 8) | (val >> 8); }
@@ -145,19 +150,19 @@ Move Book::probe(Board &board)
             {
                 if (m.is_promotion() && m.get_promo_piece() == target_promo)
                 {
-                    logs::debug << "info string DEBUG: Book Move Matches Engine Move: " << m.to_uci() << std::endl;
+                    core::logs::debug << "info string DEBUG: Book Move Matches Engine Move: " << m.to_uci() << std::endl;
                     return m;
                 }
             }
             else
             {
-                logs::debug << "info string DEBUG: Book Move Matches Engine Move: " << m.to_uci() << std::endl;
+                core::logs::debug << "info string DEBUG: Book Move Matches Engine Move: " << m.to_uci() << std::endl;
                 return m;
             }
         }
     }
-    logs::debug << "DEBUG: Book Move (" << target_from << "->" << target_to
-                << ") not found in engine !";
+    core::logs::debug << "DEBUG: Book Move (" << target_from << "->" << target_to
+                      << ") not found in engine !";
 
     return Move(); // Coup vide
 }

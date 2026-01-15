@@ -4,12 +4,13 @@
 
 #ifdef __BMI2__
 
+#include "core/move/move_generator.hpp"
+
+#include <bit>
 #include <vector>
 #include <fstream>
 #include <bit>
 #include <stdexcept>
-
-#include "core/move/move_generator.hpp"
 
 // -----------------------------------------------------------------------------
 // Files
@@ -60,7 +61,7 @@ void MoveGen::export_attack_tables()
     std::vector<U64> bishop_attacks;
 
     // Generate ROOK tables
-    for (int sq = 0; sq < BOARD_SIZE; ++sq)
+    for (int sq = 0; sq < core::constants::BoardSize; ++sq)
     {
         MagicPEXT &m = RookMagics[sq];
         m.mask = RookMasks[sq];
@@ -71,7 +72,7 @@ void MoveGen::export_attack_tables()
     }
 
     // Generate BISHOP tables
-    for (int sq = 0; sq < BOARD_SIZE; ++sq)
+    for (int sq = 0; sq < core::constants::BoardSize; ++sq)
     {
         MagicPEXT &m = BishopMagics[sq];
         m.mask = BishopMasks[sq];
@@ -97,12 +98,12 @@ void MoveGen::export_attack_tables()
     {
         std::ofstream out(ROOK_PEXT_FILE, std::ios::binary);
         out.write(reinterpret_cast<const char *>(RookMagics.data()),
-                  BOARD_SIZE * sizeof(MagicPEXT));
+                  core::constants::BoardSize * sizeof(MagicPEXT));
     }
     {
         std::ofstream out(BISHOP_PEXT_FILE, std::ios::binary);
         out.write(reinterpret_cast<const char *>(BishopMagics.data()),
-                  BOARD_SIZE * sizeof(MagicPEXT));
+                  core::constants::BoardSize * sizeof(MagicPEXT));
     }
 }
 
@@ -138,7 +139,7 @@ void MoveGen::load_attack_tables()
             throw std::runtime_error("Failed to open rook_pext.bin");
 
         in.read(reinterpret_cast<char *>(RookMagics.data()),
-                BOARD_SIZE * sizeof(MagicPEXT));
+                core::constants::BoardSize * sizeof(MagicPEXT));
     }
     {
         std::ifstream in(BISHOP_PEXT_FILE, std::ios::binary);
@@ -146,7 +147,7 @@ void MoveGen::load_attack_tables()
             throw std::runtime_error("Failed to open bishop_pext.bin");
 
         in.read(reinterpret_cast<char *>(BishopMagics.data()),
-                BOARD_SIZE * sizeof(MagicPEXT));
+                core::constants::BoardSize * sizeof(MagicPEXT));
     }
 }
 

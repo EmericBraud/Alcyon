@@ -1,12 +1,15 @@
 #pragma once
 
-#include "engine/transp_table.hpp"
+#include "core/utils/mask.hpp"
+
 #define HASH_PIECE(color, piece, sq) (zobrist_key ^= zobrist_table[(piece) + ((color) == BLACK ? 6 : 0)][(sq)])
 
-extern uint64_t zobrist_table[12][64];
-extern uint64_t zobrist_castling[16];
-extern uint64_t zobrist_en_passant[9];
-extern uint64_t zobrist_side_to_move;
+extern U64 zobrist_table[12][64];
+extern U64 zobrist_castling[16];
+extern U64 zobrist_en_passant[9];
+extern U64 zobrist_side_to_move;
+
+void init_zobrist();
 
 constexpr U64 PolyglotRandom[781] = {
     U64(0x9D39247E33776D41),
@@ -791,5 +794,3 @@ constexpr U64 PolyglotRandom[781] = {
     U64(0x67A34DAC4356550B),
     U64(0xF8D626AAAF278509),
 };
-
-void init_zobrist();

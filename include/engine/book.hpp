@@ -1,4 +1,8 @@
 #pragma once
+#include <cctype>
+#include <vector>
+
+#include "core/move/move.hpp"
 #include "core/board.hpp"
 
 class Book
