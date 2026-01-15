@@ -46,6 +46,7 @@ bool Board::load_fen(const std::string_view fen_string)
                 break;
             case 'K':
                 type = KING;
+                king_sq[color] = square;
                 break;
             default:
                 return false;
@@ -103,7 +104,6 @@ bool Board::load_fen(const std::string_view fen_string)
 
     update_occupancy();
     compute_full_hash();
-    eval_state = EvalState(pieces_occ);
     return true;
 }
 

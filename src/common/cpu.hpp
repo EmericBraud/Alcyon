@@ -7,10 +7,11 @@
 #include "common/mask.hpp"
 namespace cpu
 {
-    template <typename T>
-    inline void prefetch(const T *ptr, bool write = false, int locality = 3)
+    template <typename T, bool Write = false, int Locality = 3>
+    inline void prefetch(const T *ptr)
     {
-        __builtin_prefetch(static_cast<const void *>(ptr), write ? 1 : 0, locality);
+        static_assert(Locality >= 0 && Locality <= 3, "locality must be 0..3");
+        __builtin_prefetch(static_cast<const void *>(ptr), Write ? 1 : 0, Locality);
     }
 
     inline int get_lsb_index(U64 bb)

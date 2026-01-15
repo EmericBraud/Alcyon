@@ -15,11 +15,11 @@
 
 class UCI
 {
-    Board b;
+    VBoard b;
     EngineManager e;
-    bool ponder_enabled = true;
+    bool ponder_enabled = false;
 
-    std::expected<int, Move::MoveError> parse_position(Board &board, std::istringstream &is)
+    std::expected<int, Move::MoveError> parse_position(VBoard &board, std::istringstream &is)
     {
         std::string token;
         is >> token;
@@ -62,7 +62,7 @@ class UCI
         return 0;
     }
 
-    void parse_go(Board &board, EngineManager &engine, std::istringstream &is)
+    void parse_go(VBoard &board, EngineManager &engine, std::istringstream &is)
     {
         std::string token;
         bool is_ponder = false;
@@ -123,7 +123,7 @@ class UCI
             int my_time = (board.get_side_to_move() == WHITE) ? wtime : btime;
             int my_inc = (board.get_side_to_move() == WHITE) ? winc : binc;
 
-            time_to_think = (my_time / 30) + (my_inc / 2);
+            time_to_think = (my_time / 25) + (my_inc / 2);
         }
 
         if (time_to_think < 20)

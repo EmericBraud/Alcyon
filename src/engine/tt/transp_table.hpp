@@ -171,7 +171,7 @@ public:
             bucket.entries[replace_idx].save(key, move, (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age);
     }
 
-    bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move)
+    bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move, TTFlag &flag)
     {
         TTBucket &bucket = table[key & index_mask];
         bool found_move = false;
@@ -195,7 +195,7 @@ public:
                 continue;
 
             int score = score_from_tt(s, ply);
-            std::uint8_t flag = f & 0x03;
+            flag = static_cast<TTFlag>(f & 0x03);
 
             if (flag == TT_EXACT)
             {
@@ -247,8 +247,8 @@ public:
         return (int)(count * 1000 / (sample * 4));
     }
 
-    inline void prefetch(uint64_t hash)
+    inline void prefetch(uint64_t hash) const
     {
-        cpu::prefetch(&table[hash & index_mask], true, 1);
+        cpu::prefetch<TTBucket, true, 1>(&table[hash & index_mask]);
     }
 };

@@ -6,6 +6,7 @@
 #include "core/move/generator/move_generator.hpp"
 
 #include "engine/config/eval.hpp"
+#include "engine/eval/virtual_board.hpp"
 
 #include <bit>
 
@@ -31,10 +32,10 @@ inline uint8_t get_pawn_files(U64 pawns)
     pawns |= (pawns >> 8);
     return static_cast<uint8_t>(pawns & 0xFF);
 }
-int Eval::evaluate_castling_and_safety(Color us, const Board &board)
+int Eval::evaluate_castling_and_safety(Color us, const VBoard &board)
 {
     const Color them = (Color)!us;
-    const int king_sq = board.get_eval_state().king_sq[us];
+    const int king_sq = board.king_sq[us];
     const int king_file = king_sq & 7;
 
     const U64 our_pawns = board.get_piece_bitboard(us, PAWN);
@@ -79,7 +80,7 @@ int Eval::evaluate_castling_and_safety(Color us, const Board &board)
 
     return score;
 }
-void Eval::evaluate_pawns(Color color, const Board &board, int &mg, int &eg)
+void Eval::evaluate_pawns(Color color, const VBoard &board, int &mg, int &eg)
 {
     const U64 our_pawns = board.get_piece_bitboard(color, PAWN);
     const U64 enemy_pawns = board.get_piece_bitboard(!color, PAWN);
@@ -121,7 +122,7 @@ void Eval::evaluate_pawns(Color color, const Board &board, int &mg, int &eg)
         }
     }
 }
-int Eval::eval(const Board &board, int alpha, int beta)
+int Eval::eval(const VBoard &board, int alpha, int beta)
 {
     const EvalState &state = board.get_eval_state();
 
@@ -216,11 +217,11 @@ int Eval::eval(const Board &board, int alpha, int beta)
         const Color winner = (eg_score > 0) ? WHITE : BLACK;
         const Color loser = (Color)!winner;
 
-        const int wk = state.king_sq[WHITE];
-        const int bk = state.king_sq[BLACK];
+        const int wk = board.king_sq[WHITE];
+        const int bk = board.king_sq[BLACK];
 
         // 1. Bonus pour pousser le roi adverse vers le bord (Center Manhatten distance)
-        const int loser_king = state.king_sq[loser];
+        const int loser_king = board.king_sq[loser];
         int k_file = loser_king & 7;
         int k_rank = loser_king >> 3;
 

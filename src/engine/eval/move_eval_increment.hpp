@@ -10,11 +10,10 @@
 
 struct EvalState
 {
-    int16_t mg_pst[2];  // Score Middle-Game PST
-    int16_t eg_pst[2];  // Score End-Game PST
-    int8_t phase;       // Phase actuelle (0 à 24)
-    U64 pawn_key;       // Clé Zobrist spécifique aux pions (pour la Pawn Table)
-    uint8_t king_sq[2]; // Position des rois
+    int16_t mg_pst[2]; // Score Middle-Game PST
+    int16_t eg_pst[2]; // Score End-Game PST
+    int8_t phase;      // Phase actuelle (0 à 24)
+    U64 pawn_key;      // Clé Zobrist spécifique aux pions (pour la Pawn Table)
     int16_t pieces_val[2];
 
     EvalState() = default;
@@ -148,10 +147,6 @@ struct EvalState
 
         // 4. RETOUR À LA CASE DE DÉPART
         add_piece(from_piece, from_sq, us);
-
-        // On remet la position du Roi à jour (case d'origine)
-        if (from_piece == KING)
-            king_sq[us] = from_sq;
     }
 
 private:
@@ -170,8 +165,6 @@ private:
 
         if (p == PAWN)
             pawn_key ^= zobrist_table[PAWN + (c == BLACK ? 6 : 0)][sq];
-        else if (p == KING)
-            king_sq[c] = sq;
     }
 
     inline void remove_piece(Piece p, int sq, Color c)

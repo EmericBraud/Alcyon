@@ -1,9 +1,12 @@
 #pragma once
 #include <chrono>
 
+#include <atomic>
+
 #include "engine/config/config.hpp"
 #include "engine/eval/pos_eval.hpp"
 #include "engine/tt/transp_table.hpp"
+#include "engine/eval/virtual_board.hpp"
 
 class EngineManager;
 
@@ -12,7 +15,7 @@ class SearchWorker
 private:
     const EngineManager &manager;
     // Ressources locales (Copie pour éviter les Data Races)
-    Board board;
+    VBoard board;
 
     // Ressources partagées (Références vers l'Orchestrateur)
     TranspositionTable &shared_tt;
@@ -32,6 +35,8 @@ private:
     long long local_nodes = 0;
     int thread_id;
 
+    bool check_stop();
+
 public:
     Move best_root_move = 0;
     Move out_move = 0;
@@ -40,7 +45,7 @@ public:
     // Appelé par l'orchestrateur pour chaque thread
     SearchWorker(
         const EngineManager &e,
-        const Board &b,
+        const VBoard &b,
         TranspositionTable &tt,
         std::atomic<bool> &stop,
         std::atomic<long long> &nodes,
@@ -93,16 +98,21 @@ public:
     }
 
     // --- utilitaires ---
-    int score_move(const Move &move, const Board &current_board, const Move &tt_move, int ply, const Move &prev_move) const;
+    int score_move(const Move &move, const VBoard &current_board, const Move &tt_move, int ply, const Move &prev_move) const;
     int score_capture(const Move &move) const;
     int see(int sq, Piece target, Piece attacker, Color side, int from_sq) const;
     std::string get_pv_line(int depth);
     int negamax_with_aspiration(int depth, int last_score);
 
-    inline Board &get_board()
+    inline VBoard &get_board()
     {
         return board;
     }
 
     void iterative_deepening();
+
+    TranspositionTable &get_tt()
+    {
+        return shared_tt;
+    }
 };

@@ -24,7 +24,7 @@ struct RootMove
 
 class EngineManager
 {
-    Board &main_board;
+    VBoard &main_board;
     TranspositionTable tt;
     double lmr_table[64][64];
 
@@ -47,7 +47,7 @@ public:
     {
         return root_best_move.load(std::memory_order_relaxed);
     }
-    EngineManager(Board &b) : main_board(b)
+    EngineManager(VBoard &b) : main_board(b)
     {
         tt.resize(512);
         init_lmr_table();
@@ -179,6 +179,14 @@ private:
         for (auto &worker : workers)
             threads.emplace_back(&SearchWorker::iterative_deepening, &worker);
 
+        for (int t = 0; t < num_threads; ++t)
+        {
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            CPU_SET(t, &cpuset); // uniquement le CPU t
+            pthread_setaffinity_np(threads[t].native_handle(), sizeof(cpu_set_t), &cpuset);
+        }
+
         for (auto &th : threads)
             th.join();
 
@@ -192,11 +200,24 @@ private:
             best_move = tt.get_move(main_board.get_hash());
             if (main_board.is_move_pseudo_legal(best_move) && main_board.is_move_legal(best_move))
             {
+                logs::uci << "Resolved : TT" << std::endl;
+                root_best_move.store(best_move, std::memory_order_relaxed);
                 logs::uci << "bestmove " << best_move.to_uci() << std::endl;
                 return;
             }
+            // Second attempt : we pick the best move from another thread
+            for (int w = 1; w < num_threads; ++w)
+            {
+                if (workers[w].best_root_move != 0)
+                {
+                    logs::uci << "Resolved : Worker " << w << std::endl;
+                    root_best_move.store(workers[w].best_root_move, std::memory_order_relaxed);
+                    logs::uci << "bestmove " << workers[w].best_root_move.to_uci() << std::endl;
+                    return;
+                }
+            }
 
-            // Second attempt : we pick the most promising move
+            // Third attempt : we pick the most promising move
             MoveList list;
             MoveGen::generate_legal_moves(main_board, list);
             for (int i = 0; i < list.size(); ++i)
@@ -206,7 +227,6 @@ private:
             {
                 // Panic mode : on joue le coup le plus prometteur
                 best_move = list.pick_best_move(0);
-                logs::debug << "info string WARNING: Search returned 0, playing emergency move." << std::endl;
             }
             else
             {
