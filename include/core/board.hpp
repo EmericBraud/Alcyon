@@ -1,10 +1,19 @@
 #pragma once
 
 #include <stdexcept>
+#include <expected>
+#include <cstdint>
+#include <array>
+#include <cstring>
 
+#include "core/utils/mask.hpp"
+#include "core/utils/constants.hpp"
 #include "core/move/history.hpp"
+#include "core/move/move_list.hpp"
 
-enum CastlingRights : uint8_t
+#include "engine/eval/move_eval_increment.hpp" // @TODO This should not be here. I need to create an herited subclass in engine/
+
+enum CastlingRights : std::uint8_t
 {
     WHITE_KINGSIDE = 0b0001,  // 1
     WHITE_QUEENSIDE = 0b0010, // 2
@@ -16,32 +25,32 @@ enum CastlingRights : uint8_t
 class Board
 {
 private:
-    static constexpr uint8_t PIECE_MASK = 0x07; // 0b00000111
-    static constexpr uint8_t COLOR_SHIFT = 3;   // 0b00001000
-    static constexpr uint8_t COLOR_MASK = 3;
-    static constexpr uint8_t EMPTY_SQ = (NO_COLOR << COLOR_SHIFT) | NO_PIECE;
+    static constexpr std::uint8_t PIECE_MASK = 0x07; // 0b00000111
+    static constexpr std::uint8_t COLOR_SHIFT = 3;   // 0b00001000
+    static constexpr std::uint8_t COLOR_MASK = 3;
+    static constexpr std::uint8_t EMPTY_SQ = (NO_COLOR << COLOR_SHIFT) | NO_PIECE;
 
 public:
     // Bitboards for each pieces
 
     // Bitboards for fast occupancy queries
-    bitboard occupancies[3]; // [0] WHITE, [1] BLACK, [2] ALL (NO_COLOR)
+    U64 occupancies[3]; // [0] WHITE, [1] BLACK, [2] ALL (NO_COLOR)
     U64 zobrist_key;
 
     struct State
     {
-        uint8_t castling_rights;
-        uint8_t en_passant_sq;
+        std::uint8_t castling_rights;
+        std::uint8_t en_passant_sq;
         uint16_t halfmove_clock;
         Color side_to_move;
         int last_irreversible_index;
     } state;
 
-    std::array<bitboard, N_PIECES_TYPE> pieces_occ;
+    std::array<U64, core::constants::NumPieceVariants> pieces_occ;
 
     EvalState eval_state;
 
-    uint8_t mailbox[64];
+    std::uint8_t mailbox[64];
     History *history_tagged;
 
     inline Piece get_p(int sq) const { return static_cast<Piece>(mailbox[sq] & PIECE_MASK); }
@@ -217,10 +226,10 @@ public:
         state.side_to_move = static_cast<Color>(1 - static_cast<int>(state.side_to_move));
     }
 
-    inline bitboard &get_piece_bitboard(const Color color, const Piece type)
+    inline U64 &get_piece_bitboard(const Color color, const Piece type)
     {
         assert(type <= KING);
-        size_t zero_based_index = (color * N_PIECES_TYPE_HALF) + (type);
+        size_t zero_based_index = (color * core::constants::PieceTypeCount) + (type);
 
         return pieces_occ[zero_based_index];
     }
@@ -230,64 +239,64 @@ public:
         return state.side_to_move;
     }
 
-    inline uint8_t get_castling_rights()
+    inline std::uint8_t get_castling_rights()
     {
         return state.castling_rights;
     }
 
-    inline bitboard &get_piece_bitboard(const Color color, const int type)
+    inline U64 &get_piece_bitboard(const Color color, const int type)
     {
         return get_piece_bitboard(color, static_cast<Piece>(type));
     }
-    inline const bitboard &get_piece_bitboard(const Color color, const Piece type) const
+    inline const U64 &get_piece_bitboard(const Color color, const Piece type) const
     {
         if (type > KING) // Should be disabled on prod for increased performances
         {
             throw std::out_of_range("Invalid piece type requested for Bitboard access.");
         }
-        size_t zero_based_index = (color * N_PIECES_TYPE_HALF) + (type);
+        size_t zero_based_index = (color * core::constants::PieceTypeCount) + (type);
 
         return pieces_occ[zero_based_index];
     }
-    inline const bitboard &get_piece_bitboard(const Color color, const int type) const
+    inline const U64 &get_piece_bitboard(const Color color, const int type) const
     {
         return get_piece_bitboard(color, static_cast<Piece>(type));
     }
 
     template <Color Us, Piece p>
-    inline bitboard &get_piece_bitboard()
+    inline U64 &get_piece_bitboard()
     {
         static_assert(p <= KING, "Invalid piece type");
-        constexpr size_t index = (Us * N_PIECES_TYPE_HALF) + p;
+        constexpr size_t index = (Us * core::constants::PieceTypeCount) + p;
         return pieces_occ[index];
     }
 
     template <Color Us, Piece p>
-    inline bitboard get_piece_bitboard() const
+    inline U64 get_piece_bitboard() const
     {
         static_assert(p <= KING, "Invalid piece type");
-        constexpr size_t index = (Us * N_PIECES_TYPE_HALF) + p;
+        constexpr size_t index = (Us * core::constants::PieceTypeCount) + p;
         return pieces_occ[index];
     }
 
-    inline bitboard &get_occupancy(Color c)
+    inline U64 &get_occupancy(Color c)
     {
         return occupancies[c];
     }
-    inline const bitboard &get_occupancy(Color c) const
+    inline const U64 &get_occupancy(Color c) const
     {
         return occupancies[c];
     }
 
     template <Color Us>
-    inline const bitboard &get_occupancy() const
+    inline const U64 &get_occupancy() const
     {
         return occupancies[Us];
     }
 
     inline void update_square_bitboard(Color color, Piece type, int square, bool fill)
     {
-        bitboard &bitboard_ref = get_piece_bitboard(color, type);
+        U64 &bitboard_ref = get_piece_bitboard(color, type);
         if (fill)
             bitboard_ref |= (1ULL << square);
         else
@@ -296,8 +305,8 @@ public:
     inline void update_occupancy()
     {
         // Reset
-        occupancies[WHITE] = EMPTY_MASK;
-        occupancies[BLACK] = EMPTY_MASK;
+        occupancies[WHITE] = core::mask::EmptyMask;
+        occupancies[BLACK] = core::mask::EmptyMask;
 
         for (int i{PAWN}; i <= KING; ++i)
         {
@@ -310,7 +319,7 @@ public:
     }
     inline std::pair<Color, Piece> get_piece_on_square(int sq) const
     {
-        uint8_t val = mailbox[sq];
+        std::uint8_t val = mailbox[sq];
         if (val == EMPTY_SQ)
             return {NO_COLOR, NO_PIECE};
         return {static_cast<Color>((val >> COLOR_SHIFT) & COLOR_MASK), static_cast<Piece>(val & PIECE_MASK)};
@@ -318,11 +327,11 @@ public:
 
     inline bool is_occupied(int sq, Piece piece, Color color) const
     {
-        uint8_t val = mailbox[sq];
+        std::uint8_t val = mailbox[sq];
         if (piece == NO_PIECE) [[likely]]
             return val != EMPTY_SQ && (color == NO_COLOR || (val >> COLOR_SHIFT) == color);
 
-        uint8_t target = (color << COLOR_SHIFT) | piece;
+        std::uint8_t target = (color << COLOR_SHIFT) | piece;
         return val == target;
     }
     template <Color Us>
@@ -367,11 +376,11 @@ public:
 
     bool is_move_pseudo_legal(const Move &move) const;
 
-    inline uint8_t get_castling_rights() const
+    inline std::uint8_t get_castling_rights() const
     {
         return state.castling_rights;
     }
-    inline uint8_t get_en_passant_sq() const
+    inline std::uint8_t get_en_passant_sq() const
     {
         return state.en_passant_sq;
     }
@@ -383,12 +392,12 @@ public:
 
     inline void play_null_move(int &stored_ep_sq)
     {
-        if (state.en_passant_sq != EN_PASSANT_SQ_NONE)
+        if (state.en_passant_sq != core::constants::EnPassantSqNone)
             zobrist_key ^= zobrist_en_passant[state.en_passant_sq % 8];
         else
             zobrist_key ^= zobrist_en_passant[8];
         stored_ep_sq = state.en_passant_sq;
-        state.en_passant_sq = EN_PASSANT_SQ_NONE;
+        state.en_passant_sq = core::constants::EnPassantSqNone;
         zobrist_key ^= zobrist_en_passant[8];
 
         switch_trait();
@@ -398,7 +407,7 @@ public:
         switch_trait();
         zobrist_key ^= zobrist_en_passant[8];
         state.en_passant_sq = stored_ep_sq;
-        if (state.en_passant_sq != EN_PASSANT_SQ_NONE)
+        if (state.en_passant_sq != core::constants::EnPassantSqNone)
             zobrist_key ^= zobrist_en_passant[state.en_passant_sq % 8];
         else
             zobrist_key ^= zobrist_en_passant[8];
@@ -423,14 +432,14 @@ public:
             return -1;
 
         // Ordre de priorité : Pion < Cavalier < Fou < Tour < Dame < Roi
-        const int offset = side == WHITE ? 0 : N_PIECES_TYPE_HALF;
+        const int offset = side == WHITE ? 0 : core::constants::PieceTypeCount;
         for (int type = PAWN; type <= KING; ++type)
         {
             U64 subset = side_attackers & pieces_occ[type + offset];
             if (subset)
             {
                 found_type = static_cast<Piece>(type);
-                return get_lsb_index(subset);
+                return core::cpu::get_lsb_index(subset);
             }
         }
         return -1;
@@ -441,7 +450,7 @@ public:
         return eval_state;
     }
 
-    inline const std::array<bitboard, N_PIECES_TYPE> get_all_bitboards() const
+    inline const std::array<U64, core::constants::NumPieceVariants> get_all_bitboards() const
     {
         return pieces_occ;
     }
@@ -477,12 +486,12 @@ public:
         h ^= zobrist_side_to_move;
 
         // 2. Déplacement de la pièce
-        h ^= zobrist_table[state.side_to_move * N_PIECES_TYPE_HALF + m.get_from_piece()][m.get_from_sq()];
-        h ^= zobrist_table[state.side_to_move * N_PIECES_TYPE_HALF + m.get_from_piece()][m.get_to_sq()];
+        h ^= zobrist_table[state.side_to_move * core::constants::PieceTypeCount + m.get_from_piece()][m.get_from_sq()];
+        h ^= zobrist_table[state.side_to_move * core::constants::PieceTypeCount + m.get_from_piece()][m.get_to_sq()];
 
         // 3. Gestion de la capture
         if (m.get_to_piece() != NO_PIECE)
-            h ^= zobrist_table[!state.side_to_move * N_PIECES_TYPE_HALF + m.get_to_piece()][m.get_to_sq()];
+            h ^= zobrist_table[!state.side_to_move * core::constants::PieceTypeCount + m.get_to_piece()][m.get_to_sq()];
 
         return h;
     }

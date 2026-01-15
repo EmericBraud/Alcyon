@@ -1,4 +1,17 @@
 #pragma once
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <cmath>
+#include <experimental/scope>
+
+#include "core/utils/logger.hpp"
+#include "core/move/move.hpp"
+#include "core/board.hpp"
+#include "core/move/move_generator.hpp"
+
+#include "engine/config/config.hpp"
+#include "engine/transp_table.hpp"
 #include "engine/engine.hpp"
 
 struct RootMove
@@ -99,7 +112,7 @@ public:
         stop_search = false;
         total_nodes = 0;
         time_limit = time_ms;
-        start_time = Clock::now();
+        start_time = std::chrono::steady_clock::now();
         tt.next_generation();
 
         // 2. Création d'un worker unique (pas besoin de multithread pour un simple eval)
@@ -107,7 +120,7 @@ public:
 
         // 3. Recherche par itérations successives (Iterative Deepening)
         int score = 0;
-        for (int d = 1; d <= MAX_DEPTH; ++d)
+        for (int d = 1; d <= engine::config::search::MaxDepth; ++d)
         {
             score = worker.negamax_with_aspiration(d, score);
 
@@ -143,7 +156,7 @@ private:
     {
         for (int d = 1; d < 64; ++d)
             for (int m = 1; m < 64; ++m)
-                lmr_table[d][m] = 0.5 + log(d) * log(m) / 2.25;
+                lmr_table[d][m] = 0.5 + std::log(d) * std::log(m) / 2.25;
     }
 
     void start_workers()
@@ -173,13 +186,13 @@ private:
 
         if (best_move.get_value() == 0) [[unlikely]]
         {
-            logs::uci << "PANICK MODE" << std::endl;
+            core::logs::uci << "PANICK MODE" << std::endl;
             // Panick mode : we try to find the best possible legal move
             // First attempt : transp table
             best_move = tt.get_move(main_board.get_hash());
             if (main_board.is_move_pseudo_legal(best_move) && main_board.is_move_legal(best_move))
             {
-                logs::uci << "bestmove " << best_move.to_uci() << std::endl;
+                core::logs::uci << "bestmove " << best_move.to_uci() << std::endl;
                 return;
             }
 
@@ -193,13 +206,13 @@ private:
             {
                 // Panic mode : on joue le coup le plus prometteur
                 best_move = list.pick_best_move(0);
-                logs::debug << "info string WARNING: Search returned 0, playing emergency move." << std::endl;
+                core::logs::debug << "info string WARNING: Search returned 0, playing emergency move." << std::endl;
             }
             else
             {
                 // Vraiment aucun coup (Mat ou Pat)
                 // UCI requiert "bestmove (none)" dans certains cas, ou juste null
-                logs::uci << "bestmove (none)" << std::endl;
+                core::logs::uci << "bestmove (none)" << std::endl;
                 root_best_move.store(0, std::memory_order_relaxed);
                 return;
             }
@@ -219,10 +232,10 @@ private:
             Move second_move = tt.get_move(main_board.get_hash());
             if (main_board.is_move_pseudo_legal(second_move) && main_board.is_move_legal(second_move))
             {
-                logs::uci << "bestmove " << best_move.to_uci() << " ponder " << second_move.to_uci() << std::endl;
+                core::logs::uci << "bestmove " << best_move.to_uci() << " ponder " << second_move.to_uci() << std::endl;
                 return;
             }
         }
-        logs::uci << "bestmove " << best_move.to_uci() << std::endl;
+        core::logs::uci << "bestmove " << best_move.to_uci() << std::endl;
     }
 };

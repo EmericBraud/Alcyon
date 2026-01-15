@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "core/move/move_generator.hpp"
+#include <random>
 
 class HistoryTest : public ::testing::Test
 {
@@ -81,7 +82,7 @@ TEST_F(HistoryTest, MoveConstructor_TransfersOwnership)
 TEST_F(HistoryTest, PlayUnplay_HistoryIntegrity)
 {
     Board b;
-    b.load_fen(STARTING_POS_FEN);
+    b.load_fen(core::constants::FenInitPos);
     U64 initial_key = b.get_hash();
 
     Move m1(Square::e2, Square::e4, PAWN, Move::Flags::DOUBLE_PUSH);
@@ -97,7 +98,7 @@ TEST_F(HistoryTest, PlayUnplay_HistoryIntegrity)
 TEST_F(HistoryTest, ZobristConsistency_DeepRandomSearch)
 {
     Board b;
-    b.load_fen(STARTING_POS_FEN);
+    b.load_fen(core::constants::FenInitPos);
 
     const int MAX_PLY = 50;     // Profondeur de la simulation
     const int ITERATIONS = 100; // Nombre de parcours complets

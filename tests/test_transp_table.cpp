@@ -1,4 +1,4 @@
-#include "engine/engine.hpp"
+#include "engine/transp_table.hpp"
 #include "gtest/gtest.h"
 
 class TTTest : public ::testing::Test
@@ -15,7 +15,7 @@ TEST_F(TTTest, MateScoreConsistency)
     uint64_t key = 12345ULL;
 
     // Si on est au ply 5 et qu'on voit un mat dans 3 coups (score = MATE - 8)
-    int score_found_at_ply_5 = MATE_SCORE - 8;
+    int score_found_at_ply_5 = engine::config::eval::MateScore - 8;
     int ply_found = 5;
 
     tt.store(key, 10, ply_found, score_found_at_ply_5, TT_EXACT, Move());
@@ -30,8 +30,8 @@ TEST_F(TTTest, MateScoreConsistency)
     // CORRECTION :
     // Le mat était à 3 coups de distance du ply 5 (8 - 5 = 3).
     // À la racine (ply 0), il est donc toujours à 3 coups de distance.
-    // Le score attendu est MATE_SCORE - 3.
-    ASSERT_EQ(retrieved_score, MATE_SCORE - 3);
+    // Le score attendu est engine::config::eval::MateScore - 3.
+    ASSERT_EQ(retrieved_score, engine::config::eval::MateScore - 3);
 }
 TEST_F(TTTest, DepthReplacement)
 {
@@ -47,7 +47,7 @@ TEST_F(TTTest, DepthReplacement)
 
     int score;
     Move m = 0;
-    tt.probe(key, 5, 0, -INF, INF, score, m);
+    tt.probe(key, 5, 0, -engine::config::eval::Inf, engine::config::eval::Inf, score, m);
     ASSERT_EQ(score, 100); // La profondeur 5 doit avoir été conservée car 5 > 3
 }
 TEST_F(TTTest, AlphaBetaCuts)

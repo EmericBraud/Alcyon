@@ -1,5 +1,10 @@
 #include "interface/gui.hpp"
 
+#include "core/utils/logger.hpp"
+#include "core/move/move_generator.hpp"
+
+#include "engine/config/config.hpp"
+
 void GUI::run()
 {
     while (window.isOpen())
@@ -8,7 +13,7 @@ void GUI::run()
         // computer.play();
         if (auto_play && board.get_side_to_move() == computer_side)
         {
-            logs::debug << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
+            core::logs::debug << "Playing position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
             computer.start_search();
         }
         while (window.pollEvent(event))
@@ -56,20 +61,20 @@ void GUI::run()
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::E)
             {
-                logs::debug << "Evaluating position with depth " << MAX_DEPTH << " ..." << std::endl;
+                core::logs::debug << "Evaluating position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
                 const int score{computer.evaluate_position(5000)};
-                logs::debug << "Position score : " << score << std::endl;
+                core::logs::debug << "Position score : " << score << std::endl;
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::P)
             {
-                logs::debug << "Playing position with depth " << MAX_DEPTH << " ..." << std::endl;
+                core::logs::debug << "Playing position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
                 computer.start_search(20000, false, false);
                 board.play(computer.get_root_best_move());
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::U)
             {
                 board.undo_last_move();
-                logs::debug << "Move undone" << std::endl;
+                core::logs::debug << "Move undone" << std::endl;
             }
         }
         window.clear(BG_COLOR);
@@ -126,11 +131,11 @@ void GUI::draw_pieces()
     {
         for (int piece{PAWN}; piece <= KING; ++piece)
         {
-            const bitboard b = board.get_piece_bitboard(color, piece);
-            bitboard temp_bb = b;
+            const U64 b = board.get_piece_bitboard(color, piece);
+            U64 temp_bb = b;
             while (temp_bb != 0)
             {
-                const int sq = pop_lsb(temp_bb);
+                const int sq = core::cpu::pop_lsb(temp_bb);
                 const sf::Texture &texture = m_piece_textures[color][piece];
                 sf::Vector2u textureSize = texture.getSize();
                 const double scale = static_cast<double>(SQ_PX_SIZE) / static_cast<double>(textureSize.x);

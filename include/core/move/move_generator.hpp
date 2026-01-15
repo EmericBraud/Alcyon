@@ -1,19 +1,31 @@
 #pragma once
 
-#include "core/board.hpp"
+#include <array>
 
+#ifdef __BMI2__
+#include <immintrin.h>
+#endif
+
+#include "core/utils/file.hpp"
+#include "core/utils/mask.hpp"
+#include "core/utils/cpu.hpp"
+#include "core/utils/constants.hpp"
+#include "core/piece/color.hpp"
+#include "core/piece/piece.hpp"
+#include "move_list.hpp"
+#include "core/board.hpp"
 namespace MoveGen
 {
-    alignas(64) extern std::array<U64, BOARD_SIZE> KnightAttacks;
-    alignas(64) extern std::array<U64, BOARD_SIZE> KingAttacks;
-    alignas(64) extern std::array<U64, BOARD_SIZE> RookMasks;
-    alignas(64) extern std::array<U64, BOARD_SIZE> BishopMasks;
-    alignas(64) extern std::array<U64, BOARD_SIZE> PawnAttacksWhite;
-    alignas(64) extern std::array<U64, BOARD_SIZE> PawnAttacksBlack;
-    alignas(64) extern std::array<U64, BOARD_SIZE> PawnPushWhite;
-    alignas(64) extern std::array<U64, BOARD_SIZE> PawnPushBlack;
-    alignas(64) extern std::array<U64, BOARD_SIZE> PawnPush2White;
-    alignas(64) extern std::array<U64, BOARD_SIZE> PawnPush2Black;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> KnightAttacks;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> KingAttacks;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> RookMasks;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> BishopMasks;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> PawnAttacksWhite;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> PawnAttacksBlack;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> PawnPushWhite;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> PawnPushBlack;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> PawnPush2White;
+    alignas(64) extern std::array<U64, core::constants::BoardSize> PawnPush2Black;
 
 #ifdef __BMI2__
     struct MagicPEXT
@@ -21,8 +33,8 @@ namespace MoveGen
         U64 mask;
         long unsigned int index_start;
     };
-    extern std::array<MagicPEXT, BOARD_SIZE> RookMagics;
-    extern std::array<MagicPEXT, BOARD_SIZE> BishopMagics;
+    extern std::array<MagicPEXT, core::constants::BoardSize> RookMagics;
+    extern std::array<MagicPEXT, core::constants::BoardSize> BishopMagics;
 
 #else
     struct Magic
@@ -33,18 +45,18 @@ namespace MoveGen
         long unsigned int index_start;
     };
 
-    extern std::array<Magic, BOARD_SIZE> RookMagics;
-    extern std::array<Magic, BOARD_SIZE> BishopMagics;
+    extern std::array<Magic, core::constants::BoardSize> RookMagics;
+    extern std::array<Magic, core::constants::BoardSize> BishopMagics;
 
 #endif
 
-    extern std::array<U64, ROOK_ATTACKS_SIZE> RookAttacks;
-    extern std::array<U64, BISHOP_ATTACKS_SIZE> BishopAttacks;
+    extern std::array<U64, core::file::RookAttacksFileSize> RookAttacks;
+    extern std::array<U64, core::file::BishopAttacksFileSize> BishopAttacks;
 
     void initialize_bitboard_tables();
 
     void generate_pawn_moves(Board &board, const Color color, MoveList &list);
-    inline U64 generate_rook_moves(int from_sq, const bitboard occupancy)
+    inline U64 generate_rook_moves(int from_sq, const U64 occupancy)
     {
 #ifdef __BMI2__
         const MoveGen::MagicPEXT magic = MoveGen::RookMagics[from_sq];
@@ -61,7 +73,7 @@ namespace MoveGen
 #endif
     }
 
-    inline U64 generate_bishop_moves(int from_sq, const bitboard occupancy)
+    inline U64 generate_bishop_moves(int from_sq, const U64 occupancy)
     {
 #ifdef __BMI2__
         const MoveGen::MagicPEXT magic = MoveGen::BishopMagics[from_sq];
@@ -94,7 +106,7 @@ namespace MoveGen
                 U64 push2 = (push1 << 8) & ~occ & 0x00000000FF000000ULL;
                 target_mask = push1 | push2;
                 target_mask |= PawnAttacksWhite[sq] & board.get_occupancy(BLACK);
-                if (ep_sq != EN_PASSANT_SQ_NONE)
+                if (ep_sq != core::constants::EnPassantSqNone)
                     target_mask |= PawnAttacksWhite[sq] & (1ULL << ep_sq);
             }
             else
@@ -103,7 +115,7 @@ namespace MoveGen
                 U64 push2 = (push1 >> 8) & ~occ & 0x000000FF00000000ULL;
                 target_mask = push1 | push2;
                 target_mask |= PawnAttacksBlack[sq] & board.get_occupancy(WHITE);
-                if (ep_sq != EN_PASSANT_SQ_NONE)
+                if (ep_sq != core::constants::EnPassantSqNone)
                     target_mask |= PawnAttacksBlack[sq] & (1ULL << ep_sq);
             }
         }
@@ -188,7 +200,7 @@ namespace MoveGen
     void load_attack_tables();
 
 #else
-    void export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook);
+    void export_attack_table(const std::array<MoveGen::Magic, core::constants::BoardSize> m_array, bool is_rook);
     void run_magic_searcher();
 
     /// @brief Gets the piece attack's sizes to then write them as static in the code (unused on prod)
@@ -235,11 +247,11 @@ namespace MoveGen
             }
         }
     }
-    inline void push_moves_from_mask(MoveList &list, int from, Piece type, bitboard targets, const Board &board)
+    inline void push_moves_from_mask(MoveList &list, int from, Piece type, U64 targets, const Board &board)
     {
         while (targets)
         {
-            int to = pop_lsb(targets); //
+            int to = core::cpu::pop_lsb(targets); //
             Move m{from, to, type};
             init_move_flags(board, m);
             list.push(m);

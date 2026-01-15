@@ -1,18 +1,11 @@
 #include "engine/engine.hpp"
-#include "engine/engine_manager.hpp"
-//clang-format off
-static constexpr int MVV_LVA_TABLE[7][7] = {
-    // Attaquants:  P   N    B    R    Q    K  NONE
-    /* PAWN   */ {105, 104, 103, 102, 101, 100, 0},
-    /* KNIGHT */ {205, 204, 203, 202, 201, 200, 0},
-    /* BISHOP */ {305, 304, 303, 302, 301, 300, 0},
-    /* ROOK   */ {405, 404, 403, 402, 401, 400, 0},
-    /* QUEEN  */ {505, 504, 503, 502, 501, 500, 0},
-    /* KING   */ {605, 604, 603, 602, 601, 600, 0},
-    /* NONE   */ {0, 0, 0, 0, 0, 0, 0}};
-//clang-format on
 
-static constexpr int TACTICAL_SCORE = 7000;
+#include "core/utils/logger.hpp"
+
+#include "engine/config/config.hpp"
+#include "engine/config/eval.hpp"
+#include "engine/utils/random.hpp"
+#include "engine/engine_manager.hpp"
 
 int SearchWorker::score_move(const Move &move, const Board &board, const Move &tt_move, int ply, const Move &prev_move) const
 {
@@ -28,7 +21,7 @@ int SearchWorker::score_move(const Move &move, const Board &board, const Move &t
     if (to_piece != NO_PIECE || flags == Move::Flags::EN_PASSANT_CAP || move.is_promotion())
     {
         const Piece target = (flags == Move::Flags::EN_PASSANT_CAP) ? PAWN : to_piece;
-        const int mvv_lva = MVV_LVA_TABLE[target][from_piece];
+        const int mvv_lva = engine::config::eval::MvvLvaTable[target][from_piece];
 
         if (move.is_promotion())
         {
@@ -125,8 +118,8 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 {
     int delta = (depth >= 12) ? 100 : (depth >= 8) ? 50
                                                    : 16;
-    int alpha = -INF;
-    int beta = INF;
+    int alpha = -engine::config::eval::Inf;
+    int beta = engine::config::eval::Inf;
 
     if (depth >= 5)
     {
@@ -142,7 +135,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         ++iterations;
         int score = negamax(depth, alpha, beta, 0);
 
-        if (depth >= 12 && std::abs(score) >= MATE_SCORE - 100)
+        if (depth >= 12 && std::abs(score) >= engine::config::eval::MateScore - 100)
             return score;
 
         if (shared_stop.load(std::memory_order_relaxed))
@@ -152,6 +145,8 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         {
             shared_stop.store(true, std::memory_order_relaxed);
             return score;
+            // 2. Vérification de pseudo-légalité AVANT de toucher au board
+            // Cela évite les asserts ou crashs dans is_move_legal si m est corrompu
         }
 
         // Succès : score dans la fenêtre
@@ -166,24 +161,24 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         {
             // Fail-low
             delta = std::max(delta * 2, 50);
-            alpha = std::max(-INF, alpha - delta);
+            alpha = std::max(-engine::config::eval::Inf, alpha - delta);
             if (thread_id == 0)
-                logs::debug << "info string fail low" << std::endl;
+                core::logs::debug << "info string fail low" << std::endl;
         }
         else if (score >= beta)
         {
             // Fail-high
             delta = std::max(delta * 2, 50);
-            beta = std::min(INF, beta + delta);
+            beta = std::min(engine::config::eval::Inf, beta + delta);
             if (thread_id == 0)
-                logs::debug << "info string fail high" << std::endl;
+                core::logs::debug << "info string fail high" << std::endl;
         }
 
         // Sécurité
         if (iterations >= max_iterations || delta > 2000)
         {
-            alpha = -INF;
-            beta = INF;
+            alpha = -engine::config::eval::Inf;
+            beta = engine::config::eval::Inf;
         }
     }
 }
@@ -191,7 +186,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 void SearchWorker::iterative_deepening()
 {
     int last_score = 0;
-    for (int depth = 1; depth < MAX_DEPTH; ++depth)
+    for (int depth = 1; depth < engine::config::search::MaxDepth; ++depth)
     {
         age_history();
         last_score = negamax_with_aspiration(depth, last_score);
@@ -199,7 +194,7 @@ void SearchWorker::iterative_deepening()
             return;
         if (thread_id == 0)
         {
-            if (depth == MAX_DEPTH)
+            if (depth == engine::config::search::MaxDepth)
             {
                 shared_stop.store(true, std::memory_order_relaxed);
             }
@@ -210,7 +205,7 @@ void SearchWorker::iterative_deepening()
 
             long long nodes = global_nodes.load(std::memory_order_relaxed);
             long long nps = nodes * 1000 / elapsed_ms;
-            logs::uci
+            core::logs::uci
                 << "info depth " << depth
                 << " score cp " << last_score
                 << " nodes " << nodes
@@ -248,7 +243,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     }
     const bool is_pv = (beta - alpha > 1);
     const bool in_check = board.is_king_attacked<Us>();
-    const bool is_mate_node = (alpha < MATE_SCORE && beta > -MATE_SCORE && in_check);
+    const bool is_mate_node = (alpha < engine::config::eval::MateScore && beta > -engine::config::eval::MateScore && in_check);
 
     // Razoring
     if (!in_check && !is_pv && depth <= 3)
@@ -270,7 +265,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // 4. Quiescence Search à l'horizon
     if (depth <= 0)
     {
-        if (in_check && ply < MAX_DEPTH - 5)
+        if (in_check && ply < engine::config::search::MaxDepth - 5)
         {
             depth = 1;
         }
@@ -280,7 +275,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         }
     }
 
-    int best_score = -INF;
+    int best_score = -engine::config::eval::Inf;
     Move best_move_this_node = 0;
     int moves_searched = 0;
 
@@ -318,13 +313,13 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         board.unplay_null_move(stored_ep);
 
         if (score >= beta)
-            return (score >= MATE_SCORE - MAX_DEPTH) ? beta : score;
+            return (score >= engine::config::eval::MateScore - engine::config::search::MaxDepth) ? beta : score;
     }
 
     bool futil_pruning = false;
     int futil_margin = 0;
 
-    if (depth <= 3 && !in_check && ply > 0 && (best_score > -MATE_SCORE + 100) && !is_mate_node)
+    if (depth <= 3 && !in_check && ply > 0 && (best_score > -engine::config::eval::MateScore + 100) && !is_mate_node)
     {
         futil_margin = 175 + 110 * depth;
         int static_eval = Eval::lazy_eval_relative<Us>(board);
@@ -352,7 +347,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             uint64_t moveKey = (uint64_t)list.moves[i].get_value() * 0x9e3779b97f4a7c15ULL;
             uint64_t h = posKey ^ moveKey;
 
-            uint64_t r = splitmix64(h);
+            uint64_t r = engine::random::splitmix64(h);
 
             int delta = std::max(1, std::abs(base) / 12);
             int noise = int(r & 1023) - 512; // [-512 .. 511]
@@ -376,7 +371,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             continue;
 
         int score;
-        bool is_tactical = (list.scores[i] >= TACTICAL_SCORE);
+        bool is_tactical = (list.scores[i] >= engine::config::eval::TacticalScore);
 
         // --- LATE MOVE PRUNING (LMP) ---
         // Si on n'est pas en échec, à faible profondeur, on limite le nombre de coups calmes
@@ -502,7 +497,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // 8. Gestion des Mats et Pats
     if (moves_searched == 0)
     {
-        int score = in_check ? -MATE_SCORE + ply : 0;
+        int score = in_check ? -engine::config::eval::MateScore + ply : 0;
         shared_tt.store(board.get_hash(), depth, ply, score, TT_EXACT, 0);
         return score;
     }

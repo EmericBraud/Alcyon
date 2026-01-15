@@ -1,7 +1,12 @@
 #pragma once
-#include "core/move/move_list.hpp"
+#include <cstdint>
+#include <memory>
 
-enum TTFlag : uint8_t
+#include "core/utils/cpu.hpp"
+#include "core/move/move.hpp"
+#include "engine/config/config.hpp"
+
+enum TTFlag : std::uint8_t
 {
     TT_EXACT = 0,
     TT_ALPHA = 1,
@@ -12,7 +17,7 @@ struct TTEntry
 {
     uint64_t key;
     uint64_t data;
-    void save(uint64_t k, Move m, int16_t s, uint8_t d, uint8_t f)
+    void save(uint64_t k, Move m, int16_t s, std::uint8_t d, std::uint8_t f)
     {
         uint64_t d_pack = (uint64_t)m.get_value() |
                           ((uint64_t)(uint16_t)s << 32) |
@@ -23,7 +28,7 @@ struct TTEntry
         key = k;
     }
 
-    bool load(uint64_t k_target, Move &m, int16_t &s, uint8_t &d, uint8_t &f) const
+    bool load(uint64_t k_target, Move &m, int16_t &s, std::uint8_t &d, std::uint8_t &f) const
     {
         const uint64_t k = key;
 
@@ -33,8 +38,8 @@ struct TTEntry
             const uint64_t d_pack = d_xor ^ k;
             m = Move(static_cast<uint32_t>(d_pack & 0xFFFFFFFF));
             s = static_cast<int16_t>((d_pack >> 32) & 0xFFFF);
-            d = static_cast<uint8_t>((d_pack >> 48) & 0xFF);
-            f = static_cast<uint8_t>((d_pack >> 56) & 0xFF);
+            d = static_cast<std::uint8_t>((d_pack >> 48) & 0xFF);
+            f = static_cast<std::uint8_t>((d_pack >> 56) & 0xFF);
             return true;
         }
         return false;
@@ -54,22 +59,22 @@ private:
     std::unique_ptr<TTBucket[]> table;
     size_t bucket_count = 0;
     size_t index_mask = 0;
-    uint8_t current_age = 0;
+    std::uint8_t current_age = 0;
 
     int score_to_tt(int score, int ply)
     {
-        if (score > MATE_SCORE - 256)
+        if (score > engine::config::eval::MateScore - 256)
             return score + ply;
-        if (score < -MATE_SCORE + 256)
+        if (score < -engine::config::eval::MateScore + 256)
             return score - ply;
         return score;
     }
 
     int score_from_tt(int score, int ply)
     {
-        if (score > MATE_SCORE - 256)
+        if (score > engine::config::eval::MateScore - 256)
             return score - ply;
-        if (score < -MATE_SCORE + 256)
+        if (score < -engine::config::eval::MateScore + 256)
             return score + ply;
         return score;
     }
@@ -106,7 +111,7 @@ public:
 
     void next_generation() { current_age = (current_age + 4) & 0xFC; }
 
-    void store(uint64_t key, int depth, int ply, int score, uint8_t flag, Move move)
+    void store(uint64_t key, int depth, int ply, int score, std::uint8_t flag, Move move)
     {
         TTBucket &bucket = table[key & index_mask];
         int replace_idx = -1;
@@ -121,15 +126,15 @@ public:
             {
                 Move m_prev;
                 int16_t s_prev;
-                uint8_t d_prev;
-                uint8_t f_prev;
+                std::uint8_t d_prev;
+                std::uint8_t f_prev;
                 if (bucket.entries[i].load(key, m_prev, s_prev, d_prev, f_prev))
                 {
                     bool old_gen = ((f_prev ^ current_age) & 0xFC) != 0;
                     if (depth >= d_prev || old_gen)
                     {
                         bucket.entries[i].save(key, (move != 0) ? move : m_prev,
-                                               (int16_t)score_to_tt(score, ply), (uint8_t)depth, flag | current_age);
+                                               (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age);
                     }
                 }
                 return;
@@ -142,8 +147,8 @@ public:
             }
 
             uint64_t d_pack = bucket.entries[i].data ^ k_old;
-            uint8_t d_old = (uint8_t)((d_pack >> 48) & 0xFF);
-            uint8_t f_old = (uint8_t)((d_pack >> 56) & 0xFF);
+            std::uint8_t d_old = (std::uint8_t)((d_pack >> 48) & 0xFF);
+            std::uint8_t f_old = (std::uint8_t)((d_pack >> 56) & 0xFF);
 
             int priority = d_old + (((f_old ^ current_age) & 0xFC) ? 0 : 100);
             if (priority < min_priority)
@@ -154,7 +159,7 @@ public:
         }
 
         if (replace_idx != -1)
-            bucket.entries[replace_idx].save(key, move, (int16_t)score_to_tt(score, ply), (uint8_t)depth, flag | current_age);
+            bucket.entries[replace_idx].save(key, move, (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age);
     }
 
     bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move)
@@ -166,8 +171,8 @@ public:
         {
             Move m;
             int16_t s;
-            uint8_t d;
-            uint8_t f;
+            std::uint8_t d;
+            std::uint8_t f;
             if (!bucket.entries[i].load(key, m, s, d, f))
                 continue;
 
@@ -181,7 +186,7 @@ public:
                 continue;
 
             int score = score_from_tt(s, ply);
-            uint8_t flag = f & 0x03;
+            std::uint8_t flag = f & 0x03;
 
             if (flag == TT_EXACT)
             {
@@ -210,8 +215,8 @@ public:
         {
             Move m;
             int16_t s;
-            uint8_t d;
-            uint8_t f;
+            std::uint8_t d;
+            std::uint8_t f;
             if (bucket.entries[i].load(key, m, s, d, f))
                 return m;
         }
@@ -235,6 +240,6 @@ public:
 
     inline void prefetch(uint64_t hash)
     {
-        cpu::prefetch(&table[hash & index_mask], true, 1);
+        core::cpu::prefetch(&table[hash & index_mask], true, 1);
     }
 };

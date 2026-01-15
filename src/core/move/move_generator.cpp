@@ -1,28 +1,29 @@
 #include "core/move/move_generator.hpp"
 
+#include "core/utils/logger.hpp"
 namespace MoveGen
 {
-    alignas(64) std::array<U64, BOARD_SIZE> KnightAttacks;
-    alignas(64) std::array<U64, BOARD_SIZE> KingAttacks;
-    alignas(64) std::array<U64, BOARD_SIZE> RookMasks;
-    alignas(64) std::array<U64, BOARD_SIZE> BishopMasks;
-    alignas(64) std::array<U64, BOARD_SIZE> PawnAttacksWhite;
-    alignas(64) std::array<U64, BOARD_SIZE> PawnAttacksBlack;
-    alignas(64) std::array<U64, BOARD_SIZE> PawnPushWhite;
-    alignas(64) std::array<U64, BOARD_SIZE> PawnPushBlack;
-    alignas(64) std::array<U64, BOARD_SIZE> PawnPush2White;
-    alignas(64) std::array<U64, BOARD_SIZE> PawnPush2Black;
+    alignas(64) std::array<U64, core::constants::BoardSize> KnightAttacks;
+    alignas(64) std::array<U64, core::constants::BoardSize> KingAttacks;
+    alignas(64) std::array<U64, core::constants::BoardSize> RookMasks;
+    alignas(64) std::array<U64, core::constants::BoardSize> BishopMasks;
+    alignas(64) std::array<U64, core::constants::BoardSize> PawnAttacksWhite;
+    alignas(64) std::array<U64, core::constants::BoardSize> PawnAttacksBlack;
+    alignas(64) std::array<U64, core::constants::BoardSize> PawnPushWhite;
+    alignas(64) std::array<U64, core::constants::BoardSize> PawnPushBlack;
+    alignas(64) std::array<U64, core::constants::BoardSize> PawnPush2White;
+    alignas(64) std::array<U64, core::constants::BoardSize> PawnPush2Black;
 
 #ifdef __BMI2__
-    alignas(64) std::array<MagicPEXT, BOARD_SIZE> RookMagics;
-    std::array<MagicPEXT, BOARD_SIZE> BishopMagics;
+    alignas(64) std::array<MagicPEXT, core::constants::BoardSize> RookMagics;
+    std::array<MagicPEXT, core::constants::BoardSize> BishopMagics;
 #else
-    alignas(64) std::array<Magic, BOARD_SIZE> RookMagics;
-    alignas(64) std::array<Magic, BOARD_SIZE> BishopMagics;
+    alignas(64) std::array<Magic, core::constants::BoardSize> RookMagics;
+    alignas(64) std::array<Magic, core::constants::BoardSize> BishopMagics;
 #endif
 
-    alignas(64) std::array<U64, ROOK_ATTACKS_SIZE> RookAttacks;
-    alignas(64) std::array<U64, BISHOP_ATTACKS_SIZE> BishopAttacks;
+    alignas(64) std::array<U64, core::file::RookAttacksFileSize> RookAttacks;
+    alignas(64) std::array<U64, core::file::BishopAttacksFileSize> BishopAttacks;
 
 }
 /**
@@ -50,7 +51,7 @@ static U64 generate_attacks(const int sq, const std::array<int, 16> &shifts)
         {
             int target_sq = target_rank * 8 + target_file;
 
-            attacks |= sq_mask(target_sq);
+            attacks |= core::mask::sq_mask(target_sq);
         }
     }
     return attacks;
@@ -58,23 +59,23 @@ static U64 generate_attacks(const int sq, const std::array<int, 16> &shifts)
 
 void MoveGen::initialize_rook_masks()
 {
-    for (int sq{0}; sq < BOARD_SIZE; ++sq)
+    for (int sq{0}; sq < core::constants::BoardSize; ++sq)
     {
         const int sq_rank = sq / 8;
         const int sq_file = sq % 8;
         U64 mask = 0ULL;
 
         for (int file = sq_file + 1; file < 7; ++file)
-            mask |= sq_mask(sq_rank * 8 + file);
+            mask |= core::mask::sq_mask(sq_rank * 8 + file);
 
         for (int file = sq_file - 1; file > 0; --file)
-            mask |= sq_mask(sq_rank * 8 + file);
+            mask |= core::mask::sq_mask(sq_rank * 8 + file);
 
         for (int rank = sq_rank + 1; rank < 7; ++rank)
-            mask |= sq_mask(rank * 8 + sq_file);
+            mask |= core::mask::sq_mask(rank * 8 + sq_file);
 
         for (int rank = sq_rank - 1; rank > 0; --rank)
-            mask |= sq_mask(rank * 8 + sq_file);
+            mask |= core::mask::sq_mask(rank * 8 + sq_file);
 
         RookMasks[sq] = mask;
     }
@@ -82,30 +83,30 @@ void MoveGen::initialize_rook_masks()
 
 void MoveGen::initialize_bishop_masks()
 {
-    for (int sq{0}; sq < BOARD_SIZE; ++sq)
+    for (int sq{0}; sq < core::constants::BoardSize; ++sq)
     {
         const int sq_rank = sq / 8;
         const int sq_file = sq % 8;
         U64 mask = 0ULL;
 
         for (int rank = sq_rank + 1, file = sq_file + 1; rank < 7 && file < 7; ++rank, ++file)
-            mask |= sq_mask(rank * 8 + file);
+            mask |= core::mask::sq_mask(rank * 8 + file);
 
         for (int rank = sq_rank - 1, file = sq_file + 1; rank > 0 && file < 7; --rank, ++file)
-            mask |= sq_mask(rank * 8 + file);
+            mask |= core::mask::sq_mask(rank * 8 + file);
 
         for (int rank = sq_rank - 1, file = sq_file - 1; rank > 0 && file > 0; --rank, --file)
-            mask |= sq_mask(rank * 8 + file);
+            mask |= core::mask::sq_mask(rank * 8 + file);
 
         for (int rank = sq_rank + 1, file = sq_file - 1; rank < 7 && file > 0; ++rank, --file)
-            mask |= sq_mask(rank * 8 + file);
+            mask |= core::mask::sq_mask(rank * 8 + file);
 
         BishopMasks[sq] = mask;
     }
 }
 void MoveGen::initialize_pawn_masks()
 {
-    for (int sq{0}; sq < BOARD_SIZE; ++sq)
+    for (int sq{0}; sq < core::constants::BoardSize; ++sq)
     {
         const int sq_col = sq % 8;
         const int sq_row = sq / 8;
@@ -118,15 +119,15 @@ void MoveGen::initialize_pawn_masks()
         {
             if (sq_col > 0)
             {
-                white_attack_mask |= sq_mask(sq_col - 1, sq_row + 1);
+                white_attack_mask |= core::mask::sq_mask(sq_col - 1, sq_row + 1);
             }
             if (sq_col < 7)
             {
-                white_attack_mask |= sq_mask(sq_col + 1, sq_row + 1);
+                white_attack_mask |= core::mask::sq_mask(sq_col + 1, sq_row + 1);
             }
-            white_push_mask |= sq_mask(sq_col, sq_row + 1);
+            white_push_mask |= core::mask::sq_mask(sq_col, sq_row + 1);
             if (sq_row == 1)
-                white_push2_mask |= sq_mask(sq_col, sq_row + 2);
+                white_push2_mask |= core::mask::sq_mask(sq_col, sq_row + 2);
         }
 
         // Black side
@@ -137,15 +138,15 @@ void MoveGen::initialize_pawn_masks()
         {
             if (sq_col > 0)
             {
-                black_attack_mask |= sq_mask(sq_col - 1, sq_row - 1);
+                black_attack_mask |= core::mask::sq_mask(sq_col - 1, sq_row - 1);
             }
             if (sq_col < 7)
             {
-                black_attack_mask |= sq_mask(sq_col + 1, sq_row - 1);
+                black_attack_mask |= core::mask::sq_mask(sq_col + 1, sq_row - 1);
             }
-            black_push_mask |= sq_mask(sq_col, sq_row - 1);
+            black_push_mask |= core::mask::sq_mask(sq_col, sq_row - 1);
             if (sq_row == 6)
-                black_push2_mask |= sq_mask(sq_col, sq_row - 2);
+                black_push2_mask |= core::mask::sq_mask(sq_col, sq_row - 2);
         }
         PawnAttacksWhite[sq] = white_attack_mask;
         PawnPushWhite[sq] = white_push_mask;
@@ -174,7 +175,7 @@ void MoveGen::initialize_bitboard_tables()
         1, 0, 1, -1,
         0, -1, -1, -1};
 
-    for (int sq = 0; sq < BOARD_SIZE; ++sq)
+    for (int sq = 0; sq < core::constants::BoardSize; ++sq)
     {
         KnightAttacks[sq] = generate_attacks(sq, KNIGHT_SHIFTS);
 
@@ -185,27 +186,27 @@ void MoveGen::initialize_bitboard_tables()
     MoveGen::initialize_bishop_masks();
     MoveGen::initialize_pawn_masks();
 
-    logs::debug << "Bitboard tables initialized." << std::endl;
+    core::logs::debug << "Bitboard tables initialized." << std::endl;
 }
 void MoveGen::generate_pawn_moves(Board &board, const Color color, MoveList &list)
 {
-    const bitboard pawns = board.get_piece_bitboard(color, PAWN);
-    const bitboard occ = board.get_occupancy(NO_COLOR);
-    const bitboard enemies = board.get_occupancy((Color)!color);
+    const U64 pawns = board.get_piece_bitboard(color, PAWN);
+    const U64 occ = board.get_occupancy(NO_COLOR);
+    const U64 enemies = board.get_occupancy((Color)!color);
     const int ep_sq = board.get_en_passant_sq();
 
-    const bool ep_flag = (ep_sq != EN_PASSANT_SQ_NONE);
+    const bool ep_flag = (ep_sq != core::constants::EnPassantSqNone);
 
     // --- Paramètres de direction selon la couleur ---
     const int dir = (color == WHITE) ? 8 : -8;
     const int start_rank = (color == WHITE) ? 1 : 6;
     const int promo_rank = (color == WHITE) ? 6 : 1;
-    const std::array<bitboard, 64> &pawn_attacks = (color == WHITE) ? PawnAttacksWhite : PawnAttacksBlack;
+    const std::array<U64, 64> &pawn_attacks = (color == WHITE) ? PawnAttacksWhite : PawnAttacksBlack;
 
-    bitboard temp_pawns = pawns;
+    U64 temp_pawns = pawns;
     while (temp_pawns)
     {
-        const int from = pop_lsb(temp_pawns);
+        const int from = core::cpu::pop_lsb(temp_pawns);
         const int rank = from >> 3;
 
         // 1. Poussées (Simple et Double)
@@ -234,10 +235,10 @@ void MoveGen::generate_pawn_moves(Board &board, const Color color, MoveList &lis
         }
 
         // 2. Captures normales
-        bitboard attacks = pawn_attacks[from] & enemies;
+        U64 attacks = pawn_attacks[from] & enemies;
         while (attacks)
         {
-            int target = pop_lsb(attacks);
+            int target = core::cpu::pop_lsb(attacks);
             const Piece target_p = board.get_p(target);
             if (rank == promo_rank)
             {
@@ -261,51 +262,51 @@ void MoveGen::generate_pawn_moves(Board &board, const Color color, MoveList &lis
 template <Color Us>
 void MoveGen::generate_pseudo_legal_moves(Board &board, MoveList &list)
 {
-    const bitboard occupied = board.get_occupancy<NO_COLOR>();
-    const bitboard us_occ = board.get_occupancy<Us>();
-    const bitboard opponent_king_mask = ~board.get_piece_bitboard<!Us, KING>();
+    const U64 occupied = board.get_occupancy<NO_COLOR>();
+    const U64 us_occ = board.get_occupancy<Us>();
+    const U64 opponent_king_mask = ~board.get_piece_bitboard<!Us, KING>();
 
     // 1. Pions : Déjà dans une fonction dédiée (Excellent)
     generate_pawn_moves(board, Us, list);
 
     // 2. Cavaliers (Sauts fixes)
-    bitboard knights = board.get_piece_bitboard<Us, KNIGHT>();
+    U64 knights = board.get_piece_bitboard<Us, KNIGHT>();
     while (knights)
     {
-        int sq = pop_lsb(knights);
-        bitboard targets = KnightAttacks[sq] & ~us_occ & opponent_king_mask;
+        int sq = core::cpu::pop_lsb(knights);
+        U64 targets = KnightAttacks[sq] & ~us_occ & opponent_king_mask;
         push_moves_from_mask(list, sq, KNIGHT, targets, board);
     }
 
     // 3. Sliders : Fous et Tours (Utilisent l'occupancy)
-    bitboard bishops = board.get_piece_bitboard<Us, BISHOP>();
+    U64 bishops = board.get_piece_bitboard<Us, BISHOP>();
     while (bishops)
     {
-        int sq = pop_lsb(bishops);
-        bitboard targets = generate_bishop_moves(sq, occupied) & ~us_occ & opponent_king_mask;
+        int sq = core::cpu::pop_lsb(bishops);
+        U64 targets = generate_bishop_moves(sq, occupied) & ~us_occ & opponent_king_mask;
         push_moves_from_mask(list, sq, BISHOP, targets, board);
     }
 
-    bitboard rooks = board.get_piece_bitboard<Us, ROOK>();
+    U64 rooks = board.get_piece_bitboard<Us, ROOK>();
     while (rooks)
     {
-        int sq = pop_lsb(rooks);
-        bitboard targets = generate_rook_moves(sq, occupied) & ~us_occ & opponent_king_mask;
+        int sq = core::cpu::pop_lsb(rooks);
+        U64 targets = generate_rook_moves(sq, occupied) & ~us_occ & opponent_king_mask;
         push_moves_from_mask(list, sq, ROOK, targets, board);
     }
 
     // 4. Dames (Combinaison des deux)
-    bitboard queens = board.get_piece_bitboard<Us, QUEEN>();
+    U64 queens = board.get_piece_bitboard<Us, QUEEN>();
     while (queens)
     {
-        int sq = pop_lsb(queens);
-        bitboard targets = (generate_rook_moves(sq, occupied) | generate_bishop_moves(sq, occupied)) & ~us_occ & opponent_king_mask;
+        int sq = core::cpu::pop_lsb(queens);
+        U64 targets = (generate_rook_moves(sq, occupied) | generate_bishop_moves(sq, occupied)) & ~us_occ & opponent_king_mask;
         push_moves_from_mask(list, sq, QUEEN, targets, board);
     }
 
     // 5. Roi
     const int sq = board.get_eval_state().king_sq[Us];
-    bitboard targets = KingAttacks[sq] & ~us_occ & opponent_king_mask;
+    U64 targets = KingAttacks[sq] & ~us_occ & opponent_king_mask;
     push_moves_from_mask(list, sq, KING, targets, board);
 
     generate_castle_moves<Us>(board, list);
@@ -323,15 +324,15 @@ void generate_piece_captures(const Board &board, U64 opponent_occ, MoveList &lis
     U64 valid_targets = opponent_occ;
     if constexpr (P == PAWN)
     {
-        if (board.get_en_passant_sq() != EN_PASSANT_SQ_NONE)
+        if (board.get_en_passant_sq() != core::constants::EnPassantSqNone)
         {
-            valid_targets |= sq_mask(board.get_en_passant_sq());
+            valid_targets |= core::mask::sq_mask(board.get_en_passant_sq());
         }
     }
 
     while (pieces)
     {
-        const int from_sq = pop_lsb(pieces);
+        const int from_sq = core::cpu::pop_lsb(pieces);
 
         // Appel direct à la version template (très rapide)
         // On filtre directement avec les cibles valides (captures + EP)
@@ -339,7 +340,7 @@ void generate_piece_captures(const Board &board, U64 opponent_occ, MoveList &lis
 
         while (attacks)
         {
-            const int to_sq = pop_lsb(attacks);
+            const int to_sq = core::cpu::pop_lsb(attacks);
 
             Move m(from_sq, to_sq, P);
             MoveGen::init_move_flags(board, m);
@@ -352,7 +353,7 @@ template <Color Us>
 void MoveGen::generate_castle_moves(Board &board, MoveList &list)
 {
     const uint8_t castling_rights = board.get_castling_rights();
-    const bitboard occupancy = board.get_occupancy<NO_COLOR>();
+    const U64 occupancy = board.get_occupancy<NO_COLOR>();
 
     if constexpr (Us == WHITE)
     {
@@ -428,11 +429,11 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
     U64 target_mask = 0ULL;
     while (target_mask_pseudo != 0)
     {
-        int to_sq = pop_lsb(target_mask_pseudo);
+        int to_sq = core::cpu::pop_lsb(target_mask_pseudo);
         Move move(from_sq, to_sq, static_cast<Piece>(info.second));
         MoveGen::init_move_flags(board, move);
         if (board.is_move_legal(move))
-            target_mask |= sq_mask(to_sq);
+            target_mask |= core::mask::sq_mask(to_sq);
     }
 
     if (info.second == KING)
@@ -468,7 +469,7 @@ template <Color Attacker>
 bool is_mask_attacked(const Board &board, U64 mask)
 {
 
-    const std::array<U64, BOARD_SIZE> &PawnAttacks =
+    const std::array<U64, core::constants::BoardSize> &PawnAttacks =
         (!Attacker == WHITE) ? MoveGen::PawnAttacksWhite : MoveGen::PawnAttacksBlack;
 
     const U64 occ = board.get_occupancy(NO_COLOR);
@@ -476,7 +477,7 @@ bool is_mask_attacked(const Board &board, U64 mask)
     // On boucle sur chaque case du masque (généralement 2 ou 3 cases pour le roque)
     while (mask)
     {
-        int sq = pop_lsb(mask);
+        int sq = core::cpu::pop_lsb(mask);
 
         // 1. Attaques de Pions (Reverse)
         // On regarde si un pion adverse sur sa case de départ pourrait attaquer 'sq'
@@ -511,8 +512,8 @@ void MoveGen::generate_legal_moves(Board &board, MoveList &list)
     MoveGen::generate_pseudo_legal_moves<Us>(board, list);
 
     const bool is_king_atck = board.is_king_attacked<Us>();
-    bitboard king_bb = board.get_piece_bitboard<Us, KING>();
-    const int king_sq = pop_lsb(king_bb);
+    U64 king_bb = board.get_piece_bitboard<Us, KING>();
+    const int king_sq = core::cpu::pop_lsb(king_bb);
 
     const U64 occ = board.get_occupancy<NO_COLOR>();
 
@@ -587,7 +588,7 @@ U64 generate_sliding_attack(int sq, U64 occupancy, bool is_rook)
         while (r >= 0 && r <= 7 && f >= 0 && f <= 7)
         {
             int target_sq = r * 8 + f;
-            U64 target_mask = sq_mask(target_sq);
+            U64 target_mask = core::mask::sq_mask(target_sq);
             attacks |= target_mask;
             if (occupancy & target_mask) // bloqueur rencontré -> s'arrête
                 break;
@@ -642,12 +643,12 @@ static bool perform_initial_data_loading()
     MoveGen::initialize_bitboard_tables();
 
 #ifdef __BMI2__
-    logs::debug << "BMI2 mode" << std::endl;
+    core::logs::debug << "BMI2 mode" << std::endl;
 
     MoveGen::load_attack_tables();
 
 #else
-    logs::debug << "Magic Numbers mode" << std::endl;
+    core::logs::debug << "Magic Numbers mode" << std::endl;
 
     MoveGen::load_magics();
     MoveGen::load_attacks();
@@ -656,7 +657,7 @@ static bool perform_initial_data_loading()
 
     init_zobrist();
 
-    logs::debug << "--- All bitboard tables loaded successfully ! ---" << std::endl;
+    core::logs::debug << "--- All U64 tables loaded successfully ! ---" << std::endl;
     return true;
 }
 

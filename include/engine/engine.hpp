@@ -1,12 +1,11 @@
 #pragma once
-#include "engine/eval/pos_eval.hpp"
+#include <chrono>
 
-#define MAX_DEPTH 128
-constexpr int INF = 10000;
+#include "engine/config/config.hpp"
+#include "engine/eval/pos_eval.hpp"
+#include "engine/transp_table.hpp"
 
 class EngineManager;
-
-using Clock = std::chrono::steady_clock;
 
 class SearchWorker
 {
@@ -19,15 +18,15 @@ private:
     TranspositionTable &shared_tt;
     std::atomic<bool> &shared_stop;
     std::atomic<long long> &global_nodes;
-    const Clock::time_point start_time_ref;
+    const std::chrono::steady_clock::time_point start_time_ref;
     const int time_limit_ms_ref;
     const double (&lmr_table)[64][64];
 
     // Heuristiques locales (Thread-local)
     int history_moves[2][64][64];
-    Move killer_moves[MAX_DEPTH][2];
+    Move killer_moves[engine::config::search::MaxDepth][2];
     Move counter_moves[2][7][64];
-    std::array<Move, MAX_DEPTH> move_stack;
+    std::array<Move, engine::config::search::MaxDepth> move_stack;
 
     // Métriques locales
     long long local_nodes = 0;
@@ -45,7 +44,7 @@ public:
         TranspositionTable &tt,
         std::atomic<bool> &stop,
         std::atomic<long long> &nodes,
-        const Clock::time_point &start_time,
+        const std::chrono::steady_clock::time_point &start_time,
         const int &time_limit,
         const double (&lmr)[64][64],
         int id)

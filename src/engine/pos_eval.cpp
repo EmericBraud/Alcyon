@@ -1,4 +1,13 @@
 #include "engine/eval/pos_eval.hpp"
+#include "engine/eval/pawn_entry.hpp"
+
+#include "core/utils/logger.hpp"
+#include "core/utils/cpu.hpp"
+#include "core/move/move_generator.hpp"
+
+#include "engine/config/eval.hpp"
+
+#include <bit>
 
 PawnTable pawn_table;
 
@@ -6,15 +15,15 @@ namespace Eval
 {
     static const int *mobility_bonus_tables[] = {
         nullptr, // PAWN (pas géré ici)
-        knight_mob,
-        bishop_mob,
-        rook_mob,
-        queen_mob};
+        engine::config::eval::knight_mob,
+        engine::config::eval::bishop_mob,
+        engine::config::eval::rook_mob,
+        engine::config::eval::queen_mob};
 }
 
 // Transforme un bitboard de pions en un masque où chaque bit
 // représente une colonne (file) occupée (8 bits utilisés).
-inline uint8_t get_pawn_files(bitboard pawns)
+inline uint8_t get_pawn_files(U64 pawns)
 {
     // On "écrase" les pions verticalement pour ne garder que les colonnes
     pawns |= (pawns >> 32);
@@ -28,14 +37,14 @@ int Eval::evaluate_castling_and_safety(Color us, const Board &board)
     const int king_sq = board.get_eval_state().king_sq[us];
     const int king_file = king_sq & 7;
 
-    const bitboard our_pawns = board.get_piece_bitboard(us, PAWN);
-    const bitboard enemy_pawns = board.get_piece_bitboard(them, PAWN);
-    const bitboard enemy_heavies = board.get_piece_bitboard(them, ROOK) | board.get_piece_bitboard(them, QUEEN);
+    const U64 our_pawns = board.get_piece_bitboard(us, PAWN);
+    const U64 enemy_pawns = board.get_piece_bitboard(them, PAWN);
+    const U64 enemy_heavies = board.get_piece_bitboard(them, ROOK) | board.get_piece_bitboard(them, QUEEN);
 
     // 1. Compression des fichiers (8-bit masks)
     uint8_t our_files = get_pawn_files(our_pawns);
     uint8_t enemy_files = get_pawn_files(enemy_pawns);
-    uint8_t vicinity = masks::king_vicinity_files[king_file];
+    uint8_t vicinity = core::mask::KingVicinityFile[king_file];
 
     // 2. Détection logique des colonnes (Branchless)
     uint8_t open = vicinity & ~our_files & ~enemy_files;
@@ -46,8 +55,8 @@ int Eval::evaluate_castling_and_safety(Color us, const Board &board)
     score += std::popcount(static_cast<uint8_t>(semi_open)) * -15;
 
     // 4. Masques 64-bit : On traite uniquement les 3 colonnes du voisinage
-    bitboard open_files_bb = 0;
-    bitboard semi_files_bb = 0;
+    U64 open_files_bb = 0;
+    U64 semi_files_bb = 0;
 
     // On utilise les bornes fixes pour forcer l'unrolling du compilateur
     // On itère sur les 3 colonnes potentielles autour du roi
@@ -60,8 +69,8 @@ int Eval::evaluate_castling_and_safety(Color us, const Board &board)
 
         // Extraction du bit correspondant à la colonne f dans nos masques 8-bits
         // Si le bit est à 1, on applique le masque de colonne 64-bit
-        open_files_bb |= (masks::file[clamped_f] & -static_cast<int64_t>((open >> clamped_f) & 1)) & valid_file_mask;
-        semi_files_bb |= (masks::file[clamped_f] & -static_cast<int64_t>((semi_open >> clamped_f) & 1)) & valid_file_mask;
+        open_files_bb |= (core::mask::File[clamped_f] & -static_cast<int64_t>((open >> clamped_f) & 1)) & valid_file_mask;
+        semi_files_bb |= (core::mask::File[clamped_f] & -static_cast<int64_t>((semi_open >> clamped_f) & 1)) & valid_file_mask;
     }
 
     // 5. Pénalité si des pièces lourdes adverses occupent ces couloirs
@@ -72,13 +81,13 @@ int Eval::evaluate_castling_and_safety(Color us, const Board &board)
 }
 void Eval::evaluate_pawns(Color color, const Board &board, int &mg, int &eg)
 {
-    const bitboard our_pawns = board.get_piece_bitboard(color, PAWN);
-    const bitboard enemy_pawns = board.get_piece_bitboard(!color, PAWN);
+    const U64 our_pawns = board.get_piece_bitboard(color, PAWN);
+    const U64 enemy_pawns = board.get_piece_bitboard(!color, PAWN);
 
     // 1. DETECTION GLOBALE DES PIONS DOUBLÉS (Zéro boucle)
     // On identifie les pions qui ont un autre pion allié "sous eux" sur la même colonne
-    bitboard doubled_mask = our_pawns & ((our_pawns >> 8) | (our_pawns >> 16) | (our_pawns >> 24) |
-                                         (our_pawns >> 32) | (our_pawns >> 40) | (our_pawns >> 48) | (our_pawns >> 56));
+    U64 doubled_mask = our_pawns & ((our_pawns >> 8) | (our_pawns >> 16) | (our_pawns >> 24) |
+                                    (our_pawns >> 32) | (our_pawns >> 40) | (our_pawns >> 48) | (our_pawns >> 56));
     // On compte le nombre de colonnes contenant des pions doublés
     int num_doubled_files = std::popcount(get_pawn_files(doubled_mask));
     mg -= num_doubled_files * 15;
@@ -93,10 +102,10 @@ void Eval::evaluate_pawns(Color color, const Board &board, int &mg, int &eg)
     eg -= num_iso * 25;
 
     // 3. BOUCLE ALLÉGÉE (Uniquement pour les pions passés)
-    bitboard temp_pawns = our_pawns;
+    U64 temp_pawns = our_pawns;
     while (temp_pawns)
     {
-        const int sq = pop_lsb(temp_pawns);
+        const int sq = core::cpu::pop_lsb(temp_pawns);
 
         // Un pion est passé s'il n'y a aucun pion adverse devant lui (colonne + adjacentes)
         if (!(enemy_pawns & masks.passed[color][sq]))
@@ -137,7 +146,7 @@ int Eval::eval(const Board &board, int alpha, int beta)
     }
     mg_score += mg_pawn;
     eg_score += eg_pawn;
-    int base_score = (mg_score * state.phase + eg_score * (totalPhase - state.phase)) / totalPhase;
+    int base_score = (mg_score * state.phase + eg_score * (engine::config::eval::totalPhase - state.phase)) / engine::config::eval::totalPhase;
     const int margin = 110;
     if (base_score >= beta + margin)
         return base_score;
@@ -167,12 +176,12 @@ int Eval::eval(const Board &board, int alpha, int beta)
         // Mobilité optimisée
         for (int piece = KNIGHT; piece <= QUEEN; ++piece)
         {
-            bitboard bb = board.get_piece_bitboard(us, piece);
+            U64 bb = board.get_piece_bitboard(us, piece);
             const int *bonus_table = mobility_bonus_tables[piece];
 
             while (bb)
             {
-                const int sq = pop_lsb(bb);
+                const int sq = core::cpu::pop_lsb(bb);
 
                 // On utilise les fonctions spécifiques de Magic Bitboards si possible
                 // au lieu du get_pseudo_moves_mask générique qui est plus lent.
@@ -233,12 +242,12 @@ int Eval::eval(const Board &board, int alpha, int beta)
     }
 
     // 4. Interpolation finale (material_score a été fusionné à l'étape 1)
-    return (mg_score * state.phase + eg_score * (totalPhase - state.phase)) / totalPhase;
+    return (mg_score * state.phase + eg_score * (engine::config::eval::totalPhase - state.phase)) / engine::config::eval::totalPhase;
 }
 void Eval::print_pawn_stats()
 {
-    logs::debug << "Pawn Table Stats:" << std::endl;
-    logs::debug << " - Hits:   " << pawn_table.hits << std::endl;
-    logs::debug << " - Misses: " << pawn_table.misses << std::endl;
-    logs::debug << " - Rate:   " << pawn_table.get_hit_rate() << "%" << std::endl;
+    core::logs::debug << "Pawn Table Stats:" << std::endl;
+    core::logs::debug << " - Hits:   " << pawn_table.hits << std::endl;
+    core::logs::debug << " - Misses: " << pawn_table.misses << std::endl;
+    core::logs::debug << " - Rate:   " << pawn_table.get_hit_rate() << "%" << std::endl;
 }

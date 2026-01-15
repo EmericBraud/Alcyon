@@ -4,7 +4,7 @@
 template <Color Attacker>
 bool Board::is_attacked(int sq) const
 {
-    const bitboard occupied = occupancies[NO_COLOR];
+    const U64 occupied = occupancies[NO_COLOR];
 
     // 1. Pions et Cavaliers (Les plus rapides, on commence par eux)
     if ((Attacker == WHITE ? MoveGen::PawnAttacksBlack[sq] : MoveGen::PawnAttacksWhite[sq]) & get_piece_bitboard<Attacker, PAWN>())
@@ -18,7 +18,7 @@ bool Board::is_attacked(int sq) const
         return true;
 
     // 3. Sliders : On combine les bitboards de l'attaquant pour limiter les tests
-    const bitboard queens = get_piece_bitboard<Attacker, QUEEN>();
+    const U64 queens = get_piece_bitboard<Attacker, QUEEN>();
 
     // Diagonales (Fous + Dames)
     if (MoveGen::generate_bishop_moves(sq, occupied) & (get_piece_bitboard<Attacker, BISHOP>() | queens))

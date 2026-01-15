@@ -1,8 +1,12 @@
 #pragma once
 
-#include "core/piece/bitboard.hpp"
+#include <utility>
+#include <cstdint>
 
-enum Piece : uint8_t
+#include "core/utils/constants.hpp"
+#include "color.hpp"
+
+enum Piece : std::uint8_t
 {
     PAWN,
     KNIGHT,
@@ -13,21 +17,9 @@ enum Piece : uint8_t
     NO_PIECE,
 };
 
-enum Color : uint8_t
-{
-    WHITE,
-    BLACK,
-    NO_COLOR
-};
-
-constexpr Color operator!(Color c)
-{
-    assert(c != NO_COLOR);
-    return static_cast<Color>(c ^ 1);
-}
 using PieceInfo = std::pair<Color, Piece>;
 
-inline int get_piece_index(const Piece p, const Color c)
+constexpr inline int get_piece_index(Piece p, Color c)
 {
-    return p + N_PIECES_TYPE_HALF * c;
+    return p + core::constants::PieceTypeCount * c;
 }

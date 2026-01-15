@@ -1,6 +1,15 @@
 #pragma once
 
+#include <array>
+
 #include <SFML/Graphics.hpp>
+
+#include "core/utils/file.hpp"
+#include "core/utils/constants.hpp"
+#include "core/piece/color.hpp"
+#include "core/piece/piece.hpp"
+#include "core/move/history.hpp"
+#include "core/board.hpp"
 
 #include "engine/engine_manager.hpp"
 
@@ -23,30 +32,11 @@ public:
     {
         history.clear();
         window.setFramerateLimit(60);
-        const std::array<std::array<const char *, N_PIECES_TYPE_HALF>, 2> PIECE_IMAGE_PATHS = {
-            {// WHITE
-             {
-                 "pieces/white-pawn.png",   // PAWN
-                 "pieces/white-knight.png", // KNIGHT
-                 "pieces/white-bishop.png", // BISHOP
-                 "pieces/white-rook.png",   // ROOK
-                 "pieces/white-queen.png",  // QUEEN
-                 "pieces/white-king.png"    // KING
-             },
-             // BLACK
-             {
-                 "pieces/black-pawn.png",   // PAWN
-                 "pieces/black-knight.png", // KNIGHT
-                 "pieces/black-bishop.png", // BISHOP
-                 "pieces/black-rook.png",   // ROOK
-                 "pieces/black-queen.png",  // QUEEN
-                 "pieces/black-king.png"    // KING
-             }}};
         for (auto color : {WHITE, BLACK})
         {
             for (int piece{PAWN}; piece <= KING; ++piece)
             {
-                const std::string fullPath = get_data_path(PIECE_IMAGE_PATHS[color][piece]);
+                const std::string fullPath = core::file::get_data_path(core::file::PieceImagePath[color][piece]);
 
                 if (!m_piece_textures[color][piece].loadFromFile(fullPath))
                 {
@@ -65,7 +55,7 @@ private:
     History history;
     EngineManager computer;
     sf::RenderWindow window;
-    std::array<std::array<sf::Texture, N_PIECES_TYPE_HALF>, 2> m_piece_textures;
+    std::array<std::array<sf::Texture, core::constants::PieceTypeCount>, 2> m_piece_textures;
     bool is_sq_selected;
     int selected_sq;
     int last_piece;
