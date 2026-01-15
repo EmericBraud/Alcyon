@@ -1,5 +1,5 @@
-#include "core/board.hpp"
-#include "core/move/move_generator.hpp"
+#include "core/board/board.hpp"
+#include "core/move/generator/move_generator.hpp"
 
 template <Color Attacker>
 bool Board::is_attacked(int sq) const

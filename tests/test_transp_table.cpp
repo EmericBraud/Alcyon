@@ -1,4 +1,4 @@
-#include "engine/transp_table.hpp"
+#include "engine/tt/transp_table.hpp"
 #include "gtest/gtest.h"
 
 class TTTest : public ::testing::Test

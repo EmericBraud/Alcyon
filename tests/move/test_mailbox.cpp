@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "core/board.hpp"
+#include "core/board/board.hpp"
 
 class MailboxTest : public ::testing::Test
 {

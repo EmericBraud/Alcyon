@@ -1,7 +1,7 @@
 #include "interface/gui.hpp"
 
-#include "core/utils/logger.hpp"
-#include "core/move/move_generator.hpp"
+#include "common/logger.hpp"
+#include "core/move/generator/move_generator.hpp"
 
 #include "engine/config/config.hpp"
 
@@ -13,7 +13,7 @@ void GUI::run()
         // computer.play();
         if (auto_play && board.get_side_to_move() == computer_side)
         {
-            core::logs::debug << "Playing position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
+            logs::debug << "Playing position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
             computer.start_search();
         }
         while (window.pollEvent(event))
@@ -61,20 +61,20 @@ void GUI::run()
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::E)
             {
-                core::logs::debug << "Evaluating position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
+                logs::debug << "Evaluating position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
                 const int score{computer.evaluate_position(5000)};
-                core::logs::debug << "Position score : " << score << std::endl;
+                logs::debug << "Position score : " << score << std::endl;
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::P)
             {
-                core::logs::debug << "Playing position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
+                logs::debug << "Playing position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
                 computer.start_search(20000, false, false);
                 board.play(computer.get_root_best_move());
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::U)
             {
                 board.undo_last_move();
-                core::logs::debug << "Move undone" << std::endl;
+                logs::debug << "Move undone" << std::endl;
             }
         }
         window.clear(BG_COLOR);
@@ -135,7 +135,7 @@ void GUI::draw_pieces()
             U64 temp_bb = b;
             while (temp_bb != 0)
             {
-                const int sq = core::cpu::pop_lsb(temp_bb);
+                const int sq = cpu::pop_lsb(temp_bb);
                 const sf::Texture &texture = m_piece_textures[color][piece];
                 sf::Vector2u textureSize = texture.getSize();
                 const double scale = static_cast<double>(SQ_PX_SIZE) / static_cast<double>(textureSize.x);

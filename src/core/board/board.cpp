@@ -1,5 +1,5 @@
-#include "core/board.hpp"
-#include "../move/move_generator.cpp"
+#include "core/board/board.hpp"
+#include "core/move/generator/move_generator.cpp"
 
 // clang-format off
 static constexpr uint8_t CastlingMask[64] = {
@@ -30,14 +30,14 @@ void Board::clear()
     occupancies[BLACK] = 0;
     occupancies[NO_COLOR] = 0;
     state.castling_rights = 0;
-    state.en_passant_sq = core::constants::EnPassantSqNone;
+    state.en_passant_sq = constants::EnPassantSqNone;
     state.halfmove_clock = 0;
     state.side_to_move = WHITE;
     state.last_irreversible_index = 0;
     zobrist_key = 0;
     if (history_tagged)
         get_history()->clear();
-    std::memset(mailbox, EMPTY_SQ, core::constants::BoardSize);
+    std::memset(mailbox, EMPTY_SQ, constants::BoardSize);
 }
 template <Color Us>
 bool Board::play(const Move move)
@@ -67,25 +67,25 @@ bool Board::play(const Move move)
 
     // Mise à jour Zobrist (Phase 1 : Retrait état actuel)
     zobrist_key ^= zobrist_castling[state.castling_rights];
-    zobrist_key ^= zobrist_en_passant[state.en_passant_sq == core::constants::EnPassantSqNone ? 8 : state.en_passant_sq % 8];
+    zobrist_key ^= zobrist_en_passant[state.en_passant_sq == constants::EnPassantSqNone ? 8 : state.en_passant_sq % 8];
 
     // 2. Mouvement de la pièce
     const U64 from_mask = 1ULL << from_sq;
     const U64 to_mask = 1ULL << to_sq;
 
-    zobrist_key ^= zobrist_table[Us * core::constants::PieceTypeCount + from_piece][from_sq];
+    zobrist_key ^= zobrist_table[Us * constants::PieceTypeCount + from_piece][from_sq];
     get_piece_bitboard(Us, from_piece) ^= from_mask;
     mailbox[from_sq] = EMPTY_SQ;
 
     // 3. Gestion de la capture classique
     if (to_piece != NO_PIECE && flags != Move::Flags::EN_PASSANT_CAP)
     {
-        zobrist_key ^= zobrist_table[them * core::constants::PieceTypeCount + to_piece][to_sq];
+        zobrist_key ^= zobrist_table[them * constants::PieceTypeCount + to_piece][to_sq];
         get_piece_bitboard(them, to_piece) ^= to_mask;
         occupancies[them] ^= to_mask; // Mise à jour directe de l'adversaire
     }
 
-    state.en_passant_sq = core::constants::EnPassantSqNone;
+    state.en_passant_sq = constants::EnPassantSqNone;
     Piece final_piece = from_piece;
 
     // 4. Cas spéciaux
@@ -102,7 +102,7 @@ bool Board::play(const Move move)
         case Move::Flags::EN_PASSANT_CAP:
         {
             const int cap_sq = (Us == WHITE) ? to_sq - 8 : to_sq + 8;
-            zobrist_key ^= zobrist_table[them * core::constants::PieceTypeCount + PAWN][cap_sq];
+            zobrist_key ^= zobrist_table[them * constants::PieceTypeCount + PAWN][cap_sq];
             get_piece_bitboard<them, PAWN>() ^= (1ULL << cap_sq);
             occupancies[them] ^= (1ULL << cap_sq);
             mailbox[cap_sq] = EMPTY_SQ;
@@ -115,7 +115,7 @@ bool Board::play(const Move move)
             int r_f = is_ks ? (Us == WHITE ? 7 : 63) : (Us == WHITE ? 0 : 56);
             int r_t = is_ks ? (Us == WHITE ? 5 : 61) : (Us == WHITE ? 3 : 59);
             U64 r_mask = (1ULL << r_f) | (1ULL << r_t);
-            zobrist_key ^= zobrist_table[Us * core::constants::PieceTypeCount + ROOK][r_f] ^ zobrist_table[Us * core::constants::PieceTypeCount + ROOK][r_t];
+            zobrist_key ^= zobrist_table[Us * constants::PieceTypeCount + ROOK][r_f] ^ zobrist_table[Us * constants::PieceTypeCount + ROOK][r_t];
             get_piece_bitboard<Us, ROOK>() ^= r_mask;
             occupancies[Us] ^= r_mask;
             mailbox[r_f] = EMPTY_SQ;
@@ -126,7 +126,7 @@ bool Board::play(const Move move)
     }
 
     // 5. Finalisation
-    zobrist_key ^= zobrist_table[Us * core::constants::PieceTypeCount + final_piece][to_sq];
+    zobrist_key ^= zobrist_table[Us * constants::PieceTypeCount + final_piece][to_sq];
     get_piece_bitboard(Us, final_piece) |= to_mask;
     mailbox[to_sq] = (Us << COLOR_SHIFT) | final_piece;
 
@@ -136,7 +136,7 @@ bool Board::play(const Move move)
 
     state.castling_rights &= CastlingMask[from_sq] & CastlingMask[to_sq];
     zobrist_key ^= zobrist_castling[state.castling_rights];
-    zobrist_key ^= zobrist_en_passant[state.en_passant_sq == core::constants::EnPassantSqNone ? 8 : state.en_passant_sq % 8];
+    zobrist_key ^= zobrist_en_passant[state.en_passant_sq == constants::EnPassantSqNone ? 8 : state.en_passant_sq % 8];
 
     if (from_piece == KING)
         eval_state.king_sq[Us] = to_sq;
@@ -339,7 +339,7 @@ bool Board::is_move_pseudo_legal(const Move &move) const
         // Si En Passant
         if (move.get_flags() == Move::Flags::EN_PASSANT_CAP)
         {
-            return (state.en_passant_sq != core::constants::EnPassantSqNone) && (to == state.en_passant_sq);
+            return (state.en_passant_sq != constants::EnPassantSqNone) && (to == state.en_passant_sq);
         }
 
         return false;

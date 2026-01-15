@@ -1,6 +1,6 @@
 #include "engine/eval/pos_eval.hpp"
 #include "gtest/gtest.h"
-#include "core/move/move_generator.hpp"
+#include "core/move/generator/move_generator.hpp"
 
 class EvalStateTest : public ::testing::Test
 {
