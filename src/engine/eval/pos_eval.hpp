@@ -5,9 +5,10 @@
 #include "common/mask.hpp"
 #include "core/piece/color.hpp"
 #include "core/piece/piece.hpp"
-#include "core/board/board.hpp"
 
 #include "engine/config/eval.hpp"
+#include "engine/eval/virtual_board.hpp"
+
 namespace Eval
 {
 
@@ -61,13 +62,13 @@ namespace Eval
 
     static constexpr PawnMasks masks = generate_masks();
 
-    int evaluate_castling_and_safety(Color color, const Board &board);
+    int evaluate_castling_and_safety(Color color, const VBoard &board);
 
-    void evaluate_pawns(Color color, const Board &board, int &mg, int &eg);
-    int eval(const Board &board, int alpha, int beta);
+    void evaluate_pawns(Color color, const VBoard &board, int &mg, int &eg);
+    int eval(const VBoard &board, int alpha, int beta);
 
     template <Color Us>
-    inline int eval_relative(const Board &board, int alpha, int beta)
+    inline int eval_relative(const VBoard &board, int alpha, int beta)
     {
         int score = eval(board, alpha, beta);
         return (Us == WHITE) ? score : -score;
@@ -88,7 +89,7 @@ namespace Eval
     }
 
     template <Color Us>
-    int lazy_eval_relative(const Board &board)
+    int lazy_eval_relative(const VBoard &board)
     {
         const EvalState &state = board.get_eval_state();
         const int mg_score = (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -

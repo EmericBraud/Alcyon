@@ -7,6 +7,7 @@ struct MoveList
 {
     Move moves[constants::MaxMoves];
     int scores[constants::MaxMoves];
+    bool is_tactical[constants::MaxMoves];
 
     int count = 0;
 
@@ -35,6 +36,7 @@ struct MoveList
         }
         std::swap(moves[from_i], moves[best_index]);
         std::swap(scores[from_i], scores[best_index]);
+        std::swap(is_tactical[from_i], is_tactical[best_index]);
         return moves[from_i];
     }
     inline int size() const

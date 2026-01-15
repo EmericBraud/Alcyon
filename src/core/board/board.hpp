@@ -8,10 +8,10 @@
 
 #include "common/mask.hpp"
 #include "common/constants.hpp"
+#include "common/cpu.hpp"
 #include "core/move/history.hpp"
 #include "core/move/move_list.hpp"
-
-#include "engine/eval/move_eval_increment.hpp" // @TODO This should not be here. I need to create an herited subclass in engine/
+#include "core/board/zobrist.hpp"
 
 enum CastlingRights : std::uint8_t
 {
@@ -48,9 +48,8 @@ public:
 
     std::array<U64, constants::NumPieceVariants> pieces_occ;
 
-    EvalState eval_state;
-
     std::uint8_t mailbox[64];
+    std::uint8_t king_sq[2];
     History *history_tagged;
 
     inline Piece get_p(int sq) const { return static_cast<Piece>(mailbox[sq] & PIECE_MASK); }
@@ -80,9 +79,9 @@ public:
         std::memcpy(occupancies, other.occupancies, sizeof(occupancies));
         std::memcpy(&state, &other.state, sizeof(state));
         pieces_occ = other.pieces_occ;
-        eval_state = other.eval_state;
         std::memcpy(mailbox, other.mailbox, sizeof(mailbox));
         zobrist_key = other.zobrist_key;
+        std::memcpy(king_sq, other.king_sq, sizeof(king_sq));
 
         History *raw_copy = new History(*other.get_history());
         history_tagged = reinterpret_cast<History *>(
@@ -98,8 +97,8 @@ public:
             History *raw_copy = new History(*other.get_history());
             std::memcpy(occupancies, other.occupancies, sizeof(occupancies));
             std::memcpy(&state, &other.state, sizeof(state));
+            std::memcpy(king_sq, other.king_sq, sizeof(king_sq));
             pieces_occ = other.pieces_occ;
-            eval_state = other.eval_state;
             zobrist_key = other.zobrist_key;
             std::memcpy(mailbox, other.mailbox, sizeof(mailbox));
             history_tagged = reinterpret_cast<History *>(
@@ -335,9 +334,9 @@ public:
         return val == target;
     }
     template <Color Us>
-    bool play(const Move move);
+    void play(const Move move);
 
-    inline bool play(const Move move)
+    inline void play(const Move move)
     {
         if (state.side_to_move == WHITE)
         {
@@ -415,7 +414,7 @@ public:
 
     void undo_last_move();
 
-    uint16_t get_halfmove_clock()
+    uint16_t get_halfmove_clock() const
     {
         return state.halfmove_clock;
     }
@@ -445,11 +444,6 @@ public:
         return -1;
     }
 
-    inline const EvalState &get_eval_state() const
-    {
-        return eval_state;
-    }
-
     inline const std::array<U64, constants::NumPieceVariants> get_all_bitboards() const
     {
         return pieces_occ;
@@ -457,12 +451,12 @@ public:
 
     inline bool is_king_attacked(Color c)
     {
-        return is_attacked(eval_state.king_sq[c], (Color)!c);
+        return is_attacked(king_sq[c], (Color)!c);
     }
     template <Color Us>
     inline bool is_king_attacked()
     {
-        return is_attacked<!Us>(eval_state.king_sq[Us]);
+        return is_attacked<!Us>(king_sq[Us]);
     }
 
     template <Color Attacker>

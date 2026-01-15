@@ -76,7 +76,7 @@ bool Board::is_move_legal(const Move move)
     }
     // If king is moving, we have to update the king square (using arithmetic branchless expression)
     int32_t is_king_mask = -(from_piece == KING);
-    eval_state.king_sq[us] ^= (to_sq ^ eval_state.king_sq[us]) & is_king_mask;
+    king_sq[us] ^= (to_sq ^ king_sq[us]) & is_king_mask;
     // Note : Le roque se vérifie généralement AVANT d'appeler is_move_legal
     // car il a ses propres règles (ne pas être en échec, etc.)
 
@@ -86,7 +86,7 @@ bool Board::is_move_legal(const Move move)
     bool legal = !is_king_attacked(us);
     // If king is moved
     int32_t mask = -(from_piece == KING);
-    eval_state.king_sq[us] ^= (from_sq ^ eval_state.king_sq[us]) & mask;
+    king_sq[us] ^= (from_sq ^ king_sq[us]) & mask;
     // 4. Restauration (Ordre inverse exact)
     if (flags == Move::Flags::EN_PASSANT_CAP) [[unlikely]]
     {

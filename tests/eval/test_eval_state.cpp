@@ -1,6 +1,7 @@
 #include "engine/eval/pos_eval.hpp"
 #include "gtest/gtest.h"
 #include "core/move/generator/move_generator.hpp"
+#include "engine/eval/virtual_board.hpp"
 
 class EvalStateTest : public ::testing::Test
 {
@@ -14,7 +15,7 @@ protected:
 
 TEST_F(EvalStateTest, IncrementalConsistency)
 {
-    Board b;
+    VBoard b;
     // Position complexe avec roques possibles, promotions et captures EP
     b.load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
 
@@ -57,7 +58,7 @@ TEST_F(EvalStateTest, IncrementalConsistency)
 
 TEST_F(EvalStateTest, ConsistencyLongSequence)
 {
-    Board b;
+    VBoard b;
     // Position de départ complexe
     b.load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
 

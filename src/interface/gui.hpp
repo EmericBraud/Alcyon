@@ -28,7 +28,7 @@
 class GUI
 {
 public:
-    GUI(Board &initial_board, bool auto_play = false, Color computer_side = BLACK) : board(initial_board), computer(EngineManager(initial_board)), window(sf::RenderWindow(sf::VideoMode(W_WIDTH, W_HEIGHT), "Chess 26", sf::Style::Titlebar | sf::Style::Close)), is_sq_selected(false), selected_sq(0), last_piece(0), auto_play(auto_play), computer_side(computer_side)
+    GUI(VBoard &initial_board, bool auto_play = false, Color computer_side = BLACK) : board(initial_board), computer(EngineManager(initial_board)), window(sf::RenderWindow(sf::VideoMode(W_WIDTH, W_HEIGHT), "Chess 26", sf::Style::Titlebar | sf::Style::Close)), is_sq_selected(false), selected_sq(0), last_piece(0), auto_play(auto_play), computer_side(computer_side)
     {
         history.clear();
         window.setFramerateLimit(60);
@@ -51,7 +51,7 @@ public:
     void run();
 
 private:
-    Board &board;
+    VBoard &board;
     History history;
     EngineManager computer;
     sf::RenderWindow window;

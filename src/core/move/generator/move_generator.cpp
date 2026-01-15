@@ -305,7 +305,7 @@ void MoveGen::generate_pseudo_legal_moves(Board &board, MoveList &list)
     }
 
     // 5. Roi
-    const int sq = board.get_eval_state().king_sq[Us];
+    const int sq = board.king_sq[Us];
     U64 targets = KingAttacks[sq] & ~us_occ & opponent_king_mask;
     push_moves_from_mask(list, sq, KING, targets, board);
 
@@ -336,7 +336,7 @@ void generate_piece_captures(const Board &board, U64 opponent_occ, MoveList &lis
 
         // Appel direct à la version template (très rapide)
         // On filtre directement avec les cibles valides (captures + EP)
-        U64 attacks = MoveGen::get_pseudo_moves_mask<P>(board, from_sq, Us) & valid_targets; // TODO
+        U64 attacks = MoveGen::get_pseudo_moves_mask<P>(board, from_sq, Us) & valid_targets;
 
         while (attacks)
         {

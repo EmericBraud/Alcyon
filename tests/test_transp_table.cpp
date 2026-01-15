@@ -22,8 +22,9 @@ TEST_F(TTTest, MateScoreConsistency)
 
     int retrieved_score;
     Move m = 0;
+    TTFlag flag;
     // On sonde à la racine (ply 0)
-    bool hit = tt.probe(key, 10, 0, -1000000, 1000000, retrieved_score, m);
+    bool hit = tt.probe(key, 10, 0, -1000000, 1000000, retrieved_score, m, flag);
 
     ASSERT_TRUE(hit);
 
@@ -47,7 +48,8 @@ TEST_F(TTTest, DepthReplacement)
 
     int score;
     Move m = 0;
-    tt.probe(key, 5, 0, -engine::config::eval::Inf, engine::config::eval::Inf, score, m);
+    TTFlag flag;
+    tt.probe(key, 5, 0, -engine::config::eval::Inf, engine::config::eval::Inf, score, m, flag);
     ASSERT_EQ(score, 100); // La profondeur 5 doit avoir été conservée car 5 > 3
 }
 TEST_F(TTTest, AlphaBetaCuts)
@@ -57,6 +59,7 @@ TEST_F(TTTest, AlphaBetaCuts)
     uint64_t key = 0x1;
     int score;
     Move m = 0;
+    TTFlag flag;
 
     // On stocke : "Le score est <= 50"
     tt.store(key, 10, 0, 50, TT_ALPHA, Move());
@@ -64,7 +67,7 @@ TEST_F(TTTest, AlphaBetaCuts)
     // Test 1 : Fenêtre [60, 80].
     // Comme 50 <= 60, on sait que cette branche ne peut pas améliorer Alpha.
     // C'est un HIT, et le score retourné doit être <= Alpha.
-    bool hit = tt.probe(key, 10, 0, 60, 80, score, m);
+    bool hit = tt.probe(key, 10, 0, 60, 80, score, m, flag);
     ASSERT_TRUE(hit);
     ASSERT_LE(score, 60); // On vérifie que le score ne dépasse pas alpha
     ASSERT_EQ(score, 50); // En réalité, il doit retourner la valeur exacte stockée
@@ -73,6 +76,6 @@ TEST_F(TTTest, AlphaBetaCuts)
     // On sait que score <= 50. Est-ce que le score est <= 30 ? On ne sait pas.
     // Est-ce que le score est >= 40 ? On ne sait pas (il pourrait être 35).
     // On ne peut pas couper. hit doit être FALSE.
-    hit = tt.probe(key, 10, 0, 30, 40, score, m);
+    hit = tt.probe(key, 10, 0, 30, 40, score, m, flag);
     ASSERT_FALSE(hit);
 }

@@ -40,7 +40,7 @@ void Board::clear()
     std::memset(mailbox, EMPTY_SQ, constants::BoardSize);
 }
 template <Color Us>
-bool Board::play(const Move move)
+void Board::play(const Move move)
 {
     // 1. Sauvegarde avant modification
     get_history()->push_back({zobrist_key, state.halfmove_clock, state.last_irreversible_index, move, state.en_passant_sq, state.castling_rights});
@@ -53,8 +53,6 @@ bool Board::play(const Move move)
     const Color them = (Color)!Us;
 
     bool is_irreversible = (from_piece == PAWN) || (to_piece != NO_PIECE);
-    eval_state.increment(move, Us);
-
     if (is_irreversible)
     {
         state.last_irreversible_index = (int)get_history()->size() - 1;
@@ -139,9 +137,8 @@ bool Board::play(const Move move)
     zobrist_key ^= zobrist_en_passant[state.en_passant_sq == constants::EnPassantSqNone ? 8 : state.en_passant_sq % 8];
 
     if (from_piece == KING)
-        eval_state.king_sq[Us] = to_sq;
+        king_sq[Us] = to_sq;
     switch_trait();
-    return true;
 }
 template <Color Us>
 void Board::unplay(const Move move)
@@ -202,7 +199,7 @@ void Board::unplay(const Move move)
     // 4. Sync et Restauration
     occupancies[NO_COLOR] = occupancies[WHITE] | occupancies[BLACK];
     if (from_piece == KING)
-        eval_state.king_sq[Us] = from_sq;
+        king_sq[Us] = from_sq;
 
     const UndoInfo &info = get_history()->back();
     zobrist_key = info.zobrist_key;
@@ -210,8 +207,6 @@ void Board::unplay(const Move move)
     state.last_irreversible_index = info.last_irreversible_index;
     state.castling_rights = info.castling_rights;
     state.en_passant_sq = info.en_passant_sq;
-
-    eval_state.decrement(move, Us);
 
     get_history()->pop_back();
 }
@@ -230,8 +225,8 @@ bool Board::is_repetition() const
     return false;
 }
 
-template bool Board::play<WHITE>(const Move move);
-template bool Board::play<BLACK>(const Move move);
+template void Board::play<WHITE>(const Move move);
+template void Board::play<BLACK>(const Move move);
 
 template void Board::unplay<WHITE>(const Move move);
 template void Board::unplay<BLACK>(const Move move);

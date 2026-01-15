@@ -4,26 +4,15 @@
 template <Color Us>
 int SearchWorker::qsearch(int alpha, int beta, int ply)
 {
-    // 1. Vérification de l'arrêt et mise à jour des nœuds (Optimisé)
-    if ((local_nodes & 32767) == 0)
-    {
-        global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
-        local_nodes = 0;
-
-        if (thread_id == 0 && manager.should_stop())
-        {
-            shared_stop.store(true, std::memory_order_relaxed);
-        }
-        if (shared_stop.load(std::memory_order_relaxed))
-            return alpha;
-    }
-    ++local_nodes;
+    if (check_stop())
+        return alpha;
 
     // 2. Sondage de la Transposition Table (TT)
     // Utilisation du ply pour normaliser les scores de mat récupérés
     int tt_score;
+    TTFlag flag;
     Move tt_move = 0;
-    if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move))
+    if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move, flag))
         return tt_score;
 
     bool in_check = board.is_king_attacked<Us>();
@@ -145,7 +134,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     }
 
     // 8. Sauvegarde TT finale
-    TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
+    flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
     shared_tt.store(board.get_hash(), 0, ply, best_score, flag, best_move);
 
     return best_score;
