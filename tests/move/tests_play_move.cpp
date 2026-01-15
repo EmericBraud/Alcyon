@@ -1,4 +1,4 @@
-#include "core/move/move_generator.hpp"
+#include "core/move/generator/move_generator.hpp"
 #include "gtest/gtest.h"
 
 class MovePlayTest : public ::testing::Test
@@ -73,7 +73,7 @@ TEST_F(MovePlayTest, EnPassant)
     b.play(move2);
     ASSERT_EQ(move2.get_flags(), Move::EN_PASSANT_CAP);
     ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0xef00);
-    ASSERT_EQ(b.get_en_passant_sq(), core::constants::EnPassantSqNone);
+    ASSERT_EQ(b.get_en_passant_sq(), constants::EnPassantSqNone);
 }
 
 TEST_F(MovePlayTest, UndoEnPassant)

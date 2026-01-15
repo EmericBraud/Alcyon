@@ -1,4 +1,4 @@
-#include "core/move/move_generator.hpp"
+#include "core/move/generator/move_generator.hpp"
 #include "gtest/gtest.h"
 
 class MoveGenTest : public ::testing::Test
@@ -154,7 +154,7 @@ TEST_F(MoveGenTest, EnPassantAfterCheckTest)
     b.play(m2);
     ASSERT_EQ(b.get_piece_bitboard(WHITE, PAWN), 0xef00);
     ASSERT_EQ(b.get_piece_bitboard(BLACK, PAWN), 0xdf000000100000);
-    ASSERT_EQ(b.get_en_passant_sq(), core::constants::EnPassantSqNone);
+    ASSERT_EQ(b.get_en_passant_sq(), constants::EnPassantSqNone);
 }
 
 U64 Perft(Board &b, int depth)

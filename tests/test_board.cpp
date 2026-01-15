@@ -1,4 +1,4 @@
-#include "core/board.hpp"
+#include "core/board/board.hpp"
 #include "gtest/gtest.h"
 
 class BoardTest : public ::testing::Test
@@ -14,7 +14,7 @@ protected:
 TEST_F(BoardTest, KnightMove_Initial)
 {
 
-    b.load_fen(core::constants::FenInitPos);
+    b.load_fen(constants::FenInitPos);
 
     Move m(Square::b1, Square::c3, Piece::KNIGHT);
     b.play(m);

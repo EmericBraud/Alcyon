@@ -1,8 +1,8 @@
-#include "core/board.hpp"
+#include "core/board/board.hpp"
 
 #include <sstream>
 
-#include "core/utils/logger.hpp"
+#include "common/logger.hpp"
 
 bool Board::load_fen(const std::string_view fen_string)
 {
@@ -89,7 +89,7 @@ bool Board::load_fen(const std::string_view fen_string)
     if (!std::getline(ss, token, ' '))
         return false;
     if (token == "-")
-        state.en_passant_sq = core::constants::EnPassantSqNone;
+        state.en_passant_sq = constants::EnPassantSqNone;
     else
     {
         int file = token[0] - 'a';
@@ -116,7 +116,7 @@ void Board::compute_full_hash()
         PieceInfo p = get_piece_on_square(sq);
         if (p.second != NO_PIECE)
         {
-            int piece_index = p.second + core::constants::PieceTypeCount * p.first;
+            int piece_index = p.second + constants::PieceTypeCount * p.first;
             zobrist_key ^= zobrist_table[piece_index][sq];
         }
     }
@@ -128,7 +128,7 @@ void Board::compute_full_hash()
 
     zobrist_key ^= zobrist_castling[get_castling_rights()];
 
-    if (get_en_passant_sq() != core::constants::EnPassantSqNone)
+    if (get_en_passant_sq() != constants::EnPassantSqNone)
     {
         zobrist_key ^= zobrist_en_passant[get_en_passant_sq() % 8];
     }
@@ -160,12 +160,12 @@ char Board::piece_to_char(Color color, Piece type) const
 
 void Board::show() const
 {
-    core::logs::debug << "\n   +---------------------------------------+" << std::endl;
+    logs::debug << "\n   +---------------------------------------+" << std::endl;
 
     // Iterates from rank 8 (index 7) down to rank 1 (index 0)
     for (int rank = 7; rank >= 0; --rank)
     {
-        core::logs::debug << " " << (rank + 1) << " |"; // Display rank number
+        logs::debug << " " << (rank + 1) << " |"; // Display rank number
 
         for (int file = 0; file < 8; ++file)
         {
@@ -177,44 +177,44 @@ void Board::show() const
             // Convert to character (e.g., 'p', 'K', ' ')
             char piece_char = piece_to_char(color, piece_type);
 
-            core::logs::debug << " " << piece_char << " ";
+            logs::debug << " " << piece_char << " ";
 
             // Optional separator bar
             if (file < 7)
             {
-                core::logs::debug << " |";
+                logs::debug << " |";
             }
         }
 
-        core::logs::debug << " |" << std::endl;
+        logs::debug << " |" << std::endl;
 
         if (rank > 0)
         {
-            core::logs::debug << "   +---------------------------------------+" << std::endl;
+            logs::debug << "   +---------------------------------------+" << std::endl;
         }
     }
 
-    core::logs::debug << "   +---------------------------------------+" << std::endl;
+    logs::debug << "   +---------------------------------------+" << std::endl;
     // Display file letters (A-H)
-    core::logs::debug << "      A    B    C    D    E    F    G    H\n"
-                      << std::endl;
+    logs::debug << "      A    B    C    D    E    F    G    H\n"
+                << std::endl;
 
     // Display basic state info
-    core::logs::debug << "Side to Move: " << (state.side_to_move == WHITE ? "White (w)" : "Black (b)") << std::endl;
+    logs::debug << "Side to Move: " << (state.side_to_move == WHITE ? "White (w)" : "Black (b)") << std::endl;
 
     // Display castling rights using binary mask check
-    core::logs::debug << "Castling Rights: " << (state.castling_rights & WHITE_KINGSIDE ? 'K' : '-')
-                      << (state.castling_rights & WHITE_QUEENSIDE ? 'Q' : '-')
-                      << (state.castling_rights & BLACK_KINGSIDE ? 'k' : '-')
-                      << (state.castling_rights & BLACK_QUEENSIDE ? 'q' : '-') << std::endl;
+    logs::debug << "Castling Rights: " << (state.castling_rights & WHITE_KINGSIDE ? 'K' : '-')
+                << (state.castling_rights & WHITE_QUEENSIDE ? 'Q' : '-')
+                << (state.castling_rights & BLACK_KINGSIDE ? 'k' : '-')
+                << (state.castling_rights & BLACK_QUEENSIDE ? 'q' : '-') << std::endl;
 
     // Display en passant square
-    core::logs::debug << "En Passant Square: " << (state.en_passant_sq == 0 ? "-" : std::to_string(state.en_passant_sq)) << std::endl;
+    logs::debug << "En Passant Square: " << (state.en_passant_sq == 0 ? "-" : std::to_string(state.en_passant_sq)) << std::endl;
 }
 bool Board::en_passant_capture_possible() const
 {
     int ep = state.en_passant_sq;
-    if (ep == core::constants::EnPassantSqNone)
+    if (ep == constants::EnPassantSqNone)
         return false;
 
     int file = ep & 7;
@@ -300,7 +300,7 @@ uint64_t Board::polyglot_key() const
         key ^= PolyglotRandom[771];
 
     // En passant
-    if (state.en_passant_sq != core::constants::EnPassantSqNone)
+    if (state.en_passant_sq != constants::EnPassantSqNone)
     {
         int file = state.en_passant_sq & 7;
         if (en_passant_capture_possible())

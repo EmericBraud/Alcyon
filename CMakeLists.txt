@@ -23,7 +23,7 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 list(FILTER SOURCES EXCLUDE REGEX "main.cpp")
 
 add_library(chess_core STATIC ${SOURCES})
-target_include_directories(chess_core PUBLIC include)
+target_include_directories(chess_core PUBLIC src)
 
 # -------------------------------------------------------------------
 # SFML

@@ -1,4 +1,4 @@
-#include "core/move/move_generator.hpp"
+#include "core/move/generator/move_generator.hpp"
 #include "gtest/gtest.h"
 
 class MoveLogicTest : public ::testing::Test
