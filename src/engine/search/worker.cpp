@@ -8,7 +8,8 @@
 #include "engine/engine_manager.hpp"
 #include "worker.hpp"
 
-int SearchWorker::score_move(const Move &move, const VBoard &board, const Move &tt_move, int ply, const Move &prev_move) const
+template <Color Us>
+int SearchWorker::score_move(const Move &move, const Move &tt_move, int ply, const Move &prev_move) const
 {
     const uint32_t move_val = move.get_value();
     if (move_val == tt_move.get_value())
@@ -41,7 +42,7 @@ int SearchWorker::score_move(const Move &move, const VBoard &board, const Move &
         // On n'appelle SEE que si c'est potentiellement perdant (LVA prend MVV)
         if (Eval::get_piece_score(from_piece) > Eval::get_piece_score(target))
         {
-            if (see(move.get_to_sq(), target, from_piece, board.get_side_to_move(), move.get_from_sq()) < 0)
+            if (see<Us>(move.get_to_sq(), target, from_piece, move.get_from_sq()) < 0)
                 return -1000 + mvv_lva; // Clairement perdant
         }
 
@@ -54,10 +55,8 @@ int SearchWorker::score_move(const Move &move, const VBoard &board, const Move &
     if (move_val == killer_moves[ply][1].get_value())
         return 8000;
 
-    const Color us = board.get_side_to_move();
-
     // Counter-move
-    if (ply > 0 && prev_move != 0 && move_val == counter_moves[us][prev_move.get_from_piece()][prev_move.get_to_sq()].get_value())
+    if (ply > 0 && prev_move != 0 && move_val == counter_moves[Us][prev_move.get_from_piece()][prev_move.get_to_sq()].get_value())
         return 7500;
 
     // Bonus spécial pour les échecs "calmes" (Crucial pour mat en 11)
@@ -65,7 +64,7 @@ int SearchWorker::score_move(const Move &move, const VBoard &board, const Move &
     // if (gives_check(move)) return 6000000;
 
     // 3. History Moves (Score relatif)
-    return history_moves[us][move.get_from_sq()][move.get_to_sq()];
+    return history_moves[Us][move.get_from_sq()][move.get_to_sq()];
 }
 std::string SearchWorker::get_pv_line(int depth)
 {
@@ -203,10 +202,6 @@ void SearchWorker::iterative_deepening()
             return;
         if (thread_id == 0)
         {
-            if (depth == engine::config::search::MaxDepth)
-            {
-                shared_stop.store(true, std::memory_order_relaxed);
-            }
             auto elapsed_ms = std::max<long long>(1,
                                                   std::chrono::duration_cast<std::chrono::milliseconds>(
                                                       std::chrono::steady_clock::now() - start_time_ref)
@@ -245,3 +240,6 @@ bool SearchWorker::check_stop()
     ++local_nodes;
     return false;
 }
+
+template int SearchWorker::score_move<WHITE>(const Move &move, const Move &tt_move, int ply, const Move &prev_move) const;
+template int SearchWorker::score_move<BLACK>(const Move &move, const Move &tt_move, int ply, const Move &prev_move) const;

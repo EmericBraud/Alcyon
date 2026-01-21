@@ -344,7 +344,15 @@ public:
         }
         return play<BLACK>(move);
     }
+    template <Color Us>
     bool is_move_legal(const Move move);
+    bool is_move_legal(const Move move)
+    {
+        const Color us = get_side_to_move();
+        if (us == WHITE)
+            return is_move_legal<WHITE>(move);
+        return is_move_legal<BLACK>(move);
+    };
     void compute_full_hash();
     char piece_to_char(Color color, Piece type) const;
     void show() const;
@@ -424,20 +432,24 @@ public:
         return get_history()->size();
     }
 
-    int get_smallest_attacker(U64 all_attackers, Color side, Piece &found_type) const
+    template <Color Side>
+    FORCE_INLINE int get_smallest_attacker(U64 all_attackers, Piece &found_type) const
     {
-        U64 side_attackers = all_attackers & occupancies[side];
+        // 1. Check rapide : Si l'adversaire n'attaque même pas la case, on sort direct.
+        // C'est très fréquent, donc ça vaut le coup de tester tôt.
+        U64 side_attackers = all_attackers & occupancies[Side];
         if (!side_attackers)
             return -1;
 
-        // Ordre de priorité : Pion < Cavalier < Fou < Tour < Dame < Roi
-        const int offset = side == WHITE ? 0 : constants::PieceTypeCount;
+        const int offset = (Side == WHITE) ? 0 : constants::PieceTypeCount;
+
         for (int type = PAWN; type <= KING; ++type)
         {
             U64 subset = side_attackers & pieces_occ[type + offset];
             if (subset)
             {
                 found_type = static_cast<Piece>(type);
+                // Ici, subset est > 0, donc get_lsb_index utilisera l'instruction TZCNT pure
                 return cpu::get_lsb_index(subset);
             }
         }

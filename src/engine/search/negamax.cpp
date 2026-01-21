@@ -2,6 +2,7 @@
 
 #include "engine/utils/random.hpp"
 #include "engine/engine_manager.hpp"
+#include "engine/search/move_picker.hpp"
 
 namespace search
 {
@@ -117,38 +118,6 @@ namespace search
         }
         return false;
     }
-
-    inline void score_moves(SearchWorker &worker, MoveList &list, Move tt_move, int ply, int thread_id)
-    {
-        // Récupération du coup précédent pour les Counter-moves
-        const Move prev_m = ply > 0 ? (worker.get_board().get_history()->back()).move : 0;
-
-        uint64_t posKey = worker.get_board().get_hash() ^ (uint64_t(thread_id) << 32);
-
-        if (thread_id != 0 && ply > 5)
-            for (int i = 0; i < list.count; ++i)
-            {
-                int base = worker.score_move(list.moves[i], worker.get_board(), tt_move, ply, prev_m);
-
-                uint64_t moveKey = (uint64_t)list.moves[i].get_value() * 0x9e3779b97f4a7c15ULL;
-                uint64_t h = posKey ^ moveKey;
-
-                uint64_t r = engine::random::splitmix64(h);
-
-                int delta = std::max(1, std::abs(base) / 12);
-                int noise = int(r & 1023) - 512; // [-512 .. 511]
-                noise = noise * delta / 512;
-
-                list.scores[i] = base + noise;
-                list.is_tactical[i] = base >= engine::config::eval::TacticalScore;
-            }
-        else
-            for (int i = 0; i < list.count; ++i)
-            {
-                list.scores[i] = worker.score_move(list.moves[i], worker.get_board(), tt_move, ply, prev_m);
-                list.is_tactical[i] = list.scores[i] >= engine::config::eval::TacticalScore;
-            }
-    }
 }
 
 template <Color Us>
@@ -161,6 +130,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     if (search::is_null(board, ply))
         return (board.get_history_size() < 20) ? -25 : 0;
+
+    if (ply >= engine::config::search::MaxDepth)
+        return Eval::lazy_eval_relative<Us>(board);
 
     const bool is_pv = (beta - alpha > 1);
     const bool in_check = board.is_king_attacked<Us>();
@@ -197,9 +169,13 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_mate_node, alpha);
 
     // 6. Génération et tri des coups restants
+    /*
     MoveList list;
     MoveGen::generate_pseudo_legal_moves<Us>(board, list);
     search::score_moves(*this, list, tt_move, ply, thread_id);
+    */
+    const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
+    MovePicker list(board, tt_move, ply, prev_m, thread_id);
 
     // 7. PVS Loop (Principal Variation Search)
     int alpha_orig = alpha;
@@ -208,17 +184,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     Move best_move_this_node = 0;
     int moves_searched = 0;
 
-    for (int i = 0; i < list.count; ++i)
+    while (true)
     {
-        Move &m = list.pick_best_move(i);
+        Move m = list.pick_next<Us>(*this);
+
+        if (m == 0) // No moves left
+            break;
         shared_tt.prefetch(board.get_hash_after(m));
 
-        if (!board.is_move_legal(m))
+        if (!board.is_move_legal<Us>(m))
             continue;
 
         int score;
-        const bool is_tactical = list.is_tactical[i];
-
+        const bool is_tactical = list.current_is_tactical;
         // --- LATE MOVE PRUNING (LMP) ---
         // Si on n'est pas en échec, à faible profondeur, on limite le nombre de coups calmes
         if (!in_check && depth <= 4 && !is_tactical)
@@ -244,11 +222,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         {
             if (Eval::get_piece_score(m.get_from_piece()) > Eval::get_piece_score(m.get_to_piece()))
             {
-                int see_score = see(
+                int see_score = see<Us>(
                     m.get_to_sq(),
                     m.get_to_piece(),
                     m.get_from_piece(),
-                    Us,
                     m.get_from_sq());
 
                 int threshold = -15 * depth - Eval::get_piece_score(m.get_to_piece()) / 2;
@@ -298,18 +275,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
             if (!is_tactical)
             {
-                int bonus = depth * depth;
-
-                // On récompense le coup gagnant
-                history_moves[Us][m.get_from_sq()][m.get_to_sq()] += bonus;
 
                 // MALUS : On punit tous les coups calmes testés AVANT et qui ont échoué
-                for (int j = 0; j < i; ++j)
+                if (list.stage == PickerStages::QUIETS)
                 {
-                    Move failed_move = list.moves[j];
-                    // On ne punit que les coups calmes (pas les captures/promotions)
-                    if (list.scores[j] < 8500)
+                    int bonus = depth * depth;
+
+                    // On récompense le coup gagnant
+                    history_moves[Us][m.get_from_sq()][m.get_to_sq()] += bonus;
+                    for (int j = 0; j < list.index - 1; ++j)
                     {
+                        Move failed_move = list.list.moves[j];
+                        // On ne punit que les coups calmes (pas les captures/promotions)
+
                         history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] = std::max(history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] - bonus, -10000);
                     }
                 }

@@ -5,7 +5,7 @@ namespace constants
 {
     constexpr int BoardSize = 64;
     constexpr int MaxMoves = 256; // Used in MoveList
-    constexpr int MaxHistorySize = 256;
+    constexpr int MaxHistorySize = 1024;
     constexpr int PieceTypeCount = 6;
     constexpr int NumPieceVariants = 12;
     constexpr int EnPassantSqNone = 255;

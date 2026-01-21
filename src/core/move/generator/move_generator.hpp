@@ -184,6 +184,9 @@ namespace MoveGen
     U64 get_legal_moves_mask(Board &board, int from_sq);
 
     template <Color Us>
+    void generate_pseudo_legal_promotions(const Board &board, MoveList &list);
+
+    template <Color Us>
     void generate_legal_moves(Board &board, MoveList &list);
 
     inline void generate_legal_moves(Board &board, MoveList &list)
@@ -218,6 +221,8 @@ namespace MoveGen
 
     inline void init_move_flags(const Board &board, Move &move)
     {
+        if (move == 0)
+            return;
         const int from_sq{move.get_from_sq()}, to_sq{move.get_to_sq()};
         const Piece from_piece{move.get_from_piece()};
         const PieceInfo to_piece_info{board.get_piece_on_square(to_sq)};
