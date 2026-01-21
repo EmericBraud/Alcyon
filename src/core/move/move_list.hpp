@@ -3,6 +3,9 @@
 #include "common/constants.hpp"
 #include "move.hpp"
 
+#include "common/logger.hpp"
+#include <iostream>
+
 struct MoveList
 {
     Move moves[constants::MaxMoves];
@@ -19,6 +22,13 @@ struct MoveList
     inline void push(Move m)
     {
         assert(count < 256);
+        moves[count++] = m;
+    }
+
+    inline void push(Move m, bool is_tact)
+    {
+        assert(count < 256);
+        is_tactical[count] = is_tact;
         moves[count++] = m;
     }
 
@@ -47,5 +57,10 @@ struct MoveList
     inline bool empty() const
     {
         return count == 0;
+    }
+
+    inline void clear()
+    {
+        count = 0;
     }
 };

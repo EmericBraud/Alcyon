@@ -134,6 +134,23 @@ public:
 
     void convert_ponder_to_real()
     {
+        if (stop_search.load(std::memory_order_relaxed))
+        {
+            logs::uci << "Search reached end before pondehit" << std::endl;
+
+            Move best_move;
+            best_move = tt.get_move(main_board.get_hash());
+            if (main_board.is_move_pseudo_legal(best_move) && main_board.is_move_legal(best_move))
+            {
+                root_best_move.store(best_move, std::memory_order_relaxed);
+                logs::uci << "bestmove " << best_move.to_uci() << std::endl;
+                return;
+            }
+            logs::uci << "Unresolved : starting quick search" << std::endl;
+            time_limit.store(100, std::memory_order_relaxed);
+            start_search(100, false, false, false);
+            return;
+        }
         is_pondering.store(false, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
     }
@@ -221,7 +238,7 @@ private:
             MoveList list;
             MoveGen::generate_legal_moves(main_board, list);
             for (int i = 0; i < list.size(); ++i)
-                list.scores[i] = workers[0].score_move(list.moves[i], main_board, 0, 0, 0);
+                main_board.get_side_to_move() == WHITE ? list.scores[i] = workers[0].score_move<WHITE>(list.moves[i], 0, 0, 0) : workers[0].score_move<BLACK>(list.moves[i], 0, 0, 0);
 
             if (list.count > 0) [[likely]]
             {

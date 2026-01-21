@@ -11,8 +11,15 @@ static constexpr const char *BISHOP_MAGICS_FILE = DATA_PATH "bishop_m.bin";
 #include "move_generator.hpp"
 
 #include <vector>
+#include <random>
+#include <fstream>
+#include <chrono>
 
+#include "common/constants.hpp"
+#include "common/cpu.hpp"
 #include "common/logger.hpp"
+#include "common/mask.hpp"
+#include "common/file.hpp"
 
 static void generate_all_blocker_occupancies(int sq, U64 mask, bool is_rook,
                                              std::vector<U64> &occupancy_list,
@@ -22,7 +29,7 @@ static void generate_all_blocker_occupancies(int sq, U64 mask, bool is_rook,
     U64 temp_mask = mask;
     while (temp_mask)
     {
-        blocker_bits.push_back(pop_lsb(temp_mask));
+        blocker_bits.push_back(cpu::pop_lsb(temp_mask));
     }
 
     int num_blocker_bits = blocker_bits.size();
@@ -33,7 +40,7 @@ static void generate_all_blocker_occupancies(int sq, U64 mask, bool is_rook,
         U64 occupancy = 0ULL;
         for (int j = 0; j < num_blocker_bits; ++j)
             if ((i >> j) & 1ULL) // Chekcs if jth blocker is present
-                occupancy |= sq_mask(blocker_bits[j]);
+                occupancy |= core::mask::sq_mask(blocker_bits[j]);
 
         occupancy_list.push_back(occupancy);
         attack_list.push_back(generate_sliding_attack(sq, occupancy, is_rook));
@@ -51,7 +58,7 @@ static MoveGen::Magic find_magic(int sq, bool is_rook, int max_iterations, long 
     U64 mask = is_rook ? MoveGen::RookMasks[sq] : MoveGen::BishopMasks[sq];
 
     int bits_in_mask = std::popcount(mask);
-    int shift = BOARD_SIZE - bits_in_mask;
+    int shift = constants::BoardSize - bits_in_mask;
 
     std::vector<U64> occupancies, attacks;
     generate_all_blocker_occupancies(sq, mask, is_rook, occupancies, attacks);
@@ -99,10 +106,10 @@ static MoveGen::Magic find_magic(int sq, bool is_rook, int max_iterations, long 
     throw std::runtime_error("No magic number found for square " + std::to_string(sq));
 }
 
-void MoveGen::export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m_array, bool is_rook)
+void MoveGen::export_attack_table(const std::array<MoveGen::Magic, constants::BoardSize> m_array, bool is_rook)
 {
     std::vector<U64> output_v{};
-    for (int sq{0}; sq < BOARD_SIZE; ++sq)
+    for (int sq{0}; sq < constants::BoardSize; ++sq)
     {
         const MoveGen::Magic magic = m_array[sq];
         const U64 mask = is_rook ? MoveGen::RookMasks[sq] : MoveGen::BishopMasks[sq];
@@ -113,7 +120,7 @@ void MoveGen::export_attack_table(const std::array<MoveGen::Magic, BOARD_SIZE> m
         {
             throw std::logic_error("Index start and real size not matching");
         }
-        output_v.insert(output_v.end(), static_cast<size_t>(1ULL << (BOARD_SIZE - magic.shift)), 0ULL);
+        output_v.insert(output_v.end(), static_cast<size_t>(1ULL << (constants::BoardSize - magic.shift)), 0ULL);
         for (long unsigned int i{0}; i < occupancies.size(); ++i)
         {
             U64 index = (occupancies[i] * magic.magic) >> magic.shift;
@@ -136,13 +143,13 @@ void MoveGen::run_magic_searcher()
     MoveGen::initialize_rook_masks();
     MoveGen::initialize_bishop_masks();
 
-    std::array<MoveGen::Magic, BOARD_SIZE> rook_m_array;
-    std::array<MoveGen::Magic, BOARD_SIZE> bishop_m_array;
+    std::array<MoveGen::Magic, constants::BoardSize> rook_m_array;
+    std::array<MoveGen::Magic, constants::BoardSize> bishop_m_array;
 
     long unsigned int index_start_bishop = 0;
     long unsigned int index_start_rook = 0;
 
-    for (int sq = 0; sq < BOARD_SIZE; ++sq)
+    for (int sq = 0; sq < constants::BoardSize; ++sq)
     {
         MoveGen::Magic rook_m = find_magic(sq, true, 10000000, index_start_rook);
         MoveGen::Magic bishop_m = find_magic(sq, false, 10000000, index_start_bishop);
@@ -152,8 +159,8 @@ void MoveGen::run_magic_searcher()
             std::cerr << "Error: Magic search failed for square " << sq << std::endl;
             return;
         }
-        index_start_bishop += 1ULL << (BOARD_SIZE - bishop_m.shift);
-        index_start_rook += 1ULL << (BOARD_SIZE - rook_m.shift);
+        index_start_bishop += 1ULL << (constants::BoardSize - bishop_m.shift);
+        index_start_rook += 1ULL << (constants::BoardSize - rook_m.shift);
         rook_m_array[sq] = rook_m;
         bishop_m_array[sq] = bishop_m;
     }
@@ -202,7 +209,7 @@ void MoveGen::load_magics(bool is_rook)
     }
     file.read(reinterpret_cast<char *>(
                   (is_rook ? MoveGen::RookMagics : MoveGen::BishopMagics).data()),
-              BOARD_SIZE * sizeof(MoveGen::Magic));
+              constants::BoardSize * sizeof(MoveGen::Magic));
 }
 void MoveGen::load_magics()
 {
@@ -219,8 +226,8 @@ void MoveGen::load_attacks_rook()
     }
     file.read(reinterpret_cast<char *>(
                   MoveGen::RookAttacks.data()),
-              ROOK_ATTACKS_SIZE * sizeof(U64));
-    if (file.gcount() != ROOK_ATTACKS_SIZE * sizeof(U64))
+              file::RookAttacksFileSize * sizeof(U64));
+    if (file.gcount() != file::RookAttacksFileSize * sizeof(U64))
     {
         throw std::runtime_error("Failed to read complete rook attacks table");
     }
@@ -234,8 +241,8 @@ void MoveGen::load_attacks_bishop()
     }
     file.read(reinterpret_cast<char *>(
                   MoveGen::BishopAttacks.data()),
-              BISHOP_ATTACKS_SIZE * sizeof(U64));
-    if (file.gcount() != BISHOP_ATTACKS_SIZE * sizeof(U64))
+              file::BishopAttacksFileSize * sizeof(U64));
+    if (file.gcount() != file::BishopAttacksFileSize * sizeof(U64))
     {
         throw std::runtime_error("Failed to read complete bishop attacks table");
     }

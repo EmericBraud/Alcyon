@@ -8,9 +8,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CHESS26_DATA_FULL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data/")
 add_definitions(-DDATA_PATH="${CHESS26_DATA_FULL_PATH}")
 
-#add_compile_options(-Wall -Wextra -DNDEBUG -flto -O3 -march=native -mbmi2)
-#add_compile_options(-Wall -Wextra -flto -O3 -march=native -ggdb3 -fno-omit-frame-pointer -mbmi2)
-add_compile_options(-Wall -Wextra -march=native -g -ggdb3 -fno-omit-frame-pointer -mbmi2 -O2)
+add_compile_options(-Wall -Wextra -DNDEBUG -flto -O3 -march=native -mbmi2 -fno-omit-frame-pointer -mpopcnt -lpthread)
+#add_compile_options(-Wall -Wextra -DNDEBUG -flto -O3 -march=native -mbmi2 -fno-omit-frame-pointer -mpopcnt -fprofile-generate -lpthread)
+#add_compile_options(-Wall -Wextra -flto -O3 -march=native -ggdb3 -fno-omit-frame-pointer -mbmi2 -mpopcnt)
+#add_compile_options(-Wall -Wextra -march=native -g -ggdb3 -fno-omit-frame-pointer -mbmi2 -O2)
+
+#add_link_options(-fprofile-use)
+#add_link_options(-fprofile-generate)
+
 
 # -------------------------------------------------------------------
 # Threads (needed for Threads::Threads)

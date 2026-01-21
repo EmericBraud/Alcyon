@@ -465,6 +465,60 @@ U64 MoveGen::get_legal_moves_mask(Board &board, int from_sq)
     return target_mask;
 }
 
+template <Color Us>
+void MoveGen::generate_pseudo_legal_promotions(const Board &board, MoveList &list)
+{
+
+    constexpr int DIRECTION = (Us == WHITE) ? 8 : -8;
+
+    // Bitboard des pions de notre couleur
+    const U64 us_pawns = board.get_piece_bitboard<Us, PAWN>();
+
+    // Masque pour isoler les pions prêts à promouvoir
+    // Rangée 7 pour Blancs (0x00FF000000000000), Rangée 2 pour Noirs (0x000000000000FF00)
+    const U64 promo_candidates = us_pawns & ((Us == WHITE) ? 0x00FF000000000000ULL : 0x000000000000FF00ULL);
+
+    if (!promo_candidates)
+        return;
+
+    const U64 occupied = board.get_occupancy(NO_COLOR);
+    const U64 enemies = board.get_occupancy((Color)!Us);
+
+    // Utilisation des tables d'attaques précalculées
+    const std::array<U64, 64> &pawn_attacks = (Us == WHITE) ? PawnAttacksWhite : PawnAttacksBlack;
+
+    U64 pawns = promo_candidates;
+    while (pawns)
+    {
+        const int from = cpu::pop_lsb(pawns);
+
+        // 1. Promotion calme (Poussée simple)
+        int to = from + DIRECTION;
+        // La case cible doit être vide
+        if (!(occupied & (1ULL << to)))
+        {
+            // On génère les 4 types de promotion
+            list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, QUEEN});
+            list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, KNIGHT});
+            list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, ROOK});
+            list.push(Move{from, to, PAWN, Move::Flags::PROMOTION_MASK, NO_PIECE, BISHOP});
+        }
+
+        // 2. Promotion avec Capture
+        U64 attacks = pawn_attacks[from] & enemies;
+        while (attacks)
+        {
+            int capture_to = cpu::pop_lsb(attacks);
+            const Piece victim = board.get_p(capture_to);
+
+            list.push(Move{from, capture_to, PAWN, Move::Flags::PROMOTION_MASK, victim, QUEEN});
+            list.push(Move{from, capture_to, PAWN, Move::Flags::PROMOTION_MASK, victim, KNIGHT});
+            list.push(Move{from, capture_to, PAWN, Move::Flags::PROMOTION_MASK, victim, ROOK});
+            list.push(Move{from, capture_to, PAWN, Move::Flags::PROMOTION_MASK, victim, BISHOP});
+        }
+    }
+}
+
 template <Color Attacker>
 bool is_mask_attacked(const Board &board, U64 mask)
 {
@@ -667,3 +721,6 @@ template void MoveGen::generate_pseudo_legal_captures<WHITE>(const Board &board,
 template void MoveGen::generate_pseudo_legal_captures<BLACK>(const Board &board, MoveList &list);
 template void MoveGen::generate_legal_moves<WHITE>(Board &board, MoveList &list);
 template void MoveGen::generate_legal_moves<BLACK>(Board &board, MoveList &list);
+
+template void MoveGen::generate_pseudo_legal_promotions<WHITE>(const Board &board, MoveList &list);
+template void MoveGen::generate_pseudo_legal_promotions<BLACK>(const Board &board, MoveList &list);

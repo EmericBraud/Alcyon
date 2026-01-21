@@ -46,27 +46,12 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     for (int i = 0; i < list.count; ++i)
     {
         Move &m = list[i];
-        if (in_check)
-        {
-            // Pour les évasions, on peut réutiliser ton score_move habituel ou MVV-LVA simple
-            list.scores[i] = score_move(m, board, tt_move, ply, 0);
-        }
+        if (m == tt_move) // On priorise le coup TT s'il existe
+            list.scores[i] = 2000000;
+        else if (in_check)
+            list.scores[i] = score_move<Us>(m, tt_move, ply, 0);
         else
-        {
-            Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : m.get_to_piece();
-
-            // 1. On calcule le SEE pour savoir si l'échange est gagnant/neutre
-            int see_val = see(m.get_to_sq(), target, m.get_from_piece(), Us, m.get_from_sq());
-
-            if (see_val < 0)
-            {
-                list.scores[i] = -1000;
-            }
-            else
-            {
-                list.scores[i] = score_capture(m);
-            }
-        }
+            list.scores[i] = score_capture(m); // Juste MVV/LVA, pas de SEE !
     }
 
     int best_score = in_check ? -engine::config::eval::Inf : stand_pat;
@@ -79,10 +64,6 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     {
         Move &m = list.pick_best_move(i);
 
-        // Élagage SEE : On ignore les captures perdantes sauf si on doit absolument sortir d'un échec
-        if (!in_check && list.scores[i] < 0)
-            continue;
-
         // --- DELTA PRUNING (Seulement hors échec) ---
         if (!in_check)
         {
@@ -91,6 +72,13 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
             int promo_bonus = (m.get_flags() & Move::PROMOTION_MASK) ? 800 : 0;
             if (stand_pat + victim_val + promo_bonus + 200 < alpha)
                 continue;
+            int attacker = m.get_from_piece();
+
+            if (Eval::get_piece_score(attacker) > victim_val)
+            {
+                if (see<Us>(m.get_to_sq(), static_cast<Piece>(target), static_cast<Piece>(attacker), m.get_from_sq()) < 0)
+                    continue;
+            }
         }
 
         board.play<Us>(m);
@@ -139,37 +127,32 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
 
     return best_score;
 }
-int SearchWorker::score_capture(const Move &move) const
+// Dans SearchWorker (ou inline)
+inline int SearchWorker::score_capture(const Move &move) const
 {
-    int attacker = move.get_from_piece();
+    // Utilisation directe de la table pour éviter les calculs
+    // On suppose que MvvLvaTable est accessible (namespace config ou membre)
+    // format: MvvLvaTable[victim][attacker]
 
-    // 2. Identifier la victime (Qui est mangé ?)
-    int victim_val = 0;
+    int score = 0;
 
     if (move.get_flags() == Move::EN_PASSANT_CAP)
     {
-        victim_val = Eval::get_piece_score(PAWN);
+        // Pion mange Pion en passant
+        score = engine::config::eval::MvvLvaTable[PAWN][PAWN];
     }
     else
     {
-        // On regarde sur la case d'arrivée
-        const int victim = move.get_to_piece();
-        if (victim != NO_PIECE)
-        {
-            victim_val = Eval::get_piece_score(victim);
-        }
+        score = engine::config::eval::MvvLvaTable[move.get_to_piece()][move.get_from_piece()];
     }
 
-    // 3. Calcul du score
-    int attacker_val = Eval::get_piece_score(attacker);
+    // Offset pour que les captures soient triées AVANT les coups calmes (killers, etc)
+    score += 1000000;
 
-    // Formule MVV-LVA standard
-    int score = 1000000 + (victim_val * 10 - attacker_val);
-
-    // Bonus Promotion
-    if (move.get_flags() == Move::PROMOTION_MASK)
+    if (move.is_promotion())
     {
-        score += Eval::get_piece_score(move.get_promo_piece());
+        // Bonus simple pour promotion (souvent Dame)
+        score += 10000;
     }
 
     return score;

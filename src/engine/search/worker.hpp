@@ -10,9 +10,8 @@
 
 class EngineManager;
 
-class SearchWorker
+struct SearchWorker
 {
-private:
     const EngineManager &manager;
     // Ressources locales (Copie pour éviter les Data Races)
     VBoard board;
@@ -37,7 +36,6 @@ private:
 
     bool check_stop();
 
-public:
     Move best_root_move = 0;
     Move out_move = 0;
 
@@ -98,9 +96,11 @@ public:
     }
 
     // --- utilitaires ---
-    int score_move(const Move &move, const VBoard &current_board, const Move &tt_move, int ply, const Move &prev_move) const;
+    template <Color Us>
+    int score_move(const Move &move, const Move &tt_move, int ply, const Move &prev_move) const;
     int score_capture(const Move &move) const;
-    int see(int sq, Piece target, Piece attacker, Color side, int from_sq) const;
+    template <Color Side>
+    int see(int sq, Piece target, Piece attacker, int from_sq) const;
     std::string get_pv_line(int depth);
     int negamax_with_aspiration(int depth, int last_score);
 

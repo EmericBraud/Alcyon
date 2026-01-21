@@ -17,7 +17,7 @@ class UCI
 {
     VBoard b;
     EngineManager e;
-    bool ponder_enabled = false;
+    bool ponder_enabled = true;
 
     std::expected<int, Move::MoveError> parse_position(VBoard &board, std::istringstream &is)
     {
@@ -123,7 +123,7 @@ class UCI
             int my_time = (board.get_side_to_move() == WHITE) ? wtime : btime;
             int my_inc = (board.get_side_to_move() == WHITE) ? winc : binc;
 
-            time_to_think = (my_time / 25) + (my_inc / 2);
+            time_to_think = (my_time / 28) + (my_inc / 2);
         }
 
         if (time_to_think < 20)
