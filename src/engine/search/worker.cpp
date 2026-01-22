@@ -72,7 +72,7 @@ std::string SearchWorker::get_pv_line(int depth)
     std::vector<Move> moves_to_unplay;
     std::vector<uint64_t> visited_hashes;
 
-    for (int i = 0; i < depth; i++)
+    for (int i = 0; i < std::min(depth, 10); i++)
     {
         Move m = shared_tt.get_move(board.get_hash());
 
@@ -116,6 +116,7 @@ std::string SearchWorker::get_pv_line(int depth)
 
 int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 {
+    max_extended_depth = 0;
     int delta = (depth >= 12) ? 100 : (depth >= 8) ? 50
                                                    : 16;
     int alpha = -engine::config::eval::Inf;
@@ -210,7 +211,7 @@ void SearchWorker::iterative_deepening()
             long long nodes = global_nodes.load(std::memory_order_relaxed);
             long long nps = nodes * 1000 / elapsed_ms;
             logs::uci
-                << "info depth " << depth
+                << "info depth " << depth << "/" << max_extended_depth
                 << " score cp " << last_score
                 << " nodes " << nodes
                 << " nps " << nps

@@ -128,6 +128,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (check_stop())
         return alpha;
 
+    if (max_extended_depth < ply)
+        max_extended_depth = ply;
+
     if (search::is_null(board, ply))
         return (board.get_history_size() < 20) ? -25 : 0;
 

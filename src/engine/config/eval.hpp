@@ -149,7 +149,7 @@ namespace engine::config::eval
         -20, -10, -10, -5, -5, -10, -10, -20};
 
     static constexpr std::array<int, constants::PieceTypeCount> pieces_score = {
-        100, 300, 300, 500, 900, 10000};
+        100, 320, 330, 500, 900, 10000};
 
     // Table de correspondance pour le milieu de jeu
     static const int *mg_tables[] = {
