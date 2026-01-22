@@ -66,7 +66,7 @@ struct SearchWorker
 
     // --- Méthodes de recherche ---
     template <Color Us>
-    int negamax(int depth, int alpha, int beta, int ply, bool allow_null);
+    int negamax(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move = 0);
     inline int negamax(int depth, int alpha, int beta, int ply)
     {
         if (board.get_side_to_move() == WHITE)

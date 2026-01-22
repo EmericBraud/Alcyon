@@ -121,7 +121,7 @@ namespace search
 }
 
 template <Color Us>
-int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null)
+int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move)
 {
 
     // =============================== Quick return cases ===============================
@@ -146,7 +146,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         TTFlag flag;
         int tt_score;
         bool tt_hit = shared_tt.probe(board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move, flag);
-        if (search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
+        if (tt_move != excluded_move && search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
             return tt_score;
     }
 
@@ -168,12 +168,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_mate_node, alpha);
 
-    // 6. Génération et tri des coups restants
-    /*
-    MoveList list;
-    MoveGen::generate_pseudo_legal_moves<Us>(board, list);
-    search::score_moves(*this, list, tt_move, ply, thread_id);
-    */
     const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
     MovePicker list(board, tt_move, ply, prev_m, thread_id);
 
@@ -190,10 +184,36 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         if (m == 0) // No moves left
             break;
-        shared_tt.prefetch(board.get_hash_after(m));
 
         if (!board.is_move_legal<Us>(m))
             continue;
+
+        if (m == excluded_move)
+            continue;
+
+        shared_tt.prefetch(board.get_hash_after(m));
+        bool is_singular = false;
+
+        if (m == tt_move && depth >= 8 && ply > 0 && excluded_move == 0 && !in_check)
+        {
+            TTFlag ttf;
+            int tts;
+            Move ttm;
+            if (shared_tt.probe(board.get_hash(), depth, ply, -engine::config::eval::Inf, engine::config::eval::Inf, tts, ttm, ttf))
+            {
+                if (ttf == TT_EXACT || ttf == TT_ALPHA)
+                {
+                    int singular_beta = tts - (depth * 2);
+                    int singular_depth = (depth - 1) / 2;
+                    int score = negamax<Us>(singular_depth, singular_beta - 1, singular_beta, ply, false, m);
+
+                    if (score < singular_beta)
+                    {
+                        is_singular = true;
+                    }
+                }
+            }
+        }
 
         int score;
         const bool is_tactical = list.current_is_tactical;
@@ -239,8 +259,20 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         board.play<Us>(m);
 
+        bool gives_check = board.is_king_attacked<!Us>();
+
+        int extension = 0;
+        if (gives_check && depth >= 2)
+            extension = 1;
+        if (is_singular)
+            extension = 1;
+        int new_depth = depth - 1 + extension;
+
+        if (ply + new_depth >= engine::config::search::MaxDepth)
+            new_depth = engine::config::search::MaxDepth - ply;
+
         // --- LATE MOVE REDUCTION (LMR) ---
-        if (depth >= 3 && moves_searched > 4 && !is_tactical && !in_check)
+        if (depth >= 3 && moves_searched > 4 && !is_tactical && !in_check && extension == 0)
         {
             int r = static_cast<int>(lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
             r = std::clamp(r, 0, depth - 2);
@@ -253,17 +285,17 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         }
         else if (moves_searched > 1) // Null Window Search pour PVS
         {
-            score = -negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true);
+            score = -negamax<!Us>(new_depth, -alpha - 1, -alpha, ply + 1, true);
         }
         else // Full Window Search (seulement si moves_searched == 1 et pas de TT move)
         {
-            score = -negamax<!Us>(depth - 1, -beta, -alpha, ply + 1, true);
+            score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true);
         }
 
         // Si le score est dans la fenêtre mais pas une coupure, on re-cherche normalement
         if (score > alpha && score < beta && moves_searched > 1)
         {
-            score = -negamax<!Us>(depth - 1, -beta, -alpha, ply + 1, true);
+            score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true);
         }
 
         board.unplay<Us>(m);
@@ -332,5 +364,5 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     return best_score;
 }
 
-template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply, bool allow_null);
-template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply, bool allow_null);
+template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move);
+template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move);
