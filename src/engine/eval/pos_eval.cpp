@@ -161,17 +161,18 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
     // 3. Mobilité et Sécurité
     for (int color = WHITE; color <= BLACK; ++color)
     {
-        int bonus = 0;
+        int bonus_mg = 0;
+        int bonus_eg = 0;
         const Color us = static_cast<Color>(color);
         const U64 our_occ = (us == WHITE) ? occ_white : occ_black;
 
         // Sécurité du Roi
-        bonus += evaluate_castling_and_safety(us, board);
+        bonus_mg += evaluate_castling_and_safety(us, board);
 
         if (std::popcount(board.get_piece_bitboard(us, BISHOP)) >= 2)
         {
-            bonus += 30; // Bonus milieu de jeu
-            bonus += 50; // Bonus fin de partie (plus important car le plateau est ouvert)
+            bonus_mg += 30; // Bonus milieu de jeu
+            bonus_eg += 50; // Bonus fin de partie (plus important car le plateau est ouvert)
         }
 
         // Mobilité optimisée
@@ -201,14 +202,15 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
 
                 // Accès direct à la table (Branchless)
                 // Pour la dame, on sature à 27 via std::min
-                bonus += bonus_table[(piece == QUEEN) ? std::min(count, 27) : count];
+                bonus_mg += bonus_table[(piece == QUEEN) ? std::min(count, 27) : count];
+                bonus_eg += bonus_table[(piece == QUEEN) ? std::min(count, 27) : count];
             }
         }
 
         // Application du bonus (Branchless via multiplication par le signe)
         const int sign = (us == WHITE) ? 1 : -1;
-        mg_score += bonus * sign;
-        eg_score += bonus * sign;
+        mg_score += bonus_mg * sign;
+        eg_score += bonus_eg * sign;
     }
 
     if (std::abs(eg_score) > 200)

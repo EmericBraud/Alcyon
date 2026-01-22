@@ -34,10 +34,10 @@ struct SearchWorker
     long long local_nodes = 0;
     int thread_id;
 
-    bool check_stop();
-
     Move best_root_move = 0;
     Move out_move = 0;
+
+    int max_extended_depth;
 
     // CONSTRUCTEUR PRINCIPAL
     // Appelé par l'orchestrateur pour chaque thread
@@ -115,4 +115,5 @@ struct SearchWorker
     {
         return shared_tt;
     }
+    bool check_stop();
 };

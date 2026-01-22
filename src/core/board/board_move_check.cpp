@@ -1,6 +1,8 @@
 #include "core/board/board.hpp"
 #include "core/move/generator/move_generator.hpp"
 
+#include "common/mask.hpp"
+
 template <Color Attacker>
 bool Board::is_attacked(int sq) const
 {
@@ -44,27 +46,36 @@ bool Board::is_move_legal(const Move move)
     const uint32_t flags = move.get_flags();
     constexpr Color them = (Color)!Us;
 
-    // 1. Préparation des masques
     const U64 from_mask = 1ULL << from_sq;
     const U64 to_mask = 1ULL << to_sq;
     const U64 move_mask = from_mask | to_mask;
 
-    // 2. Simulation du mouvement (Bitboards de base uniquement)
-    // On déplace la pièce
+    if (flags == Move::Flags::KING_CASTLE) [[unlikely]]
+    {
+        if (is_king_attacked<Us>())
+            return false;
+        if (is_attacked<!Us>(king_sq[Us] + 1))
+            return false;
+    }
+    else if (flags == Move::Flags::QUEEN_CASTLE) [[unlikely]]
+    {
+        if (is_king_attacked<Us>())
+            return false;
+        if (is_attacked<!Us>(king_sq[Us] - 1))
+            return false;
+    }
+
     get_piece_bitboard(Us, from_piece) ^= move_mask;
     occupancies[Us] ^= move_mask;
     occupancies[NO_COLOR] ^= move_mask;
 
-    // Gestion de la capture classique
     if (to_piece != NO_PIECE && flags != Move::Flags::EN_PASSANT_CAP) [[unlikely]]
     {
         get_piece_bitboard(them, to_piece) ^= to_mask;
         occupancies[them] ^= to_mask;
-        // CORRECTION : Rétablir l'occupation sur to_sq car le fou s'y trouve maintenant !
         occupancies[NO_COLOR] ^= to_mask;
     }
 
-    // Cas spéciaux (EP et Roque)
     U64 ep_pawn_mask = 0;
     if (flags == Move::Flags::EN_PASSANT_CAP) [[unlikely]]
     {
@@ -74,16 +85,10 @@ bool Board::is_move_legal(const Move move)
         occupancies[them] ^= ep_pawn_mask;
         occupancies[NO_COLOR] ^= ep_pawn_mask;
     }
-    // If king is moving, we have to update the king square (Using arithmetic branchless expression)
     int32_t is_king_mask = -(from_piece == KING);
     king_sq[Us] ^= (to_sq ^ king_sq[Us]) & is_king_mask;
-    // Note : Le roque se vérifie généralement AVANT d'appeler is_move_legal
-    // car il a ses propres règles (ne pas être en échec, etc.)
 
-    // 3. Vérification de la sécurité du Roi
-    // On doit mettre à jour state.side_to_move pour que is_king_attacked regarde le bon camp
-    // Mais il est plUs rapide de passer la couleur en paramètre si ta fonction le permet
-    bool legal = !is_king_attacked(Us);
+    bool legal = !is_king_attacked<Us>();
     // If king is moved
     int32_t mask = -(from_piece == KING);
     king_sq[Us] ^= (from_sq ^ king_sq[Us]) & mask;
