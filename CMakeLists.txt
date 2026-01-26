@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(Chess26 VERSION 1.0 LANGUAGES CXX)
+project(Chess26 VERSION 1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,13 +8,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CHESS26_DATA_FULL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data/")
 add_definitions(-DDATA_PATH="${CHESS26_DATA_FULL_PATH}")
 
-add_compile_options(-Wall -Wextra -DNDEBUG -flto -O3 -march=native -mbmi2 -fno-omit-frame-pointer -mpopcnt -lpthread)
+
 #add_compile_options(-Wall -Wextra -DNDEBUG -flto -O3 -march=native -mbmi2 -fno-omit-frame-pointer -mpopcnt -fprofile-generate -lpthread)
 #add_compile_options(-Wall -Wextra -flto -O3 -march=native -ggdb3 -fno-omit-frame-pointer -mbmi2 -mpopcnt)
 #add_compile_options(-Wall -Wextra -march=native -g -ggdb3 -fno-omit-frame-pointer -mbmi2 -O2)
 
 #add_link_options(-fprofile-use)
 #add_link_options(-fprofile-generate)
+
+
+
 
 
 # -------------------------------------------------------------------
@@ -31,6 +34,11 @@ list(FILTER SOURCES EXCLUDE REGEX "main.cpp")
 add_library(chess_core STATIC ${SOURCES})
 target_include_directories(chess_core PUBLIC src)
 
+target_compile_options(chess_core PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-DNDEBUG;-flto;-O3;-march=native;-mbmi2;-fno-omit-frame-pointer;-mpopcnt>
+)
+
+ 
 # -------------------------------------------------------------------
 # SFML
 # -------------------------------------------------------------------
@@ -41,6 +49,29 @@ target_link_libraries(chess_core PUBLIC
     sfml-window
     sfml-system
     Threads::Threads
+)
+
+# -------------------------------------------------------------------
+# Fathom
+# -------------------------------------------------------------------
+file(GLOB_RECURSE FATHOM_SOURCES
+    lib/fathom/*.c
+)
+
+add_library(fathom STATIC ${FATHOM_SOURCES})
+
+set_target_properties(fathom PROPERTIES
+    LINKER_LANGUAGE C
+)
+
+target_include_directories(fathom PUBLIC
+    lib/fathom
+)
+
+target_link_libraries(chess_core PUBLIC fathom)
+
+target_compile_options(fathom PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:-O3>
 )
 
 # -------------------------------------------------------------------
