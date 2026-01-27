@@ -7,7 +7,7 @@ protected:
     static void SetUpTestSuite()
     {
         MoveGen::initialize_bitboard_tables();
-    }
+        }
     void SetUp() override
     {
     }

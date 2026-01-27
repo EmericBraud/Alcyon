@@ -2,6 +2,8 @@ chess26
 
 build/
 
+data/syzygy
+
 Testing/Temporary/
 
 .env

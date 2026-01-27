@@ -13,6 +13,7 @@
 #include "engine/config/config.hpp"
 #include "engine/tt/transp_table.hpp"
 #include "engine/search/worker.hpp"
+#include "engine/eval/tablebase.hpp"
 
 struct RootMove
 {
@@ -26,6 +27,7 @@ class EngineManager
 {
     VBoard &main_board;
     TranspositionTable tt;
+    TableBase tb;
     double lmr_table[64][64];
 
     std::jthread search_thread;
@@ -41,6 +43,7 @@ class EngineManager
 
     Move depth_best_move;
     int depth_best_score;
+    int num_threads_config;
 
 public:
     inline Move get_root_best_move() const
@@ -52,6 +55,8 @@ public:
         tt.resize(512);
         init_lmr_table();
         root_best_move = 0;
+
+        num_threads_config = std::max(1u, std::thread::hardware_concurrency());
     }
 
     void stop()
@@ -116,7 +121,7 @@ public:
         tt.next_generation();
 
         // 2. Création d'un worker unique (pas besoin de multithread pour un simple eval)
-        SearchWorker worker(*this, main_board, tt, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
+        SearchWorker worker(*this, main_board, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
 
         // 3. Recherche par itérations successives (Iterative Deepening)
         int score = 0;
@@ -160,12 +165,26 @@ public:
         return tt;
     }
 
+    inline TableBase &get_tb()
+    {
+        return tb;
+    }
+
     void wait()
     {
         if (search_thread.joinable())
         {
             search_thread.join();
         }
+    }
+
+    void set_threads(int n)
+    {
+        if (n < 1)
+            n = 1;
+
+        num_threads_config = n;
+        logs::debug << "info string Threads set to " << num_threads_config << std::endl;
     }
 
 private:
@@ -179,7 +198,7 @@ private:
     void start_workers()
     {
 
-        const int num_threads = std::max(1u, std::thread::hardware_concurrency());
+        const int num_threads = num_threads_config;
         Move best_move;
 
         // =========================
@@ -188,7 +207,7 @@ private:
         std::vector<SearchWorker> workers;
         workers.reserve(num_threads);
         for (int t = 0; t < num_threads; ++t)
-            workers.emplace_back(*this, main_board, tt, stop_search, total_nodes, start_time, time_limit, lmr_table, t);
+            workers.emplace_back(*this, main_board, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, t);
 
         std::vector<std::jthread> threads;
         threads.reserve(num_threads);
@@ -196,13 +215,13 @@ private:
         for (auto &worker : workers)
             threads.emplace_back(&SearchWorker::iterative_deepening, &worker);
 
-        for (int t = 0; t < num_threads; ++t)
+        /* for (int t = 0; t < num_threads; ++t)
         {
             cpu_set_t cpuset;
             CPU_ZERO(&cpuset);
             CPU_SET(t, &cpuset); // uniquement le CPU t
             pthread_setaffinity_np(threads[t].native_handle(), sizeof(cpu_set_t), &cpuset);
-        }
+        } */
 
         for (auto &th : threads)
             th.join();
@@ -258,10 +277,14 @@ private:
         // =========================
         root_best_move.store(best_move, std::memory_order_relaxed);
 
-        if (is_pondering.load(std::memory_order_relaxed))
-            return;
+        while (is_pondering.load(std::memory_order_relaxed))
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if (stop_search.load(std::memory_order_relaxed))
+                break;
+        }
 
-        if (ponder_enabled.load(std::memory_order_relaxed))
+        if (ponder_enabled.load(std::memory_order_relaxed) && !stop_search.load(std::memory_order_relaxed))
         {
             main_board.play(best_move);
             auto guard = std::experimental::scope_exit([&best_move, this]

@@ -55,4 +55,5 @@ namespace logs
     };
 
     extern UCILogger uci;
+    extern UCILogger error;
 }

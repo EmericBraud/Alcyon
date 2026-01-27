@@ -34,8 +34,8 @@ list(FILTER SOURCES EXCLUDE REGEX "main.cpp")
 add_library(chess_core STATIC ${SOURCES})
 target_include_directories(chess_core PUBLIC src)
 
-target_compile_options(chess_core PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-DNDEBUG;-flto;-O3;-march=native;-mbmi2;-fno-omit-frame-pointer;-mpopcnt>
+target_compile_options(chess_core PUBLIC
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-flto;-O3;-DNDEBUG;-march=native;-mbmi2;-fno-omit-frame-pointer;-mpopcnt>
 )
 
  
@@ -54,11 +54,15 @@ target_link_libraries(chess_core PUBLIC
 # -------------------------------------------------------------------
 # Fathom
 # -------------------------------------------------------------------
-file(GLOB_RECURSE FATHOM_SOURCES
-    lib/fathom/*.c
+
+add_library(fathom STATIC lib/fathom/tbprobe.c)
+
+
+target_compile_definitions(fathom PRIVATE 
+    $<$<PLATFORM_ID:Linux>:_REENTRANT>
 )
 
-add_library(fathom STATIC ${FATHOM_SOURCES})
+target_link_libraries(fathom PRIVATE Threads::Threads)
 
 set_target_properties(fathom PROPERTIES
     LINKER_LANGUAGE C
@@ -68,10 +72,20 @@ target_include_directories(fathom PUBLIC
     lib/fathom
 )
 
+find_package(Threads REQUIRED)
+
+target_compile_definitions(fathom PRIVATE 
+    # On peut définir explicitement qu'on veut les threads 
+    # (ou s'assurer que TB_NO_THREADS n'est PAS là)
+    $<$<PLATFORM_ID:Linux>:_REENTRANT>
+)
+
+target_link_libraries(fathom PRIVATE Threads::Threads)
+
 target_link_libraries(chess_core PUBLIC fathom)
 
 target_compile_options(fathom PRIVATE
-    $<$<COMPILE_LANGUAGE:C>:-O3>
+    $<$<COMPILE_LANGUAGE:C>:-O3;-march=native;-mbmi2;-mpopcnt;-fno-omit-frame-pointer>
 )
 
 # -------------------------------------------------------------------
@@ -85,6 +99,10 @@ target_link_libraries(chess26 PRIVATE
     sfml-system
 )
 
+target_link_options(chess26 PRIVATE 
+    $<$<CONFIG:Release>:-O3;-flto;-march=native>
+    $<$<NOT:$<CONFIG:Release>>:-O3;-flto;-march=native>
+)
 set(CHESS26_DATA_DIR "$<TARGET_FILE_DIR:chess26>/data")
 add_custom_command(
     TARGET chess26 POST_BUILD

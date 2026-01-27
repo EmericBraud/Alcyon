@@ -3,6 +3,7 @@
 
 #include <atomic>
 
+#include "engine/eval/tablebase.hpp"
 #include "engine/config/config.hpp"
 #include "engine/eval/pos_eval.hpp"
 #include "engine/tt/transp_table.hpp"
@@ -18,6 +19,7 @@ struct SearchWorker
 
     // Ressources partagées (Références vers l'Orchestrateur)
     TranspositionTable &shared_tt;
+    TableBase &shared_tb;
     std::atomic<bool> &shared_stop;
     std::atomic<long long> &global_nodes;
     const std::chrono::steady_clock::time_point start_time_ref;
@@ -45,6 +47,7 @@ struct SearchWorker
         const EngineManager &e,
         const VBoard &b,
         TranspositionTable &tt,
+        TableBase &tb,
         std::atomic<bool> &stop,
         std::atomic<long long> &nodes,
         const std::chrono::steady_clock::time_point &start_time,
@@ -54,6 +57,7 @@ struct SearchWorker
         : manager(e),
           board(b), // Copie physique du plateau
           shared_tt(tt),
+          shared_tb(tb),
           shared_stop(stop),
           global_nodes(nodes),
           start_time_ref(start_time),

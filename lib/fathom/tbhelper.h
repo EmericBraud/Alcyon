@@ -11,7 +11,7 @@ static inline unsigned tbchess_lsb(uint64_t b)
 
 static inline uint64_t tbchess_poplsb(uint64_t b)
 {
-    return b & (b - 1) ^ b; // retire le LSB et renvoie sa valeur
+    return b & (b - 1); // retire le LSB et renvoie sa valeur
 }
 
 static inline unsigned tbchess_popcount(uint64_t b)
