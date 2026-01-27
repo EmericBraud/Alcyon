@@ -200,7 +200,29 @@ void SearchWorker::iterative_deepening()
         age_history();
         last_score = negamax_with_aspiration(depth, last_score);
         if (shared_stop.load(std::memory_order_relaxed))
+        {
+            if (thread_id == 0)
+            {
+                auto elapsed_ms = std::max<long long>(1,
+                                                      std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                          std::chrono::steady_clock::now() - start_time_ref)
+                                                          .count());
+
+                long long nodes = global_nodes.load(std::memory_order_relaxed);
+                long long nps = nodes * 1000 / elapsed_ms;
+                logs::uci
+                    << "info depth " << depth
+                    << " seldepth " << max_extended_depth
+                    << " score cp " << last_score
+                    << " nodes " << nodes
+                    << " nps " << nps
+                    << " hashfull " << shared_tt.get_hashfull()
+                    << " pv " << get_pv_line(depth)
+                    << std::endl;
+            }
             return;
+        }
+#ifndef NDEBUG
         if (thread_id == 0)
         {
             auto elapsed_ms = std::max<long long>(1,
@@ -210,8 +232,9 @@ void SearchWorker::iterative_deepening()
 
             long long nodes = global_nodes.load(std::memory_order_relaxed);
             long long nps = nodes * 1000 / elapsed_ms;
-            logs::uci
-                << "info depth " << depth << "/" << max_extended_depth
+            logs::debug
+                << "info depth " << depth
+                << " seldepth " << max_extended_depth
                 << " score cp " << last_score
                 << " nodes " << nodes
                 << " nps " << nps
@@ -219,9 +242,28 @@ void SearchWorker::iterative_deepening()
                 << " pv " << get_pv_line(depth)
                 << std::endl;
         }
+#endif
     }
     if (thread_id == 0)
+    {
         shared_stop.store(true, std::memory_order_relaxed);
+        auto elapsed_ms = std::max<long long>(1,
+                                              std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                  std::chrono::steady_clock::now() - start_time_ref)
+                                                  .count());
+
+        long long nodes = global_nodes.load(std::memory_order_relaxed);
+        long long nps = nodes * 1000 / elapsed_ms;
+        logs::uci
+            << "info depth " << engine::config::search::MaxDepth - 1
+            << " seldepth " << max_extended_depth
+            << " score cp " << last_score
+            << " nodes " << nodes
+            << " nps " << nps
+            << " hashfull " << shared_tt.get_hashfull()
+            << " pv " << get_pv_line(engine::config::search::MaxDepth - 1)
+            << std::endl;
+    }
 }
 
 bool SearchWorker::check_stop()

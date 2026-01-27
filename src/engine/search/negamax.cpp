@@ -14,9 +14,9 @@ namespace search
     }
 
     template <Color Us>
-    inline bool razoring(const VBoard &board, int depth, int alpha, bool is_pv, bool in_check)
+    inline bool razoring(const VBoard &board, int depth, int alpha, bool is_pv, bool in_check, int ply)
     {
-        if (in_check || is_pv || depth > 3)
+        if (in_check || is_pv || depth > 3 || ply == 0)
             return false;
 
         int static_eval = Eval::lazy_eval_relative<Us>(board);
@@ -120,6 +120,28 @@ namespace search
     }
 }
 
+inline TableBase::WDL_Result should_tb_probe(const Board &board, TableBase &shared_tb)
+{
+    return shared_tb.probe_wdl(board);
+}
+
+inline int wdl_score(TableBase::WDL_Result r, int ply)
+{
+    switch (r)
+    {
+    case TableBase::WDL_Result::LOSS:
+        return -(engine::config::eval::SyzygyScore - ply);
+    case TableBase::WDL_Result::CURSED_WIN:
+    case TableBase::WDL_Result::DRAW:
+    case TableBase::WDL_Result::BLESSED_LOSS:
+        return 0;
+    case TableBase::WDL_Result::WIN:
+        return engine::config::eval::SyzygyScore - ply;
+    default:
+        throw std::logic_error("Incoherent WDL value returned");
+    }
+}
+
 template <Color Us>
 int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move)
 {
@@ -134,6 +156,16 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (search::is_null(board, ply))
         return (board.get_history_size() < 20) ? -25 : 0;
 
+    if (ply > 0 &&
+        board.get_halfmove_clock() == 0 &&
+        board.get_castling_rights() == 0 &&
+        std::popcount(board.get_occupancy<NO_COLOR>()) <= engine::config::eval::SyzygyMaxPieces)
+    {
+        TableBase::WDL_Result r_tb = should_tb_probe(board, shared_tb);
+        if (r_tb != TableBase::WDL_Result::FAIL)
+            return wdl_score(r_tb, ply);
+    }
+
     if (ply >= engine::config::search::MaxDepth)
         return Eval::lazy_eval_relative<Us>(board);
 
@@ -141,7 +173,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const bool in_check = board.is_king_attacked<Us>();
     const bool is_mate_node = (alpha < engine::config::eval::MateScore && beta > -engine::config::eval::MateScore && in_check);
 
-    if (search::razoring<Us>(board, depth, alpha, is_pv, in_check))
+    if (search::razoring<Us>(board, depth, alpha, is_pv, in_check, ply))
         return qsearch<Us>(alpha, beta, ply);
 
     Move tt_move = 0;
@@ -359,6 +391,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         shared_tt.store(board.get_hash(), depth, ply, score, TT_EXACT, 0);
         return score;
     }
+
+    if (shared_stop.load(std::memory_order_relaxed)) // We don't write in TT if shared_stop
+        return best_score;
 
     // 9. Sauvegarde TT Finale
     TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;

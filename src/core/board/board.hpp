@@ -249,10 +249,7 @@ public:
     }
     inline const U64 &get_piece_bitboard(const Color color, const Piece type) const
     {
-        if (type > KING) // Should be disabled on prod for increased performances
-        {
-            throw std::out_of_range("Invalid piece type requested for Bitboard access.");
-        }
+        assert(type <= KING);
         size_t zero_based_index = (color * constants::PieceTypeCount) + (type);
 
         return pieces_occ[zero_based_index];
@@ -270,10 +267,15 @@ public:
         return pieces_occ[index];
     }
 
+    // Supports NO_COLOR
     template <Color Us, Piece p>
     inline U64 get_piece_bitboard() const
     {
         static_assert(p <= KING, "Invalid piece type");
+        if constexpr (Us == NO_COLOR)
+        {
+            return pieces_occ[p] | pieces_occ[p + constants::PieceTypeCount];
+        }
         constexpr size_t index = (Us * constants::PieceTypeCount) + p;
         return pieces_occ[index];
     }

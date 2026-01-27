@@ -78,12 +78,6 @@
  */
 /* #define TB_NO_HW_POP_COUNT */
 
-#include <stdint.h>
-
-#ifndef popcount
-#define popcount(x) __builtin_popcountll((x))
-#endif
-
 
 /***************************************************************************/
 /* SCORING CONSTANTS                                                       */

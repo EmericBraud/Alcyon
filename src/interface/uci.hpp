@@ -110,6 +110,16 @@ class UCI
                 logs::debug << "info string DEBUG: No move found in book." << std::endl;
             }
         }
+        if (!is_infinite && !is_ponder && std::popcount(board.get_occupancy<NO_COLOR>()) <= engine::config::eval::SyzygyMaxPieces)
+        {
+            logs::debug << "info string DEBUG: Checking TB..." << std::endl;
+            TableBase::RootResult r = e.get_tb().probe_root(board);
+            if (r.move != 0)
+            {
+                logs::uci << "bestmove " << r.move.to_uci() << std::endl;
+                return;
+            }
+        }
 
         // Time Management
         int time_to_think = 5000;
@@ -157,7 +167,19 @@ class UCI
             }
         }
 
-        if (name == "Ponder ")
+        if (name == "Threads ")
+        {
+            try
+            {
+                int threads = std::stoi(value);
+                e.set_threads(threads);
+            }
+            catch (...)
+            {
+                logs::debug << "info string Error parsing thread value" << std::endl;
+            }
+        }
+        else if (name == "Ponder ")
             ponder_enabled = (value == "true ");
         else if (name == "Hash ")
         {
@@ -194,8 +216,11 @@ public:
 
             if (token == "uci")
             {
+                int default_threads = std::thread::hardware_concurrency();
+
                 logs::uci << "id name Chess26" << std::endl;
                 logs::uci << "id author Emeric" << std::endl;
+                logs::uci << "option name Threads type spin default " << default_threads << " min 1 max 128" << std::endl;
                 logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
                 logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl;
                 logs::uci << "option name Ponder type check default false" << std::endl;
