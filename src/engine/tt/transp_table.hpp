@@ -63,18 +63,18 @@ private:
 
     int score_to_tt(int score, int ply)
     {
-        if (score > engine::config::eval::MateScore - 256)
+        if (score > engine_constants::eval::MateScore - 256)
             return score + ply;
-        if (score < -engine::config::eval::MateScore + 256)
+        if (score < -engine_constants::eval::MateScore + 256)
             return score - ply;
         return score;
     }
 
     int score_from_tt(int score, int ply)
     {
-        if (score > engine::config::eval::MateScore - 256)
+        if (score > engine_constants::eval::MateScore - 256)
             return score - ply;
-        if (score < -engine::config::eval::MateScore + 256)
+        if (score < -engine_constants::eval::MateScore + 256)
             return score + ply;
         return score;
     }
@@ -131,8 +131,8 @@ public:
                 if (bucket.entries[i].load(key, m_prev, s_prev, d_prev, f_prev))
                 {
                     bool old_gen = ((f_prev ^ current_age) & 0xFC) != 0;
-                    bool new_is_mate = abs(score) > engine::config::eval::MateScore - 256;
-                    bool old_is_mate = abs(s_prev) > engine::config::eval::MateScore - 256;
+                    bool new_is_mate = abs(score) > engine_constants::eval::MateScore - 256;
+                    bool old_is_mate = abs(s_prev) > engine_constants::eval::MateScore - 256;
 
                     bool replace;
 

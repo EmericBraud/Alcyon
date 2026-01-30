@@ -16,7 +16,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
         return tt_score;
 
     bool in_check = board.is_king_attacked<Us>();
-    int stand_pat = -engine::config::eval::Inf;
+    int stand_pat = -engine_constants::eval::Inf;
 
     // 3. Standing Pat (Évaluation statique)
     // On ne l'utilise que si on n'est pas en échec, car une position en échec est instable
@@ -54,7 +54,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
             list.scores[i] = score_capture(m); // Juste MVV/LVA, pas de SEE !
     }
 
-    int best_score = in_check ? -engine::config::eval::Inf : stand_pat;
+    int best_score = in_check ? -engine_constants::eval::Inf : stand_pat;
     int moves_searched = 0;
     int alpha_orig = alpha;
     Move best_move = 0;
@@ -115,7 +115,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     {
         if (in_check)
         {
-            int score = -engine::config::eval::MateScore + ply;
+            int score = -engine_constants::eval::MateScore + ply;
             shared_tt.store(board.get_hash(), 0, ply, score, TT_EXACT, 0);
             return score;
         }
@@ -139,11 +139,11 @@ inline int SearchWorker::score_capture(const Move &move) const
     if (move.get_flags() == Move::EN_PASSANT_CAP)
     {
         // Pion mange Pion en passant
-        score = engine::config::eval::MvvLvaTable[PAWN][PAWN];
+        score = engine_constants::eval::MvvLvaTable[PAWN][PAWN];
     }
     else
     {
-        score = engine::config::eval::MvvLvaTable[move.get_to_piece()][move.get_from_piece()];
+        score = engine_constants::eval::MvvLvaTable[move.get_to_piece()][move.get_from_piece()];
     }
 
     // Offset pour que les captures soient triées AVANT les coups calmes (killers, etc)

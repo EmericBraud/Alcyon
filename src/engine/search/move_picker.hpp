@@ -102,7 +102,7 @@ struct MovePicker
                     const int victim = m.get_to_piece();
                     const int attacker = m.get_from_piece();
 
-                    const int mvv_score = engine::config::eval::MvvLvaTable[victim][attacker];
+                    const int mvv_score = engine_constants::eval::MvvLvaTable[victim][attacker];
 
                     int final_score;
 

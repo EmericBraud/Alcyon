@@ -37,20 +37,20 @@ struct EvalState
                     if (j != PAWN && j != KING)
                     {
                         if (j == KNIGHT)
-                            phase += engine::config::eval::knightPhase;
+                            phase += engine_constants::eval::knightPhase;
                         else if (j == BISHOP)
-                            phase += engine::config::eval::bishopPhase;
+                            phase += engine_constants::eval::bishopPhase;
                         else if (j == ROOK)
-                            phase += engine::config::eval::rookPhase;
+                            phase += engine_constants::eval::rookPhase;
                         else if (j == QUEEN)
-                            phase += engine::config::eval::queenPhase;
+                            phase += engine_constants::eval::queenPhase;
                     }
                 }
             }
         }
-        if (phase > engine::config::eval::totalPhase)
+        if (phase > engine_constants::eval::totalPhase)
         {
-            phase = engine::config::eval::totalPhase;
+            phase = engine_constants::eval::totalPhase;
         }
     }
 
@@ -156,12 +156,12 @@ private:
         int mirror = (c == WHITE) ? sq : sq ^ 56;
 
         // Utilisation des tables respectives MG et EG
-        int pst_mg = engine::config::eval::mg_tables[p][mirror];
-        int pst_eg = engine::config::eval::eg_tables[p][mirror];
+        int pst_mg = engine_constants::eval::mg_tables[p][mirror];
+        int pst_eg = engine_constants::eval::eg_tables[p][mirror];
 
         mg_pst[c] += pst_mg;
         eg_pst[c] += pst_eg;
-        pieces_val[c] += engine::config::eval::pieces_score[p];
+        pieces_val[c] += engine_constants::eval::pieces_score[p];
 
         if (p == PAWN)
             pawn_key ^= zobrist_table[PAWN + (c == BLACK ? 6 : 0)][sq];
@@ -171,12 +171,12 @@ private:
     {
         int mirror = (c == WHITE) ? sq : sq ^ 56;
 
-        int pst_mg = engine::config::eval::mg_tables[p][mirror];
-        int pst_eg = engine::config::eval::eg_tables[p][mirror];
+        int pst_mg = engine_constants::eval::mg_tables[p][mirror];
+        int pst_eg = engine_constants::eval::eg_tables[p][mirror];
 
         mg_pst[c] -= pst_mg;
         eg_pst[c] -= pst_eg;
-        pieces_val[c] -= engine::config::eval::pieces_score[p];
+        pieces_val[c] -= engine_constants::eval::pieces_score[p];
 
         if (p == PAWN)
             pawn_key ^= zobrist_table[PAWN + (c == BLACK ? 6 : 0)][sq];
@@ -186,16 +186,16 @@ private:
         switch (p)
         {
         case KNIGHT:
-            phase -= engine::config::eval::knightPhase;
+            phase -= engine_constants::eval::knightPhase;
             break;
         case BISHOP:
-            phase -= engine::config::eval::bishopPhase;
+            phase -= engine_constants::eval::bishopPhase;
             break;
         case ROOK:
-            phase -= engine::config::eval::rookPhase;
+            phase -= engine_constants::eval::rookPhase;
             break;
         case QUEEN:
-            phase -= engine::config::eval::queenPhase;
+            phase -= engine_constants::eval::queenPhase;
             break;
         default:
             break;
@@ -205,30 +205,30 @@ private:
     }
     inline void update_phase_on_promotion()
     {
-        phase += engine::config::eval::queenPhase;
-        if (phase > engine::config::eval::totalPhase)
-            phase = engine::config::eval::totalPhase;
+        phase += engine_constants::eval::queenPhase;
+        if (phase > engine_constants::eval::totalPhase)
+            phase = engine_constants::eval::totalPhase;
     }
 
     inline void restore_phase_on_capture(Piece p)
     {
         if (p == KNIGHT)
-            phase += engine::config::eval::knightPhase;
+            phase += engine_constants::eval::knightPhase;
         else if (p == BISHOP)
-            phase += engine::config::eval::bishopPhase;
+            phase += engine_constants::eval::bishopPhase;
         else if (p == ROOK)
-            phase += engine::config::eval::rookPhase;
+            phase += engine_constants::eval::rookPhase;
         else if (p == QUEEN)
-            phase += engine::config::eval::queenPhase;
+            phase += engine_constants::eval::queenPhase;
 
-        if (phase > engine::config::eval::totalPhase)
-            phase = engine::config::eval::totalPhase;
+        if (phase > engine_constants::eval::totalPhase)
+            phase = engine_constants::eval::totalPhase;
     }
 
     inline void restore_phase_on_promotion()
     {
         // On retire la phase de la Dame qui a été annulée
-        phase -= engine::config::eval::queenPhase;
+        phase -= engine_constants::eval::queenPhase;
         if (phase < 0)
             phase = 0;
     }

@@ -23,7 +23,7 @@ int SearchWorker::score_move(const Move &move, const Move &tt_move, int ply, con
     if (to_piece != NO_PIECE || flags == Move::Flags::EN_PASSANT_CAP || move.is_promotion())
     {
         const Piece target = (flags == Move::Flags::EN_PASSANT_CAP) ? PAWN : to_piece;
-        const int mvv_lva = engine::config::eval::MvvLvaTable[target][from_piece];
+        const int mvv_lva = engine_constants::eval::MvvLvaTable[target][from_piece];
 
         if (move.is_promotion())
         {
@@ -119,8 +119,8 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
     max_extended_depth = 0;
     int delta = (depth >= 12) ? 100 : (depth >= 8) ? 50
                                                    : 16;
-    int alpha = -engine::config::eval::Inf;
-    int beta = engine::config::eval::Inf;
+    int alpha = -engine_constants::eval::Inf;
+    int beta = engine_constants::eval::Inf;
 
     if (depth >= 5)
     {
@@ -136,14 +136,14 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         ++iterations;
         int score = negamax(depth, alpha, beta, 0);
 
-        if (abs(score) >= engine::config::eval::MateScore - depth)
+        if (abs(score) >= engine_constants::eval::MateScore - depth)
         {
             return score;
         }
-        if (abs(score) >= engine::config::eval::MateScore - 256)
+        if (abs(score) >= engine_constants::eval::MateScore - 256)
         {
-            alpha = -engine::config::eval::MateScore;
-            beta = engine::config::eval::MateScore;
+            alpha = -engine_constants::eval::MateScore;
+            beta = engine_constants::eval::MateScore;
             continue;
         }
 
@@ -170,7 +170,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         {
             // Fail-low
             delta = std::max(delta * 2, 50);
-            alpha = std::max(-engine::config::eval::Inf, alpha - delta);
+            alpha = std::max(-engine_constants::eval::Inf, alpha - delta);
             if (thread_id == 0)
                 logs::debug << "info string fail low" << std::endl;
         }
@@ -178,7 +178,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         {
             // Fail-high
             delta = std::max(delta * 2, 50);
-            beta = std::min(engine::config::eval::Inf, beta + delta);
+            beta = std::min(engine_constants::eval::Inf, beta + delta);
             if (thread_id == 0)
                 logs::debug << "info string fail high" << std::endl;
         }
@@ -186,8 +186,8 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         // Sécurité
         if (iterations >= max_iterations || delta > 2000)
         {
-            alpha = -engine::config::eval::Inf;
-            beta = engine::config::eval::Inf;
+            alpha = -engine_constants::eval::Inf;
+            beta = engine_constants::eval::Inf;
         }
     }
 }
@@ -195,7 +195,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 void SearchWorker::iterative_deepening()
 {
     int last_score = 0;
-    for (int depth = 1; depth < engine::config::search::MaxDepth; ++depth)
+    for (int depth = 1; depth < engine_constants::search::MaxDepth; ++depth)
     {
         age_history();
         last_score = negamax_with_aspiration(depth, last_score);
@@ -255,13 +255,13 @@ void SearchWorker::iterative_deepening()
         long long nodes = global_nodes.load(std::memory_order_relaxed);
         long long nps = nodes * 1000 / elapsed_ms;
         logs::uci
-            << "info depth " << engine::config::search::MaxDepth - 1
+            << "info depth " << engine_constants::search::MaxDepth - 1
             << " seldepth " << max_extended_depth
             << " score cp " << last_score
             << " nodes " << nodes
             << " nps " << nps
             << " hashfull " << shared_tt.get_hashfull()
-            << " pv " << get_pv_line(engine::config::search::MaxDepth - 1)
+            << " pv " << get_pv_line(engine_constants::search::MaxDepth - 1)
             << std::endl;
     }
 }

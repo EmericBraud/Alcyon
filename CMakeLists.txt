@@ -35,7 +35,7 @@ add_library(chess_core STATIC ${SOURCES})
 target_include_directories(chess_core PUBLIC src)
 
 target_compile_options(chess_core PUBLIC
-    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-flto;-O3;-DNDEBUG;-march=native;-mbmi2;-fno-omit-frame-pointer;-mpopcnt>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-flto;-O3;-DNDEBUG;-march=native;-mbmi2;-fno-omit-frame-pointer;-mpopcnt;-DSPSA_TUNING>
 )
 
  

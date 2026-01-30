@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <iostream>
+#include <vector>
 
 #include "common/logger.hpp"
 #include "core/board/board.hpp"
@@ -10,13 +11,19 @@
 #include "core/board/zobrist.hpp"
 #include "engine/eval/book.hpp"
 #include "engine/engine_manager.hpp"
+#include "engine/config/config.hpp"
 
 #include "interface/gui.hpp"
+#include "interface/uci_option.hpp"
 
 class UCI
 {
     VBoard b;
     EngineManager e;
+#ifdef SPSA_TUNING
+    std::vector<UCIOption<int>> int_options;
+    std::vector<UCIOption<double>> double_options;
+#endif
     bool ponder_enabled = true;
 
     std::expected<int, Move::MoveError> parse_position(VBoard &board, std::istringstream &is)
@@ -110,7 +117,7 @@ class UCI
                 logs::debug << "info string DEBUG: No move found in book." << std::endl;
             }
         }
-        if (!is_infinite && !is_ponder && std::popcount(board.get_occupancy<NO_COLOR>()) <= engine::config::eval::SyzygyMaxPieces)
+        if (!is_infinite && !is_ponder && std::popcount(board.get_occupancy<NO_COLOR>()) <= engine_constants::eval::SyzygyMaxPieces)
         {
             logs::debug << "info string DEBUG: Checking TB..." << std::endl;
             TableBase::RootResult r = e.get_tb().probe_root(board);
@@ -150,6 +157,26 @@ class UCI
     void set_option(std::istringstream &is)
     {
         std::string word, name, value, option;
+        std::string content = is.str();
+
+        for (UCIOption<int> &int_option : int_options)
+        {
+            std::istringstream content_copy(content);
+            if (int_option.parse_input(content_copy))
+            {
+                logs::debug << "Input parsed : " << int_option.get_name() << std::endl;
+                return;
+            }
+        }
+        for (UCIOption<double> &double_option : double_options)
+        {
+            std::istringstream content_copy(content);
+            if (double_option.parse_input(content_copy))
+            {
+                logs::debug << "Input parsed : " << double_option.get_name() << std::endl;
+                return;
+            }
+        }
 
         while (is >> word)
         {
@@ -201,6 +228,46 @@ public:
         init_zobrist();
         b.load_fen(constants::FenInitPos);
         Book::init(DATA_PATH "komodo.bin");
+#ifdef SPSA_TUNING
+        int_options = {
+            UCIOption<int>(&engine_constants::search::razoring::MaxDepth, "razoring_max_depth"),
+            UCIOption<int>(&engine_constants::search::razoring::MarginDepthFactor, "razoring_depth_factor"),
+            UCIOption<int>(&engine_constants::search::razoring::MarginConst, "razoring_margin_const"),
+
+            UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MaxDepth, "rfp_max_depth"),
+            UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_d_fact"),
+            UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_const"),
+
+            UCIOption<int>(&engine_constants::search::iterative_deepening::MaxDepth, "itd_max_depth"),
+            UCIOption<int>(&engine_constants::search::iterative_deepening::NewDepthIncr, "itd_new_depth_inc"),
+
+            UCIOption<int>(&engine_constants::search::null_move_pruning::MinDepth, "nmp_min_depth"),
+            UCIOption<int>(&engine_constants::search::null_move_pruning::RConst, "nmp_r_const"),
+            UCIOption<int>(&engine_constants::search::null_move_pruning::RDiv, "nmp_r_div"),
+
+            UCIOption<int>(&engine_constants::search::futility_pruning::MaxDepth, "fp_max_depth"),
+            UCIOption<int>(&engine_constants::search::futility_pruning::MarginConst, "fp_margin_const"),
+            UCIOption<int>(&engine_constants::search::futility_pruning::MarginDepthFactor, "fp_margin_d_fact"),
+
+            UCIOption<int>(&engine_constants::search::singular::MinDepth, "singulat_min_depth"),
+
+            UCIOption<int>(&engine_constants::search::null_move_reduction::MaxDepth, "nmr_max_depth"),
+            UCIOption<int>(&engine_constants::search::null_move_reduction::MaxMovesConst, "nmr_max_moves_const"),
+
+            UCIOption<int>(&engine_constants::search::late_move_reduction::MinDepth, "lmr_min_depth"),
+            UCIOption<int>(&engine_constants::search::late_move_reduction::MinMovesSearched, "lmr_min_moves_searched"),
+            UCIOption<int>(&engine_constants::search::late_move_reduction::MaxDepthReduction, "lmr_max_depth_reduction"),
+
+            UCIOption<int>(&engine_constants::search::see_pruning::MaxDepth, "see_pruning_max_depth"),
+            UCIOption<int>(&engine_constants::search::see_pruning::ThresholdDepthFactor, "threshold_depth_factor"),
+
+        };
+
+        double_options = {
+            UCIOption<double>(&engine_constants::search::late_move_reduction::TableInitConst, "lmr_table_init_const"),
+            UCIOption<double>(&engine_constants::search::late_move_reduction::TableInitDiv, "lmr_table_init_div"),
+        };
+#endif
     }
     void loop()
     {
@@ -225,6 +292,14 @@ public:
                 logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl;
                 logs::uci << "option name Ponder type check default false" << std::endl;
                 logs::uci << "option name Threads type spin default 16 min 1 max 16" << std::endl;
+                for (auto int_option : int_options)
+                {
+                    int_option.init_print();
+                }
+                for (auto double_option : double_options)
+                {
+                    double_option.init_print();
+                }
                 logs::uci << "uciok" << std::endl;
             }
             else if (token == "setoption")

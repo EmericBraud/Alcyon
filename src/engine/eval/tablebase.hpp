@@ -184,7 +184,7 @@ public:
             r.score = 0;
             return r;
         }
-        r.score = engine::config::eval::SyzygyScore - r_raw.dtz;
+        r.score = engine_constants::eval::SyzygyScore - r_raw.dtz;
         if (winning_color != us)
             r.score = -r.score;
         return r;

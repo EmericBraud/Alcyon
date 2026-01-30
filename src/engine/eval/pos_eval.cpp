@@ -16,10 +16,10 @@ namespace Eval
 {
     static const int *mobility_bonus_tables[] = {
         nullptr, // PAWN (pas géré ici)
-        engine::config::eval::knight_mob,
-        engine::config::eval::bishop_mob,
-        engine::config::eval::rook_mob,
-        engine::config::eval::queen_mob};
+        engine_constants::eval::knight_mob,
+        engine_constants::eval::bishop_mob,
+        engine_constants::eval::rook_mob,
+        engine_constants::eval::queen_mob};
 }
 
 // Transforme un bitboard de pions en un masque où chaque bit
@@ -147,7 +147,7 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
     }
     mg_score += mg_pawn;
     eg_score += eg_pawn;
-    int base_score = (mg_score * state.phase + eg_score * (engine::config::eval::totalPhase - state.phase)) / engine::config::eval::totalPhase;
+    int base_score = (mg_score * state.phase + eg_score * (engine_constants::eval::totalPhase - state.phase)) / engine_constants::eval::totalPhase;
     const int margin = 110;
     if (base_score >= beta + margin)
         return base_score;
@@ -245,7 +245,7 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
     }
 
     // 4. Interpolation finale (material_score a été fusionné à l'étape 1)
-    return (mg_score * state.phase + eg_score * (engine::config::eval::totalPhase - state.phase)) / engine::config::eval::totalPhase;
+    return (mg_score * state.phase + eg_score * (engine_constants::eval::totalPhase - state.phase)) / engine_constants::eval::totalPhase;
 }
 void Eval::print_pawn_stats()
 {
