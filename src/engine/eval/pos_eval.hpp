@@ -76,7 +76,7 @@ namespace Eval
 
     inline int get_piece_score(int piece)
     {
-        return engine::config::eval::pieces_score[piece];
+        return engine_constants::eval::pieces_score[piece];
     }
 
     void print_pawn_stats();
@@ -96,7 +96,7 @@ namespace Eval
                              (state.mg_pst[BLACK] + state.pieces_val[BLACK]);
         const int eg_score = (state.eg_pst[WHITE] + state.pieces_val[WHITE]) -
                              (state.eg_pst[BLACK] + state.pieces_val[BLACK]);
-        const int base_score = (mg_score * state.phase + eg_score * (engine::config::eval::totalPhase - state.phase)) / engine::config::eval::totalPhase;
+        const int base_score = (mg_score * state.phase + eg_score * (engine_constants::eval::totalPhase - state.phase)) / engine_constants::eval::totalPhase;
         return Us == WHITE ? base_score : -base_score;
     }
 }

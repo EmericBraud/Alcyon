@@ -125,7 +125,7 @@ public:
 
         // 3. Recherche par itérations successives (Iterative Deepening)
         int score = 0;
-        for (int d = 1; d <= engine::config::search::MaxDepth; ++d)
+        for (int d = 1; d <= engine_constants::search::MaxDepth; ++d)
         {
             score = worker.negamax_with_aspiration(d, score);
 
@@ -192,7 +192,7 @@ private:
     {
         for (int d = 1; d < 64; ++d)
             for (int m = 1; m < 64; ++m)
-                lmr_table[d][m] = 0.5 + std::log(d) * std::log(m) / 2.25;
+                lmr_table[d][m] = engine_constants::search::late_move_reduction::TableInitConst + std::log(d) * std::log(m) / engine_constants::search::late_move_reduction::TableInitDiv;
     }
 
     void start_workers()

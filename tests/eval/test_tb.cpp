@@ -11,7 +11,7 @@ protected:
 
     void SetUp() override
     {
-        if (TB_LARGEST == 0)
+        if (static_cast<int>(TB_LARGEST) == 0)
         {
             GTEST_SKIP() << "Tablebases Syzygy non trouvées dans " << DATA_PATH "syzygy";
         }
@@ -23,7 +23,7 @@ TEST_F(SyzygyTest, ProbeWDL_Win)
 {
     b.load_fen("1r6/1P6/8/8/8/8/2R5/k1K5 w - - 0 1");
 
-    if (std::popcount(b.get_occupancy<NO_COLOR>()) > TB_LARGEST)
+    if (std::popcount(b.get_occupancy<NO_COLOR>()) > static_cast<int>(TB_LARGEST))
         GTEST_SKIP();
 
     auto result = tb.probe_wdl(b);
@@ -35,7 +35,7 @@ TEST_F(SyzygyTest, ProbeWDL_Loss)
 {
     b.load_fen("8/8/8/8/8/3k4/4q3/K7 w - - 0 1");
 
-    if (std::popcount(b.get_occupancy<NO_COLOR>()) > TB_LARGEST)
+    if (std::popcount(b.get_occupancy<NO_COLOR>()) > static_cast<int>(TB_LARGEST))
         GTEST_SKIP();
 
     auto result = tb.probe_wdl(b);
@@ -47,7 +47,7 @@ TEST_F(SyzygyTest, ProbeWDL_Draw)
 {
     b.load_fen("7k/8/8/8/8/8/1R6/K1r5 w - - 0 1");
 
-    if (std::popcount(b.get_occupancy<NO_COLOR>()) > TB_LARGEST)
+    if (std::popcount(b.get_occupancy<NO_COLOR>()) > static_cast<int>(TB_LARGEST))
         GTEST_SKIP();
 
     auto result = tb.probe_wdl(b);
@@ -61,7 +61,7 @@ TEST_F(SyzygyTest, ProbeRoot_FindsWinningMove)
     // Blanc (Dame en g3) va jouer pour mater ou gagner.
     b.load_fen("8/8/8/8/8/6Q1/8/k1K5 w - - 0 1");
 
-    if (std::popcount(b.get_occupancy<NO_COLOR>()) > TB_LARGEST)
+    if (std::popcount(b.get_occupancy<NO_COLOR>()) > static_cast<int>(TB_LARGEST))
         GTEST_SKIP();
 
     auto result = tb.probe_root(b);
@@ -84,7 +84,7 @@ TEST_F(SyzygyTest, ProbeWDL_ImmediateStalemate)
     // Blanc est Pat
     b.load_fen("8/8/8/8/8/8/5q2/7K w - - 0 1");
 
-    if (std::popcount(b.get_occupancy<NO_COLOR>()) > TB_LARGEST)
+    if (std::popcount(b.get_occupancy<NO_COLOR>()) > static_cast<int>(TB_LARGEST))
         GTEST_SKIP();
 
     // CORRECTION ICI :
@@ -104,7 +104,7 @@ TEST_F(SyzygyTest, ProbeWDL_EnPassant_NoCrash)
 {
     b.load_fen("8/8/8/K7/3pP3/8/8/k7 b - e3 0 1");
 
-    if (std::popcount(b.get_occupancy<NO_COLOR>()) > TB_LARGEST)
+    if (std::popcount(b.get_occupancy<NO_COLOR>()) > static_cast<int>(TB_LARGEST))
         GTEST_SKIP();
 
     auto result = tb.probe_wdl(b);

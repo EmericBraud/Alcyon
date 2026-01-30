@@ -13,7 +13,7 @@ void GUI::run()
         // computer.play();
         if (auto_play && board.get_side_to_move() == computer_side)
         {
-            logs::debug << "Playing position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
+            logs::debug << "Playing position with depth " << engine_constants::search::MaxDepth << " ..." << std::endl;
             computer.start_search();
         }
         while (window.pollEvent(event))
@@ -61,13 +61,13 @@ void GUI::run()
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::E)
             {
-                logs::debug << "Evaluating position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
+                logs::debug << "Evaluating position with depth " << engine_constants::search::MaxDepth << " ..." << std::endl;
                 const int score{computer.evaluate_position(5000)};
                 logs::debug << "Position score : " << score << std::endl;
             }
             else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::P)
             {
-                logs::debug << "Playing position with depth " << engine::config::search::MaxDepth << " ..." << std::endl;
+                logs::debug << "Playing position with depth " << engine_constants::search::MaxDepth << " ..." << std::endl;
                 computer.start_search(20000, false, false);
                 board.play(computer.get_root_best_move());
             }

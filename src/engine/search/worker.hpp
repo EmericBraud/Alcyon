@@ -28,9 +28,9 @@ struct SearchWorker
 
     // Heuristiques locales (Thread-local)
     int history_moves[2][64][64];
-    Move killer_moves[engine::config::search::MaxDepth][2];
+    Move killer_moves[engine_constants::search::MaxDepth][2];
     Move counter_moves[2][7][64];
-    std::array<Move, engine::config::search::MaxDepth> move_stack;
+    std::array<Move, engine_constants::search::MaxDepth> move_stack;
 
     // Métriques locales
     long long local_nodes = 0;

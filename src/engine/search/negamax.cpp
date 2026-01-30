@@ -16,11 +16,11 @@ namespace search
     template <Color Us>
     inline bool razoring(const VBoard &board, int depth, int alpha, bool is_pv, bool in_check, int ply)
     {
-        if (in_check || is_pv || depth > 3 || ply == 0)
+        if (in_check || is_pv || depth > engine_constants::search::razoring::MaxDepth || ply == 0)
             return false;
 
         int static_eval = Eval::lazy_eval_relative<Us>(board);
-        int margin = 100 * depth;
+        int margin = engine_constants::search::razoring::MarginDepthFactor * depth + engine_constants::search::razoring::MarginConst;
         return static_eval + margin <= alpha;
     }
 
@@ -28,7 +28,7 @@ namespace search
     {
         if (depth > 0)
             return false;
-        if (in_check && ply < engine::config::search::MaxDepth - 5)
+        if (in_check && ply < engine_constants::search::MaxDepth - 5)
         {
             depth = 1;
             return false;
@@ -39,10 +39,10 @@ namespace search
     template <Color Us>
     inline bool reverse_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, int beta)
     {
-        if (depth <= 7 && !in_check && ply > 0 && !is_pv)
+        if (depth <= engine_constants::search::reverse_futility_pruning::MaxDepth && !in_check && ply > 0 && !is_pv)
         {
             int static_eval = Eval::lazy_eval_relative<Us>(board);
-            int margin = 120 * depth;
+            int margin = engine_constants::search::reverse_futility_pruning::MarginDepthFactor * depth + engine_constants::search::reverse_futility_pruning::MarginConst;
             if (static_eval - margin >= beta)
                 return true;
         }
@@ -73,10 +73,10 @@ namespace search
     template <Color Us>
     inline void iterative_deepening(SearchWorker &worker, Move &tt_move, int depth, int ply, bool is_pv, int alpha, int beta)
     {
-        if (tt_move != 0 || depth < 6 || !is_pv)
+        if (tt_move != 0 || depth < engine_constants::search::iterative_deepening::MaxDepth || !is_pv)
             return;
 
-        int new_depth = depth - 4;
+        int new_depth = depth - engine_constants::search::iterative_deepening::NewDepthIncr;
         worker.negamax<Us>(new_depth, alpha, beta, ply, true);
         tt_move = worker.get_tt().get_move(worker.get_board().get_hash());
     }
@@ -84,19 +84,19 @@ namespace search
     template <Color Us>
     inline bool nmp(SearchWorker &worker, int depth, int ply, bool allow_null, bool in_check, bool is_mate_node, int alpha, int beta, int &return_score)
     {
-        if (depth >= 3 && ply > 0 && allow_null && !in_check && !is_mate_node && beta < 9000 && alpha > -9000)
+        if (depth >= engine_constants::search::null_move_pruning::MinDepth && ply > 0 && allow_null && !in_check && !is_mate_node && beta < 9000 && alpha > -9000)
         {
             int stored_ep;
             worker.get_tt().prefetch(worker.get_board().get_hash());
             worker.get_board().play_null_move(stored_ep);
-            int R = 2 + depth / 6;
+            int R = engine_constants::search::null_move_pruning::RConst + depth / engine_constants::search::null_move_pruning::RDiv;
             R = std::min(R, depth - 1);
             int score = -worker.negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false);
             worker.get_board().unplay_null_move(stored_ep);
 
             if (score >= beta)
             {
-                return_score = (score >= engine::config::eval::MateScore - engine::config::search::MaxDepth) ? beta : score;
+                return_score = (score >= engine_constants::eval::MateScore - engine_constants::search::MaxDepth) ? beta : score;
                 return true;
             }
         }
@@ -106,15 +106,99 @@ namespace search
     template <Color Us>
     bool should_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_mate_node, int alpha)
     {
-        if (depth <= 3 && !in_check && ply > 0 && !is_mate_node)
+        if (depth <= engine_constants::search::futility_pruning::MaxDepth && !in_check && ply > 0 && !is_mate_node)
         {
-            int futil_margin = 175 + 110 * depth;
+            int futil_margin = engine_constants::search::futility_pruning::MarginConst + engine_constants::search::futility_pruning::MarginDepthFactor * depth;
             int static_eval = Eval::lazy_eval_relative<Us>(board);
 
             if (static_eval + futil_margin <= alpha)
             {
                 return true;
             }
+        }
+        return false;
+    }
+
+    template <Color Us>
+    inline bool is_singular_search(SearchWorker &worker, Move tt_move, int depth, int ply, bool in_check, Move excluded_move, Move m)
+    {
+        if (!in_check && depth >= engine_constants::search::singular::MinDepth && ply > 0 && m == tt_move && excluded_move == 0)
+        {
+            TTFlag ttf;
+            int tts;
+            Move ttm;
+            if (worker.get_tt().probe(worker.board.get_hash(), depth, ply, -engine_constants::eval::Inf, engine_constants::eval::Inf, tts, ttm, ttf))
+            {
+                if (ttf == TT_EXACT || ttf == TT_ALPHA)
+                {
+                    int singular_beta = tts - (depth * 2);
+                    int singular_depth = (depth - 1) / 2;
+                    int score = worker.negamax<Us>(singular_depth, singular_beta - 1, singular_beta, ply, false, m);
+
+                    if (score < singular_beta)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    bool should_lmp(bool in_check, int depth, bool is_tactical, int moves_searched)
+    {
+        if (!in_check && depth <= engine_constants::search::null_move_reduction::MaxDepth && !is_tactical)
+        {
+            int max_moves = engine_constants::search::null_move_reduction::MaxMovesConst + (depth * depth * engine_constants::search::null_move_reduction::MaxMovesDepthSqFactor);
+            if (moves_searched >= max_moves)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    template <Color Us>
+    inline bool should_see_pruning(SearchWorker &worker, bool in_check, bool is_pv, int depth, int moves_searched, Move tt_move, Move m)
+    {
+
+        if (!in_check && !is_pv &&
+            depth <= engine_constants::search::see_pruning::MaxDepth &&
+            moves_searched > 1 &&
+            m != tt_move &&
+            m.is_capture())
+        {
+            if (Eval::get_piece_score(m.get_from_piece()) > Eval::get_piece_score(m.get_to_piece()))
+            {
+                int see_score = worker.see<Us>(
+                    m.get_to_sq(),
+                    m.get_to_piece(),
+                    m.get_from_piece(),
+                    m.get_from_sq());
+
+                int threshold = -engine_constants::search::see_pruning::ThresholdDepthFactor * depth - Eval::get_piece_score(m.get_to_piece()) / 2;
+
+                if (see_score < threshold)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    template <Color Us>
+    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, int alpha, int &score)
+    {
+        if (depth >= engine_constants::search::late_move_reduction::MinDepth && moves_searched >= engine_constants::search::late_move_reduction::MinMovesSearched && !is_tactical && !in_check && extension == 0)
+        {
+            int r = static_cast<int>(worker.lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
+            r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
+
+            score = -worker.negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1, true);
+
+            // Re-search si le coup réduit semble bon
+            if (score > alpha)
+                score = -worker.negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true);
+            return true;
         }
         return false;
     }
@@ -130,13 +214,13 @@ inline int wdl_score(TableBase::WDL_Result r, int ply)
     switch (r)
     {
     case TableBase::WDL_Result::LOSS:
-        return -(engine::config::eval::SyzygyScore - ply);
+        return -(engine_constants::eval::SyzygyScore - ply);
     case TableBase::WDL_Result::CURSED_WIN:
     case TableBase::WDL_Result::DRAW:
     case TableBase::WDL_Result::BLESSED_LOSS:
         return 0;
     case TableBase::WDL_Result::WIN:
-        return engine::config::eval::SyzygyScore - ply;
+        return engine_constants::eval::SyzygyScore - ply;
     default:
         throw std::logic_error("Incoherent WDL value returned");
     }
@@ -159,19 +243,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (ply > 0 &&
         board.get_halfmove_clock() == 0 &&
         board.get_castling_rights() == 0 &&
-        std::popcount(board.get_occupancy<NO_COLOR>()) <= engine::config::eval::SyzygyMaxPieces)
+        std::popcount(board.get_occupancy<NO_COLOR>()) <= engine_constants::eval::SyzygyMaxPieces)
     {
         TableBase::WDL_Result r_tb = should_tb_probe(board, shared_tb);
         if (r_tb != TableBase::WDL_Result::FAIL)
             return wdl_score(r_tb, ply);
     }
 
-    if (ply >= engine::config::search::MaxDepth)
+    if (ply >= engine_constants::search::MaxDepth)
         return Eval::lazy_eval_relative<Us>(board);
 
     const bool is_pv = (beta - alpha > 1);
     const bool in_check = board.is_king_attacked<Us>();
-    const bool is_mate_node = (alpha < engine::config::eval::MateScore && beta > -engine::config::eval::MateScore && in_check);
+    const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
 
     if (search::razoring<Us>(board, depth, alpha, is_pv, in_check, ply))
         return qsearch<Us>(alpha, beta, ply);
@@ -209,7 +293,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // 7. PVS Loop (Principal Variation Search)
     int alpha_orig = alpha;
 
-    int best_score = -engine::config::eval::Inf;
+    int best_score = -engine_constants::eval::Inf;
     Move best_move_this_node = 0;
     int moves_searched = 0;
 
@@ -227,68 +311,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             continue;
 
         shared_tt.prefetch(board.get_hash_after(m));
-        bool is_singular = false;
-
-        if (m == tt_move && depth >= 8 && ply > 0 && excluded_move == 0 && !in_check)
-        {
-            TTFlag ttf;
-            int tts;
-            Move ttm;
-            if (shared_tt.probe(board.get_hash(), depth, ply, -engine::config::eval::Inf, engine::config::eval::Inf, tts, ttm, ttf))
-            {
-                if (ttf == TT_EXACT || ttf == TT_ALPHA)
-                {
-                    int singular_beta = tts - (depth * 2);
-                    int singular_depth = (depth - 1) / 2;
-                    int score = negamax<Us>(singular_depth, singular_beta - 1, singular_beta, ply, false, m);
-
-                    if (score < singular_beta)
-                    {
-                        is_singular = true;
-                    }
-                }
-            }
-        }
+        bool is_singular = search::is_singular_search<Us>(*this, tt_move, depth, ply, in_check, excluded_move, m);
 
         int score;
         const bool is_tactical = list.current_is_tactical;
-        // --- LATE MOVE PRUNING (LMP) ---
-        // Si on n'est pas en échec, à faible profondeur, on limite le nombre de coups calmes
-        if (!in_check && depth <= 4 && !is_tactical)
-        {
-            // Formule classique : on teste de plus en plus de coups avec la profondeur
-            int max_moves = 8 + (depth * depth * 2);
-            if (moves_searched >= max_moves)
-            {
-                continue; // On ignore les coups calmes restants
-            }
-        }
+        if (search::should_lmp(in_check, depth, is_tactical, moves_searched))
+            continue;
 
         if (futil_pruning && moves_searched >= 1 && !is_tactical)
         {
-            // On ne l'incrémente pas car on ne le cherche pas
             continue;
         }
-        if (!in_check && !is_pv &&
-            depth <= 6 &&
-            moves_searched > 1 &&
-            m != tt_move &&
-            m.is_capture())
-        {
-            if (Eval::get_piece_score(m.get_from_piece()) > Eval::get_piece_score(m.get_to_piece()))
-            {
-                int see_score = see<Us>(
-                    m.get_to_sq(),
-                    m.get_to_piece(),
-                    m.get_from_piece(),
-                    m.get_from_sq());
-
-                int threshold = -15 * depth - Eval::get_piece_score(m.get_to_piece()) / 2;
-
-                if (see_score < threshold)
-                    continue;
-            }
-        }
+        if (search::should_see_pruning<Us>(*this, in_check, is_pv, depth, moves_searched, tt_move, m))
+            continue;
 
         ++moves_searched;
 
@@ -303,28 +338,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             extension = 1;
         int new_depth = depth - 1 + extension;
 
-        if (ply + new_depth >= engine::config::search::MaxDepth)
-            new_depth = engine::config::search::MaxDepth - ply;
+        if (ply + new_depth >= engine_constants::search::MaxDepth)
+            new_depth = engine_constants::search::MaxDepth - ply;
 
-        // --- LATE MOVE REDUCTION (LMR) ---
-        if (depth >= 3 && moves_searched > 4 && !is_tactical && !in_check && extension == 0)
+        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, alpha, score))
         {
-            int r = static_cast<int>(lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
-            r = std::clamp(r, 0, depth - 2);
-
-            score = -negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1, true);
-
-            // Re-search si le coup réduit semble bon
-            if (score > alpha)
-                score = -negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true);
-        }
-        else if (moves_searched > 1) // Null Window Search pour PVS
-        {
-            score = -negamax<!Us>(new_depth, -alpha - 1, -alpha, ply + 1, true);
-        }
-        else // Full Window Search (seulement si moves_searched == 1 et pas de TT move)
-        {
-            score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true);
+            if (moves_searched > 1) // Null Window Search pour PVS
+            {
+                score = -negamax<!Us>(new_depth, -alpha - 1, -alpha, ply + 1, true);
+            }
+            else // Full Window Search (seulement si moves_searched == 1 (donc pas de TT move))
+            {
+                score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true);
+            }
         }
 
         // Si le score est dans la fenêtre mais pas une coupure, on re-cherche normalement
@@ -387,7 +413,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // 8. Gestion des Mats et Pats
     if (moves_searched == 0)
     {
-        int score = in_check ? -engine::config::eval::MateScore + ply : 0;
+        int score = in_check ? -engine_constants::eval::MateScore + ply : 0;
         shared_tt.store(board.get_hash(), depth, ply, score, TT_EXACT, 0);
         return score;
     }

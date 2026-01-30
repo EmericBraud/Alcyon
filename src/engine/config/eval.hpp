@@ -3,7 +3,7 @@
 #include <array>
 
 #include "common/constants.hpp"
-namespace engine::config::eval
+namespace engine_constants::eval
 {
     //clang-format off
     static constexpr int MvvLvaTable[7][7] = {
