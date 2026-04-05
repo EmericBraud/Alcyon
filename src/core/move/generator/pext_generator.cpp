@@ -13,6 +13,7 @@
 #include <stdexcept>
 
 #include "common/file.hpp"
+#include "common/logger.hpp"
 
 // -----------------------------------------------------------------------------
 // Helper: generate all PEXT attacks for one square
@@ -40,6 +41,46 @@ static void generate_pext_attacks_for_square(
                 occ |= 1ULL << bit_positions[b];
 
         attacks.push_back(generate_sliding_attack(sq, occ, is_rook));
+    }
+}
+
+static void generate_tables_in_memory()
+{
+    MoveGen::initialize_rook_masks();
+    MoveGen::initialize_bishop_masks();
+
+    std::size_t rook_index = 0;
+    for (int sq = 0; sq < constants::BoardSize; ++sq)
+    {
+        MoveGen::MagicPEXT &m = MoveGen::RookMagics[sq];
+        m.mask = MoveGen::RookMasks[sq];
+        m.index_start = rook_index;
+
+        std::vector<U64> attacks;
+        attacks.reserve(1ULL << std::popcount(m.mask));
+        generate_pext_attacks_for_square(sq, m.mask, true, attacks);
+
+        for (std::size_t i = 0; i < attacks.size(); ++i)
+            MoveGen::RookAttacks[rook_index + i] = attacks[i];
+
+        rook_index += attacks.size();
+    }
+
+    std::size_t bishop_index = 0;
+    for (int sq = 0; sq < constants::BoardSize; ++sq)
+    {
+        MoveGen::MagicPEXT &m = MoveGen::BishopMagics[sq];
+        m.mask = MoveGen::BishopMasks[sq];
+        m.index_start = bishop_index;
+
+        std::vector<U64> attacks;
+        attacks.reserve(1ULL << std::popcount(m.mask));
+        generate_pext_attacks_for_square(sq, m.mask, false, attacks);
+
+        for (std::size_t i = 0; i < attacks.size(); ++i)
+            MoveGen::BishopAttacks[bishop_index + i] = attacks[i];
+
+        bishop_index += attacks.size();
     }
 }
 
@@ -106,42 +147,46 @@ void MoveGen::export_attack_tables()
 // -----------------------------------------------------------------------------
 void MoveGen::load_attack_tables()
 {
+    std::ifstream rook_attacks_in(file::get_data_path("rook_attacks_pext.bin"), std::ios::binary);
+    std::ifstream bishop_attacks_in(file::get_data_path("bishop_attacks_pext.bin"), std::ios::binary);
+    std::ifstream rook_pext_in(file::get_data_path("rook_pext.bin"), std::ios::binary);
+    std::ifstream bishop_pext_in(file::get_data_path("bishop_pext.bin"), std::ios::binary);
+
+    if (!rook_attacks_in || !bishop_attacks_in || !rook_pext_in || !bishop_pext_in)
+    {
+        logs::error << "PEXT data files missing, generating attack tables in memory" << std::endl;
+        generate_tables_in_memory();
+        return;
+    }
+
     // Load rook attacks
     {
-        std::ifstream in(file::get_data_path("rook_attacks_pext.bin"), std::ios::binary);
-        if (!in)
-            throw std::runtime_error("Failed to open rook_attacks_pext.bin");
-
-        in.read(reinterpret_cast<char *>(RookAttacks.data()),
-                RookAttacks.size() * sizeof(U64));
+        rook_attacks_in.read(reinterpret_cast<char *>(RookAttacks.data()),
+                             RookAttacks.size() * sizeof(U64));
+        if (rook_attacks_in.gcount() != static_cast<std::streamsize>(RookAttacks.size() * sizeof(U64)))
+            throw std::runtime_error("Failed to read rook_attacks_pext.bin");
     }
 
     // Load bishop attacks
     {
-        std::ifstream in(file::get_data_path("bishop_attacks_pext.bin"), std::ios::binary);
-        if (!in)
-            throw std::runtime_error("Failed to open bishop_attacks_pext.bin");
-
-        in.read(reinterpret_cast<char *>(BishopAttacks.data()),
-                BishopAttacks.size() * sizeof(U64));
+        bishop_attacks_in.read(reinterpret_cast<char *>(BishopAttacks.data()),
+                               BishopAttacks.size() * sizeof(U64));
+        if (bishop_attacks_in.gcount() != static_cast<std::streamsize>(BishopAttacks.size() * sizeof(U64)))
+            throw std::runtime_error("Failed to read bishop_attacks_pext.bin");
     }
 
     // Load MagicPEXT info
     {
-        std::ifstream in(file::get_data_path("rook_pext.bin"), std::ios::binary);
-        if (!in)
-            throw std::runtime_error("Failed to open rook_pext.bin");
-
-        in.read(reinterpret_cast<char *>(RookMagics.data()),
-                constants::BoardSize * sizeof(MagicPEXT));
+        rook_pext_in.read(reinterpret_cast<char *>(RookMagics.data()),
+                          constants::BoardSize * sizeof(MagicPEXT));
+        if (rook_pext_in.gcount() != static_cast<std::streamsize>(constants::BoardSize * sizeof(MagicPEXT)))
+            throw std::runtime_error("Failed to read rook_pext.bin");
     }
     {
-        std::ifstream in(file::get_data_path("bishop_pext.bin"), std::ios::binary);
-        if (!in)
-            throw std::runtime_error("Failed to open bishop_pext.bin");
-
-        in.read(reinterpret_cast<char *>(BishopMagics.data()),
-                constants::BoardSize * sizeof(MagicPEXT));
+        bishop_pext_in.read(reinterpret_cast<char *>(BishopMagics.data()),
+                            constants::BoardSize * sizeof(MagicPEXT));
+        if (bishop_pext_in.gcount() != static_cast<std::streamsize>(constants::BoardSize * sizeof(MagicPEXT)))
+            throw std::runtime_error("Failed to read bishop_pext.bin");
     }
 }
 
