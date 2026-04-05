@@ -106,6 +106,7 @@ struct SearchWorker
     template <Color Side>
     int see(int sq, Piece target, Piece attacker, int from_sq) const;
     std::string get_pv_line(int depth);
+    std::string get_pv_line_with_root(Move root_move, int depth);
     int negamax_with_aspiration(int depth, int last_score);
 
     inline VBoard &get_board()

@@ -114,6 +114,60 @@ std::string SearchWorker::get_pv_line(int depth)
     return pv_line;
 }
 
+std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
+{
+    if (root_move.get_value() == 0)
+        return "";
+
+    if (!board.is_move_pseudo_legal(root_move) || !board.is_move_legal(root_move))
+        return "";
+
+    std::string pv_line = root_move.to_uci();
+    if (depth <= 1)
+        return pv_line;
+
+    pv_line += " ";
+    board.play(root_move);
+    auto guard = std::experimental::scope_exit([&]()
+                                               { board.unplay(root_move); });
+
+    std::vector<Move> moves_to_unplay;
+    std::vector<uint64_t> visited_hashes;
+
+    for (int i = 0; i < std::min(depth - 1, 10); ++i)
+    {
+        Move m = shared_tt.get_move(board.get_hash());
+        if (m.get_value() == 0)
+            break;
+        if (!board.is_move_pseudo_legal(m) || !board.is_move_legal(m))
+            break;
+
+        uint64_t h = board.get_hash();
+        bool cycle_detected = false;
+        for (uint64_t v : visited_hashes)
+        {
+            if (v == h)
+            {
+                cycle_detected = true;
+                break;
+            }
+        }
+        if (cycle_detected)
+            break;
+
+        visited_hashes.push_back(h);
+        pv_line += m.to_uci();
+        pv_line += " ";
+        board.play(m);
+        moves_to_unplay.push_back(m);
+    }
+
+    for (int i = static_cast<int>(moves_to_unplay.size()) - 1; i >= 0; --i)
+        board.unplay(moves_to_unplay[i]);
+
+    return pv_line;
+}
+
 int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 {
     max_extended_depth = 0;
@@ -210,14 +264,18 @@ void SearchWorker::iterative_deepening()
 
                 long long nodes = global_nodes.load(std::memory_order_relaxed);
                 long long nps = nodes * 1000 / elapsed_ms;
+                const Move pv_root = best_root_move.get_value() != 0 ? best_root_move : out_move;
+                const std::string pv_line = get_pv_line_with_root(pv_root, depth);
                 logs::uci
                     << "info depth " << depth
                     << " seldepth " << max_extended_depth
                     << " score cp " << last_score
                     << " nodes " << nodes
                     << " nps " << nps
-                    << " hashfull " << shared_tt.get_hashfull()
-                    << " pv " << get_pv_line(depth)
+                    << " hashfull " << shared_tt.get_hashfull();
+                if (!pv_line.empty())
+                    logs::uci << " pv " << pv_line;
+                logs::uci
                     << std::endl;
             }
             return;
@@ -254,14 +312,18 @@ void SearchWorker::iterative_deepening()
 
         long long nodes = global_nodes.load(std::memory_order_relaxed);
         long long nps = nodes * 1000 / elapsed_ms;
+        const Move pv_root = best_root_move.get_value() != 0 ? best_root_move : out_move;
+        const std::string pv_line = get_pv_line_with_root(pv_root, engine_constants::search::MaxDepth - 1);
         logs::uci
             << "info depth " << engine_constants::search::MaxDepth - 1
             << " seldepth " << max_extended_depth
             << " score cp " << last_score
             << " nodes " << nodes
             << " nps " << nps
-            << " hashfull " << shared_tt.get_hashfull()
-            << " pv " << get_pv_line(engine_constants::search::MaxDepth - 1)
+            << " hashfull " << shared_tt.get_hashfull();
+        if (!pv_line.empty())
+            logs::uci << " pv " << pv_line;
+        logs::uci
             << std::endl;
     }
 }
