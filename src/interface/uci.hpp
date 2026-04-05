@@ -244,24 +244,24 @@ class UCI
             "8/5pk1/1p1p2p1/2pP1p1p/2P2P1P/1P4P1/5K2/8 w - - 0 1",
         };
 
-        int movetime_ms = 250;
+        int bench_depth = 4;
         std::string arg;
         if (is >> arg)
         {
             try
             {
-                movetime_ms = std::stoi(arg);
+                bench_depth = std::stoi(arg);
             }
             catch (...)
             {
-                logs::debug << "info string bench: invalid movetime, using default 250ms" << std::endl;
+                logs::debug << "info string bench: invalid depth, using default 4" << std::endl;
             }
         }
 
-        if (movetime_ms < 10)
-            movetime_ms = 10;
-        if (movetime_ms > 60000)
-            movetime_ms = 60000;
+        if (bench_depth < 1)
+            bench_depth = 1;
+        if (bench_depth >= engine_constants::search::MaxDepth)
+            bench_depth = engine_constants::search::MaxDepth - 1;
 
         e.stop();
         e.wait();
@@ -269,14 +269,14 @@ class UCI
         long long total_nodes = 0;
         long long total_time_ms = 0;
 
-        logs::uci << "info string bench start movetime " << movetime_ms << "ms positions " << bench_fens.size() << std::endl;
+        logs::uci << "info string bench start depth " << bench_depth << " positions " << bench_fens.size() << std::endl;
 
         for (size_t i = 0; i < bench_fens.size(); ++i)
         {
             VBoard bench_board;
             bench_board.load_fen(bench_fens[i]);
 
-            auto result = e.run_benchmark(bench_board, movetime_ms);
+            auto result = e.run_benchmark_fixed_depth(bench_board, bench_depth);
             total_nodes += result.nodes;
             total_time_ms += result.elapsed_ms;
 
