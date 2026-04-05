@@ -14,7 +14,7 @@ Ce projet sert également de vitrine concrète pour démontrer ma maîtrise du l
 
 Ce moteur est entièrement développé en C++ et utilise des techniques avancées pour garantir une rapidité d'exécution optimale.
 
-* Langage : C++ (20)
+* Langage : C++ (23)
 * Performance : Utilisation intensive des fonctionnalités C++ de bas niveau pour l'efficacité mémoire et l'optimisation CPU.
 * Représentation du Plateau : Implémentation de la structure Bitboards pour une manipulation rapide et efficace de l'état du jeu et du calcul des mouvements.
 * Algorithme de Recherche : Implémentation de l'algorithme Minimax avec élagage Alpha-Beta (Alpha-Beta Pruning).
