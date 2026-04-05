@@ -1,6 +1,6 @@
 #include "interface/uci.hpp"
 
-int main()
+int main(int argc, char **argv)
 {
     /*VBoard b;
     b.load_fen("r1q1r1k1/3b1p1p/3p4/2p3p1/1p1Pn3/1P1PPQ2/P2PK1PP/R2RBB2 w - - 0 1");
@@ -8,6 +8,30 @@ int main()
     e.start_search(500);
     e.wait();*/
     UCI u;
+
+    if (argc >= 2)
+    {
+        std::string cmd = argv[1];
+        if (cmd == "bench")
+        {
+            int movetime_ms = 250;
+            if (argc >= 3)
+            {
+                try
+                {
+                    movetime_ms = std::stoi(argv[2]);
+                }
+                catch (...)
+                {
+                    movetime_ms = 250;
+                }
+            }
+
+            u.run_bench_cli(movetime_ms);
+            return 0;
+        }
+    }
+
     u.loop();
     return 0;
 }

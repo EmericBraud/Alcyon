@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <expected>
 #include <iostream>
 #include <vector>
@@ -221,6 +222,78 @@ class UCI
         }
     }
 
+    void run_bench(std::istringstream &is)
+    {
+        static constexpr std::array<const char *, 16> bench_fens = {
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "r3k2r/p1ppqpb1/bn2pnp1/2pP4/1p2P3/2N2N2/PPQBBPPP/R3K2R w KQkq - 0 1",
+            "4rrk1/2p2ppp/p1np1q2/1p2p3/4P3/1NN1BP2/PPP2QPP/3RR1K1 w - - 0 1",
+            "r3q1k1/1b1n1ppp/p2pr3/1pp1p3/4P3/1PN1BN1P/PBP1QPP1/2KR3R w - - 0 1",
+            "2r2rk1/pp1n1pp1/2pb1q1p/3p4/3P4/2PBPN2/PPQ2PPP/2R2RK1 w - - 0 1",
+            "r2q1rk1/pp2bppp/2n2n2/2bp4/2P5/1PN1PN2/PB1QBPPP/2R2RK1 w - - 0 1",
+            "r4rk1/pp1n1ppp/2pb1q2/3p4/3P4/2PBPN2/PPQ2PPP/R4RK1 w - - 0 1",
+            "2r2rk1/1bq1bpp1/p2ppn1p/1p6/3NP3/1BN1BP2/PPQ2P1P/2RR2K1 w - - 0 1",
+            "r1bq1rk1/pp2ppbp/2np1np1/8/2PNP3/2N1B3/PP2BPPP/R2Q1RK1 w - - 0 1",
+            "r2q1rk1/pp1n1ppp/2pbpn2/8/2PP4/2N1PN2/PP2BPPP/R1BQ1RK1 w - - 0 1",
+            "r1bq1rk1/1p2bppp/p1np1n2/2p1p3/2P1P3/1PN1BN1P/PB1QBPP1/2RR2K1 w - - 0 1",
+            "r4rk1/1pp1qppp/p1np1n2/4p3/2P1P3/1PN1BN1P/PB1Q1PP1/2KR3R w - - 0 1",
+            "2r2rk1/pp1n1ppp/2pb1q2/3p4/3P4/2PBPN2/PPQ2PPP/2R1R1K1 w - - 0 1",
+            "r1bq1rk1/pp2ppbp/2np1np1/8/2PNP3/2N1B3/PP2BPPP/2RQ1RK1 w - - 0 1",
+            "r2q1rk1/pp2bppp/2n2n2/2bp4/2P5/1PN1PN2/PB1QBPPP/2R2RK1 b - - 0 1",
+            "8/5pk1/1p1p2p1/2pP1p1p/2P2P1P/1P4P1/5K2/8 w - - 0 1",
+        };
+
+        int movetime_ms = 250;
+        std::string arg;
+        if (is >> arg)
+        {
+            try
+            {
+                movetime_ms = std::stoi(arg);
+            }
+            catch (...)
+            {
+                logs::debug << "info string bench: invalid movetime, using default 250ms" << std::endl;
+            }
+        }
+
+        if (movetime_ms < 10)
+            movetime_ms = 10;
+        if (movetime_ms > 60000)
+            movetime_ms = 60000;
+
+        e.stop();
+        e.wait();
+
+        long long total_nodes = 0;
+        long long total_time_ms = 0;
+
+        logs::uci << "info string bench start movetime " << movetime_ms << "ms positions " << bench_fens.size() << std::endl;
+
+        for (size_t i = 0; i < bench_fens.size(); ++i)
+        {
+            VBoard bench_board;
+            bench_board.load_fen(bench_fens[i]);
+
+            auto result = e.run_benchmark(bench_board, movetime_ms);
+            total_nodes += result.nodes;
+            total_time_ms += result.elapsed_ms;
+
+            logs::uci << "info string bench " << (i + 1) << "/" << bench_fens.size()
+                      << " nodes " << result.nodes
+                      << " nps " << result.nps
+                      << " time " << result.elapsed_ms << "ms"
+                      << " bestmove " << (result.best_move.get_value() == 0 ? "(none)" : result.best_move.to_uci())
+                      << std::endl;
+        }
+
+        const long long safe_total_time = std::max<long long>(1, total_time_ms);
+        const long long total_nps = total_nodes * 1000 / safe_total_time;
+
+        logs::uci << "info string bench done time " << total_time_ms << "ms nps " << total_nps << std::endl;
+        logs::uci << total_nodes << " nodes " << total_nps << " nps" << std::endl;
+    }
+
 public:
     UCI() : b(), e(b)
     {
@@ -236,7 +309,7 @@ public:
 
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MaxDepth, "rfp_max_depth"),
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_d_fact"),
-            UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_const"),
+            UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginConst, "rfp_marg_const"),
 
             UCIOption<int>(&engine_constants::search::iterative_deepening::MaxDepth, "itd_max_depth"),
             UCIOption<int>(&engine_constants::search::iterative_deepening::NewDepthIncr, "itd_new_depth_inc"),
@@ -249,7 +322,7 @@ public:
             UCIOption<int>(&engine_constants::search::futility_pruning::MarginConst, "fp_margin_const"),
             UCIOption<int>(&engine_constants::search::futility_pruning::MarginDepthFactor, "fp_margin_d_fact"),
 
-            UCIOption<int>(&engine_constants::search::singular::MinDepth, "singulat_min_depth"),
+            UCIOption<int>(&engine_constants::search::singular::MinDepth, "singular_min_depth"),
 
             UCIOption<int>(&engine_constants::search::null_move_reduction::MaxDepth, "nmr_max_depth"),
             UCIOption<int>(&engine_constants::search::null_move_reduction::MaxMovesConst, "nmr_max_moves_const"),
@@ -287,11 +360,10 @@ public:
 
                 logs::uci << "id name Chess26" << std::endl;
                 logs::uci << "id author Emeric" << std::endl;
-                logs::uci << "option name Threads type spin default " << default_threads << " min 1 max 128" << std::endl;
+                logs::uci << "option name Threads type spin default " << default_threads << " min 1 max " << std::thread::hardware_concurrency() << std::endl;
                 logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
-                logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl;
-                logs::uci << "option name Ponder type check default false" << std::endl;
-                logs::uci << "option name Threads type spin default 16 min 1 max 16" << std::endl;
+                logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl; //@TODO
+                logs::uci << "option name Ponder type check default " << (ponder_enabled ? "true" : "false") << std::endl;
                 for (auto int_option : int_options)
                 {
                     int_option.init_print();
@@ -332,6 +404,10 @@ public:
             {
                 parse_go(b, e, is);
             }
+            else if (token == "bench")
+            {
+                run_bench(is);
+            }
             else if (token == "quit")
             {
                 break;
@@ -342,5 +418,11 @@ public:
                 g.run();
             }
         }
+    }
+
+    void run_bench_cli(int movetime_ms = 250)
+    {
+        std::istringstream is(std::to_string(movetime_ms));
+        run_bench(is);
     }
 };
