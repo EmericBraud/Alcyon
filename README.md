@@ -37,7 +37,7 @@ Ce moteur est entièrement développé en C++ et utilise des techniques avancée
 
 ### Prérequis
 
-* Un compilateur C++ compatible C++20 ou supérieur (ici g++).
+* Un compilateur C++ compatible C++23 ou supérieur (ici g++).
  > ⚠️ La compatibilité avec d'autres compilateurs n'est pas assurée. Si vous avez des problèmes de compatibilité, regardez du côté de la fonction "get_lsb_index(U64 bb)" du fichiers include/utils.hpp, qui utilise une fonction définie par le compilateur g++.
 
 * Une installation de CMake.
