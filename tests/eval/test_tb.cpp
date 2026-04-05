@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "common/file.hpp"
 #include "engine/eval/tablebase.hpp"
 #include "core/board/board.hpp"
 #include "engine/eval/virtual_board.hpp"
@@ -13,7 +14,7 @@ protected:
     {
         if (static_cast<int>(TB_LARGEST) == 0)
         {
-            GTEST_SKIP() << "Tablebases Syzygy non trouvées dans " << DATA_PATH "syzygy";
+            GTEST_SKIP() << "Tablebases Syzygy non trouvees dans " << file::get_data_path("syzygy");
         }
     }
 };

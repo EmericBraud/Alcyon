@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include "common/constants.hpp"
+#include "common/file.hpp"
 #include "common/logger.hpp"
 #include "core/board/board.hpp"
 #include "core/move/generator/move_generator.hpp"
@@ -21,7 +22,6 @@ extern "C"
 
 class TableBase
 {
-    static constexpr const char *TablebaseFolderPath = DATA_PATH "syzygy";
     struct RootRawResult
     {
         bool success;
@@ -88,7 +88,8 @@ public:
 
     TableBase()
     {
-        if (!tb_init(TablebaseFolderPath))
+        const std::string tablebase_path = file::get_data_path("syzygy");
+        if (!tb_init(tablebase_path.c_str()))
             logs::error << "TB init failed" << std::endl;
 
         else if (TB_LARGEST == 0)
