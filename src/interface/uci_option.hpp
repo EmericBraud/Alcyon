@@ -67,9 +67,9 @@ public:
     void init_print()
     {
         if constexpr (std::is_floating_point_v<T>)
-            logs::uci << "option name " << option_name << " default spin default " << static_cast<int>(*option_value * 100) << std::endl;
+            logs::uci << "option name " << option_name << " type spin default " << static_cast<int>(*option_value * 100) << std::endl;
         else if constexpr (std::is_integral_v<T>)
-            logs::uci << "option name " << option_name << " default spin default " << *option_value << std::endl;
+            logs::uci << "option name " << option_name << " type spin default " << *option_value << std::endl;
         else
             logs::error << "Unsupported option type for " << option_name << std::endl;
     }

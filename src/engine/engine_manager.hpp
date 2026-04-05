@@ -46,6 +46,15 @@ class EngineManager
     int num_threads_config;
 
 public:
+    struct BenchResult
+    {
+        Move best_move = 0;
+        int score_cp = 0;
+        long long nodes = 0;
+        long long elapsed_ms = 1;
+        long long nps = 0;
+    };
+
     inline Move get_root_best_move() const
     {
         return root_best_move.load(std::memory_order_relaxed);
@@ -115,6 +124,8 @@ public:
     {
         // 1. Réinitialisation des flags
         stop_search = false;
+        is_pondering.store(false, std::memory_order_relaxed);
+        is_infinite.store(false, std::memory_order_relaxed);
         total_nodes = 0;
         time_limit = time_ms;
         start_time = std::chrono::steady_clock::now();
@@ -134,7 +145,60 @@ public:
                 break;
         }
 
+        // Flush final local node counter to keep statistics accurate.
+        total_nodes.fetch_add(worker.local_nodes, std::memory_order_relaxed);
+
         return score;
+    }
+
+    BenchResult run_benchmark(const VBoard &position, int time_ms)
+    {
+        stop();
+        if (search_thread.joinable())
+            search_thread.join();
+
+        stop_search.store(false, std::memory_order_relaxed);
+        is_pondering.store(false, std::memory_order_relaxed);
+        is_infinite.store(false, std::memory_order_relaxed);
+        total_nodes.store(0, std::memory_order_relaxed);
+        root_best_move.store(0, std::memory_order_relaxed);
+
+        time_limit.store(time_ms, std::memory_order_relaxed);
+        start_time = std::chrono::steady_clock::now();
+        tt.next_generation();
+
+        SearchWorker worker(*this, position, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
+
+        int score = 0;
+        for (int d = 1; d <= engine_constants::search::MaxDepth; ++d)
+        {
+            score = worker.negamax_with_aspiration(d, score);
+
+            if (stop_search.load(std::memory_order_relaxed))
+                break;
+
+            if (should_stop())
+            {
+                stop_search.store(true, std::memory_order_relaxed);
+                break;
+            }
+        }
+
+        total_nodes.fetch_add(worker.local_nodes, std::memory_order_relaxed);
+
+        const long long elapsed = std::max<long long>(1,
+                                                      std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                          std::chrono::steady_clock::now() - start_time)
+                                                          .count());
+        const long long nodes = total_nodes.load(std::memory_order_relaxed);
+
+        BenchResult r;
+        r.best_move = worker.best_root_move;
+        r.score_cp = score;
+        r.nodes = nodes;
+        r.elapsed_ms = elapsed;
+        r.nps = nodes * 1000 / elapsed;
+        return r;
     }
 
     void convert_ponder_to_real()
