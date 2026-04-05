@@ -14,20 +14,20 @@ int main(int argc, char **argv)
         std::string cmd = argv[1];
         if (cmd == "bench")
         {
-            int movetime_ms = 250;
+            int bench_depth = 4;
             if (argc >= 3)
             {
                 try
                 {
-                    movetime_ms = std::stoi(argv[2]);
+                    bench_depth = std::stoi(argv[2]);
                 }
                 catch (...)
                 {
-                    movetime_ms = 250;
+                    bench_depth = 4;
                 }
             }
 
-            u.run_bench_cli(movetime_ms);
+            u.run_bench_cli(bench_depth);
             return 0;
         }
     }

@@ -4,6 +4,7 @@
 #include <thread>
 #include <cmath>
 #include <experimental/scope>
+#include <limits>
 
 #include "common/logger.hpp"
 #include "core/move/move.hpp"
@@ -182,6 +183,51 @@ public:
                 stop_search.store(true, std::memory_order_relaxed);
                 break;
             }
+        }
+
+        total_nodes.fetch_add(worker.local_nodes, std::memory_order_relaxed);
+
+        const long long elapsed = std::max<long long>(1,
+                                                      std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                          std::chrono::steady_clock::now() - start_time)
+                                                          .count());
+        const long long nodes = total_nodes.load(std::memory_order_relaxed);
+
+        BenchResult r;
+        r.best_move = worker.best_root_move;
+        r.score_cp = score;
+        r.nodes = nodes;
+        r.elapsed_ms = elapsed;
+        r.nps = nodes * 1000 / elapsed;
+        return r;
+    }
+
+    BenchResult run_benchmark_fixed_depth(const VBoard &position, int depth)
+    {
+        stop();
+        if (search_thread.joinable())
+            search_thread.join();
+
+        const int fixed_depth = std::clamp(depth, 1, engine_constants::search::MaxDepth - 1);
+
+        stop_search.store(false, std::memory_order_relaxed);
+        is_pondering.store(false, std::memory_order_relaxed);
+        is_infinite.store(true, std::memory_order_relaxed);
+        total_nodes.store(0, std::memory_order_relaxed);
+        root_best_move.store(0, std::memory_order_relaxed);
+
+        time_limit.store(std::numeric_limits<int>::max() / 2, std::memory_order_relaxed);
+        start_time = std::chrono::steady_clock::now();
+        tt.next_generation();
+
+        SearchWorker worker(*this, position, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
+
+        int score = 0;
+        for (int d = 1; d <= fixed_depth; ++d)
+        {
+            worker.age_history();
+            score = worker.negamax(d, -engine_constants::eval::Inf, engine_constants::eval::Inf, 0);
+            worker.best_root_move = worker.out_move;
         }
 
         total_nodes.fetch_add(worker.local_nodes, std::memory_order_relaxed);

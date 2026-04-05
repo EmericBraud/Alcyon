@@ -100,12 +100,12 @@ target_link_options(chess26 PRIVATE
     $<$<CONFIG:Release>:-O3;-flto;-march=native>
     $<$<NOT:$<CONFIG:Release>>:-O3;-flto;-march=native>
 )
-set(CHESS26_DATA_DIR "$<TARGET_FILE_DIR:chess26>/data")
-add_custom_command(
-    TARGET chess26 POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CHESS26_DATA_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${CHESS26_DATA_DIR}
+set(CHESS26_RUNTIME_DATA_DIR "${CMAKE_CURRENT_BINARY_DIR}/data")
+add_custom_target(copy_runtime_data ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CHESS26_RUNTIME_DATA_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${CHESS26_RUNTIME_DATA_DIR}
 )
+add_dependencies(chess26 copy_runtime_data)
 
 # -------------------------------------------------------------------
 # GoogleTest
@@ -132,12 +132,7 @@ target_link_libraries(chess_tests PRIVATE
     Threads::Threads
 )
 
-set(TESTS_DATA_DIR "$<TARGET_FILE_DIR:chess_tests>/data")
-add_custom_command(
-    TARGET chess_tests POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${TESTS_DATA_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${TESTS_DATA_DIR}
-)
+add_dependencies(chess_tests copy_runtime_data)
 
 include(GoogleTest)
 gtest_discover_tests(chess_tests)
