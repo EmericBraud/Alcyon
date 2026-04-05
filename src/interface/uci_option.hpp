@@ -9,7 +9,8 @@
 #include <type_traits>
 #include <concepts>
 #include <charconv>
-#include <stdexcept>
+#include <cmath>
+#include <cstdlib>
 #include <limits>
 
 #include "common/logger.hpp"
@@ -70,21 +71,45 @@ public:
         long long temp_val{};
         auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), temp_val);
 
-        if (ec == std::errc::invalid_argument)
-            throw std::invalid_argument("Not a number");
+        if (ec == std::errc{} && ptr == value.data() + value.size())
+        {
+            temp_val = std::clamp(temp_val, min_value, max_value);
 
-        if (ec == std::errc::result_out_of_range)
-            throw std::out_of_range("Number out of range");
+            if constexpr (std::is_floating_point_v<T>)
+                *option_value = static_cast<T>(temp_val) / static_cast<T>(100.0);
+            else
+                *option_value = static_cast<T>(temp_val);
 
-        if (ptr != value.data() + value.size())
-            throw std::invalid_argument("Trailing characters");
+            logs::debug << option_name << " set to " << *option_value << std::endl;
+            return true;
+        }
 
-        temp_val = std::clamp(temp_val, min_value, max_value);
+        char *end_ptr = nullptr;
+        const double parsed = std::strtod(value.c_str(), &end_ptr);
+        if (end_ptr == value.c_str() || (end_ptr && *end_ptr != '\0'))
+        {
+            logs::debug << "info string ignoring invalid value for " << option_name << ": " << value << std::endl;
+            return true;
+        }
 
         if constexpr (std::is_floating_point_v<T>)
-            *option_value = static_cast<T>(temp_val) / static_cast<T>(100.0);
+        {
+            const T min_real = static_cast<T>(min_value) / static_cast<T>(100.0);
+            const T max_real = static_cast<T>(max_value) / static_cast<T>(100.0);
+            const T clamped = std::clamp(static_cast<T>(parsed), min_real, max_real);
+            *option_value = clamped;
+        }
         else
-            *option_value = static_cast<T>(temp_val);
+        {
+            if (std::floor(parsed) != parsed)
+            {
+                logs::debug << "info string ignoring non-integer value for " << option_name << ": " << value << std::endl;
+                return true;
+            }
+
+            const long long clamped = std::clamp(static_cast<long long>(parsed), min_value, max_value);
+            *option_value = static_cast<T>(clamped);
+        }
         logs::debug << option_name << " set to " << *option_value << std::endl;
         return true;
     }
