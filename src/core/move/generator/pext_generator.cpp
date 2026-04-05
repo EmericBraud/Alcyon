@@ -12,13 +12,7 @@
 #include <bit>
 #include <stdexcept>
 
-// -----------------------------------------------------------------------------
-// Files
-// -----------------------------------------------------------------------------
-static constexpr const char *ROOK_ATTACKS_FILE = DATA_PATH "rook_attacks_pext.bin";
-static constexpr const char *BISHOP_ATTACKS_FILE = DATA_PATH "bishop_attacks_pext.bin";
-static constexpr const char *ROOK_PEXT_FILE = DATA_PATH "rook_pext.bin";
-static constexpr const char *BISHOP_PEXT_FILE = DATA_PATH "bishop_pext.bin";
+#include "common/file.hpp"
 
 // -----------------------------------------------------------------------------
 // Helper: generate all PEXT attacks for one square
@@ -84,24 +78,24 @@ void MoveGen::export_attack_tables()
 
     // Write attack tables
     {
-        std::ofstream out(ROOK_ATTACKS_FILE, std::ios::binary);
+        std::ofstream out(file::get_data_path("rook_attacks_pext.bin"), std::ios::binary);
         out.write(reinterpret_cast<const char *>(rook_attacks.data()),
                   rook_attacks.size() * sizeof(U64));
     }
     {
-        std::ofstream out(BISHOP_ATTACKS_FILE, std::ios::binary);
+        std::ofstream out(file::get_data_path("bishop_attacks_pext.bin"), std::ios::binary);
         out.write(reinterpret_cast<const char *>(bishop_attacks.data()),
                   bishop_attacks.size() * sizeof(U64));
     }
 
     // Write MagicPEXT tables
     {
-        std::ofstream out(ROOK_PEXT_FILE, std::ios::binary);
+        std::ofstream out(file::get_data_path("rook_pext.bin"), std::ios::binary);
         out.write(reinterpret_cast<const char *>(RookMagics.data()),
                   constants::BoardSize * sizeof(MagicPEXT));
     }
     {
-        std::ofstream out(BISHOP_PEXT_FILE, std::ios::binary);
+        std::ofstream out(file::get_data_path("bishop_pext.bin"), std::ios::binary);
         out.write(reinterpret_cast<const char *>(BishopMagics.data()),
                   constants::BoardSize * sizeof(MagicPEXT));
     }
@@ -114,7 +108,7 @@ void MoveGen::load_attack_tables()
 {
     // Load rook attacks
     {
-        std::ifstream in(ROOK_ATTACKS_FILE, std::ios::binary);
+        std::ifstream in(file::get_data_path("rook_attacks_pext.bin"), std::ios::binary);
         if (!in)
             throw std::runtime_error("Failed to open rook_attacks_pext.bin");
 
@@ -124,7 +118,7 @@ void MoveGen::load_attack_tables()
 
     // Load bishop attacks
     {
-        std::ifstream in(BISHOP_ATTACKS_FILE, std::ios::binary);
+        std::ifstream in(file::get_data_path("bishop_attacks_pext.bin"), std::ios::binary);
         if (!in)
             throw std::runtime_error("Failed to open bishop_attacks_pext.bin");
 
@@ -134,7 +128,7 @@ void MoveGen::load_attack_tables()
 
     // Load MagicPEXT info
     {
-        std::ifstream in(ROOK_PEXT_FILE, std::ios::binary);
+        std::ifstream in(file::get_data_path("rook_pext.bin"), std::ios::binary);
         if (!in)
             throw std::runtime_error("Failed to open rook_pext.bin");
 
@@ -142,7 +136,7 @@ void MoveGen::load_attack_tables()
                 constants::BoardSize * sizeof(MagicPEXT));
     }
     {
-        std::ifstream in(BISHOP_PEXT_FILE, std::ios::binary);
+        std::ifstream in(file::get_data_path("bishop_pext.bin"), std::ios::binary);
         if (!in)
             throw std::runtime_error("Failed to open bishop_pext.bin");
 

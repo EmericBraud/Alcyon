@@ -5,9 +5,6 @@ project(Chess26 VERSION 1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CHESS26_DATA_FULL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data/")
-add_definitions(-DDATA_PATH="${CHESS26_DATA_FULL_PATH}")
-
 
 #add_compile_options(-Wall -Wextra -DNDEBUG -flto -O3 -march=native -mbmi2 -fno-omit-frame-pointer -mpopcnt -fprofile-generate -lpthread)
 #add_compile_options(-Wall -Wextra -flto -O3 -march=native -ggdb3 -fno-omit-frame-pointer -mbmi2 -mpopcnt)
@@ -107,6 +104,7 @@ set(CHESS26_DATA_DIR "$<TARGET_FILE_DIR:chess26>/data")
 add_custom_command(
     TARGET chess26 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CHESS26_DATA_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${CHESS26_DATA_DIR}
 )
 
 # -------------------------------------------------------------------
@@ -138,6 +136,7 @@ set(TESTS_DATA_DIR "$<TARGET_FILE_DIR:chess_tests>/data")
 add_custom_command(
     TARGET chess_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${TESTS_DATA_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${TESTS_DATA_DIR}
 )
 
 include(GoogleTest)

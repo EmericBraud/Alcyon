@@ -3,11 +3,6 @@
 // But let's keep the code somewhere
 
 #ifndef __BMI2__
-static constexpr const char *ROOK_ATTACKS_FILE = DATA_PATH "rook_attacks.bin";
-static constexpr const char *BISHOP_ATTACKS_FILE = DATA_PATH "bishop_attacks.bin";
-static constexpr const char *ROOK_MAGICS_FILE = DATA_PATH "rook_m.bin";
-static constexpr const char *BISHOP_MAGICS_FILE = DATA_PATH "bishop_m.bin";
-
 #include "move_generator.hpp"
 
 #include <vector>
@@ -127,7 +122,8 @@ void MoveGen::export_attack_table(const std::array<MoveGen::Magic, constants::Bo
             output_v[magic.index_start + index] = attacks[i];
         }
     }
-    std::ofstream piece_attacks(is_rook ? ROOK_ATTACKS_FILE : BISHOP_ATTACKS_FILE, std::ios::binary);
+    const std::string attacks_file = file::get_data_path(is_rook ? "rook_attacks.bin" : "bishop_attacks.bin");
+    std::ofstream piece_attacks(attacks_file, std::ios::binary);
     if (!piece_attacks.is_open())
     {
         throw std::runtime_error("Could not write in attacks file");
@@ -164,8 +160,8 @@ void MoveGen::run_magic_searcher()
         rook_m_array[sq] = rook_m;
         bishop_m_array[sq] = bishop_m;
     }
-    std::ofstream rook_m_file(ROOK_MAGICS_FILE, std::ios::binary);
-    std::ofstream bishop_m_file(BISHOP_MAGICS_FILE, std::ios::binary);
+    std::ofstream rook_m_file(file::get_data_path("rook_m.bin"), std::ios::binary);
+    std::ofstream bishop_m_file(file::get_data_path("bishop_m.bin"), std::ios::binary);
     if (!rook_m_file.is_open() || !bishop_m_file.is_open())
     {
         throw std::runtime_error("Magic number files could not be opened");
@@ -186,7 +182,7 @@ void MoveGen::run_magic_searcher()
 
 void MoveGen::get_sizes(bool is_rook)
 {
-    std::ifstream attacks_file((is_rook ? ROOK_ATTACKS_FILE : BISHOP_ATTACKS_FILE), std::ios::binary | std::ios::ate);
+    std::ifstream attacks_file(file::get_data_path(is_rook ? "rook_attacks.bin" : "bishop_attacks.bin"), std::ios::binary | std::ios::ate);
 
     if (!attacks_file.is_open())
     {
@@ -202,7 +198,7 @@ void MoveGen::get_sizes(bool is_rook)
 }
 void MoveGen::load_magics(bool is_rook)
 {
-    std::ifstream file((is_rook ? ROOK_MAGICS_FILE : BISHOP_MAGICS_FILE), std::ios::binary);
+    std::ifstream file(file::get_data_path(is_rook ? "rook_m.bin" : "bishop_m.bin"), std::ios::binary);
     if (!file.is_open())
     {
         throw std::runtime_error("Magics file couln't be opened for read operation");
@@ -219,7 +215,7 @@ void MoveGen::load_magics()
 
 void MoveGen::load_attacks_rook()
 {
-    std::ifstream file(ROOK_ATTACKS_FILE, std::ios::binary);
+    std::ifstream file(file::get_data_path("rook_attacks.bin"), std::ios::binary);
     if (!file.is_open())
     {
         throw std::runtime_error("Attacks file couln't be opened for read operation");
@@ -234,7 +230,7 @@ void MoveGen::load_attacks_rook()
 }
 void MoveGen::load_attacks_bishop()
 {
-    std::ifstream file(BISHOP_ATTACKS_FILE, std::ios::binary);
+    std::ifstream file(file::get_data_path("bishop_attacks.bin"), std::ios::binary);
     if (!file.is_open())
     {
         throw std::runtime_error("Attacks file couln't be opened for read operation");

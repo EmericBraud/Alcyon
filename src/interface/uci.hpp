@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 
+#include "common/file.hpp"
 #include "common/logger.hpp"
 #include "core/board/board.hpp"
 #include "core/move/generator/move_generator.hpp"
@@ -300,7 +301,7 @@ public:
         MoveGen::initialize_bitboard_tables();
         init_zobrist();
         b.load_fen(constants::FenInitPos);
-        Book::init(DATA_PATH "komodo.bin");
+        Book::init(file::get_data_path("komodo.bin"));
 #ifdef SPSA_TUNING
         int_options = {
             UCIOption<int>(&engine_constants::search::razoring::MaxDepth, "razoring_max_depth"),
