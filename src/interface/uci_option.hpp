@@ -5,10 +5,12 @@
 #include <string>
 #include <string_view>
 #include <istream>
+#include <algorithm>
 #include <type_traits>
 #include <concepts>
 #include <charconv>
 #include <stdexcept>
+#include <limits>
 
 #include "common/logger.hpp"
 
@@ -21,9 +23,30 @@ class UCIOption
 {
     T *option_value;
     std::string_view option_name;
+    long long min_value;
+    long long max_value;
+
+    static constexpr long long default_min()
+    {
+        if constexpr (std::is_floating_point_v<T>)
+            return -100000;
+        return static_cast<long long>(std::numeric_limits<T>::lowest());
+    }
+
+    static constexpr long long default_max()
+    {
+        if constexpr (std::is_floating_point_v<T>)
+            return 100000;
+        return static_cast<long long>(std::numeric_limits<T>::max());
+    }
 
 public:
-    UCIOption(T *_option, std::string_view _option_name) : option_value(_option), option_name(_option_name) {}
+    UCIOption(T *_option, std::string_view _option_name, long long _min = default_min(), long long _max = default_max())
+        : option_value(_option), option_name(_option_name), min_value(_min), max_value(_max)
+    {
+        if (min_value > max_value)
+            std::swap(min_value, max_value);
+    }
 
     bool parse_input(std::istringstream &input)
     {
@@ -56,6 +79,8 @@ public:
         if (ptr != value.data() + value.size())
             throw std::invalid_argument("Trailing characters");
 
+        temp_val = std::clamp(temp_val, min_value, max_value);
+
         if constexpr (std::is_floating_point_v<T>)
             *option_value = static_cast<T>(temp_val) / static_cast<T>(100.0);
         else
@@ -67,9 +92,17 @@ public:
     void init_print()
     {
         if constexpr (std::is_floating_point_v<T>)
-            logs::uci << "option name " << option_name << " type spin default " << static_cast<int>(*option_value * 100) << std::endl;
+            logs::uci << "option name " << option_name
+                      << " type spin default " << static_cast<int>(*option_value * 100)
+                      << " min " << min_value
+                      << " max " << max_value
+                      << std::endl;
         else if constexpr (std::is_integral_v<T>)
-            logs::uci << "option name " << option_name << " type spin default " << *option_value << std::endl;
+            logs::uci << "option name " << option_name
+                      << " type spin default " << *option_value
+                      << " min " << min_value
+                      << " max " << max_value
+                      << std::endl;
         else
             logs::error << "Unsupported option type for " << option_name << std::endl;
     }
