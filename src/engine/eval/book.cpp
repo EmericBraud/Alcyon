@@ -15,7 +15,7 @@ void Book::init(const std::string &path)
 
     if (!file.is_open())
     {
-        std::cerr << "!!! ERREUR BOOK: Impossible d'ouvrir le fichier : " << path << std::endl;
+        logs::debug << "info string book disabled (missing file): " << path << std::endl;
         return;
     }
 
