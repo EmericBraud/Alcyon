@@ -7,3 +7,4 @@ data/syzygy
 Testing/Temporary/
 
 .env
+data/
