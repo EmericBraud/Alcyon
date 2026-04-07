@@ -15,7 +15,9 @@
 #include "engine/engine_manager.hpp"
 #include "engine/config/config.hpp"
 
+#ifdef CHESS26_HAS_GUI
 #include "interface/gui.hpp"
+#endif
 #include "interface/uci_option.hpp"
 
 class UCI
@@ -413,11 +415,13 @@ public:
             {
                 break;
             }
+#ifdef CHESS26_HAS_GUI
             else if (token == "gui")
             {
                 GUI g{b};
                 g.run();
             }
+#endif
         }
     }
 
