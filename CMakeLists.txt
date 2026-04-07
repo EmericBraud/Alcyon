@@ -119,10 +119,12 @@ add_dependencies(chess26 copy_runtime_data)
 # -------------------------------------------------------------------
 # GoogleTest
 # -------------------------------------------------------------------
+cmake_policy(SET CMP0135 NEW)
 include(FetchContent)
 FetchContent_Declare(
   googletest
   URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)

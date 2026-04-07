@@ -128,8 +128,8 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
 
     pv_line += " ";
     board.play(root_move);
-    auto guard = std::experimental::scope_exit([&]()
-                                               { board.unplay(root_move); });
+    auto guard = CHESS26_SCOPE_EXIT([&]()
+                                    { board.unplay(root_move); });
 
     std::vector<Move> moves_to_unplay;
     std::vector<uint64_t> visited_hashes;
