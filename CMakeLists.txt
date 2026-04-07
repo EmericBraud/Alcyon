@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # GUI support (off by default for OpenBench)
 option(ENABLE_GUI "Build with GUI support" OFF)
+option(BUILD_TESTING "Build unit tests" OFF)
 
 # Check for supported compiler flags
 include(CheckCXXCompilerFlag)
@@ -119,32 +120,34 @@ add_dependencies(chess26 copy_runtime_data)
 # -------------------------------------------------------------------
 # GoogleTest
 # -------------------------------------------------------------------
-cmake_policy(SET CMP0135 NEW)
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+if(BUILD_TESTING)
+    cmake_policy(SET CMP0135 NEW)
+    include(FetchContent)
+    FetchContent_Declare(
+      googletest
+      URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
 
-enable_testing()
+    enable_testing()
 
-file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
-add_executable(chess_tests ${TEST_SOURCES})
+    file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
+    add_executable(chess_tests ${TEST_SOURCES})
 
-target_include_directories(chess_tests PRIVATE include)
+    target_include_directories(chess_tests PRIVATE include)
 
-target_link_libraries(chess_tests PRIVATE
-    chess_core
-    gtest_main
-    gtest
-    Threads::Threads
-)
+    target_link_libraries(chess_tests PRIVATE
+        chess_core
+        gtest_main
+        gtest
+        Threads::Threads
+    )
 
-add_dependencies(chess_tests copy_runtime_data)
+    add_dependencies(chess_tests copy_runtime_data)
 
-include(GoogleTest)
-gtest_discover_tests(chess_tests)
+    include(GoogleTest)
+    gtest_discover_tests(chess_tests)
+endif()
 
