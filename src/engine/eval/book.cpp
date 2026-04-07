@@ -5,6 +5,7 @@
 
 #include <random>
 #include <fstream>
+#include <algorithm>
 
 std::vector<Book::Entry> Book::entries;
 

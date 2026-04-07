@@ -1,10 +1,25 @@
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
 #include <cmath>
-#include <experimental/scope>
 #include <limits>
+
+#if defined(__has_include)
+#  if __has_include(<scope>)
+#    include <scope>
+#    define CHESS26_SCOPE_EXIT std::scope_exit
+#  elif __has_include(<experimental/scope>)
+#    include <experimental/scope>
+#    define CHESS26_SCOPE_EXIT std::experimental::scope_exit
+#  else
+#    error "No scope_exit header available"
+#  endif
+#else
+#  include <experimental/scope>
+#  define CHESS26_SCOPE_EXIT std::experimental::scope_exit
+#endif
 
 #include "common/logger.hpp"
 #include "core/move/move.hpp"
@@ -397,8 +412,8 @@ private:
         if (ponder_enabled.load(std::memory_order_relaxed) && !stop_search.load(std::memory_order_relaxed))
         {
             main_board.play(best_move);
-            auto guard = std::experimental::scope_exit([&best_move, this]
-                                                       { main_board.unplay(best_move); });
+            auto guard = CHESS26_SCOPE_EXIT([&best_move, this]
+                                            { main_board.unplay(best_move); });
             Move second_move = tt.get_move(main_board.get_hash());
             if (main_board.is_move_pseudo_legal(second_move) && main_board.is_move_legal(second_move))
             {
