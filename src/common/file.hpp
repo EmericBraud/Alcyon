@@ -5,6 +5,10 @@
 #include <string>
 #include <stdexcept>
 #include <array>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
 
 #include "constants.hpp"
 
@@ -17,6 +21,11 @@ namespace file
         const std::filesystem::path exe_path = std::filesystem::read_symlink("/proc/self/exe", ec_linux);
         if (!ec_linux && !exe_path.empty())
             return exe_path.parent_path();
+#elif defined(__APPLE__)
+        char executable_path[PATH_MAX];
+        uint32_t size = sizeof(executable_path);
+        if (_NSGetExecutablePath(executable_path, &size) == 0)
+            return std::filesystem::path(executable_path).parent_path();
 #endif
         std::error_code ec;
         const std::filesystem::path cwd = std::filesystem::current_path(ec);
