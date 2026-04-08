@@ -104,9 +104,9 @@ namespace search
     }
 
     template <Color Us>
-    bool should_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_mate_node, int alpha)
+    bool should_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, bool is_mate_node, int alpha)
     {
-        if (depth <= engine_constants::search::futility_pruning::MaxDepth && !in_check && ply > 0 && !is_mate_node)
+        if (depth <= engine_constants::search::futility_pruning::MaxDepth && !in_check && !is_pv && ply > 0 && !is_mate_node)
         {
             int futil_margin = engine_constants::search::futility_pruning::MarginConst + engine_constants::search::futility_pruning::MarginDepthFactor * depth;
             int static_eval = Eval::lazy_eval_relative<Us>(board);
@@ -285,7 +285,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             return return_score;
     }
 
-    const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_mate_node, alpha);
+    const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_pv, is_mate_node, alpha);
 
     const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
     MovePicker list(board, tt_move, ply, prev_m, thread_id);
@@ -320,7 +320,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         if (futil_pruning && moves_searched >= 1 && !is_tactical)
         {
-            continue;
+            board.play<Us>(m);
+            bool gives_check_for_futility = board.is_king_attacked<!Us>();
+            board.unplay<Us>(m);
+
+            if (!gives_check_for_futility)
+                continue;
         }
         if (search::should_see_pruning<Us>(*this, in_check, is_pv, depth, moves_searched, tt_move, m))
             continue;
