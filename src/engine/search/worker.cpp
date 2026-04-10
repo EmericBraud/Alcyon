@@ -74,7 +74,7 @@ std::string SearchWorker::get_pv_line(int depth)
 
     for (int i = 0; i < std::min(depth, 10); i++)
     {
-        if (board.is_repetition())
+        if (board.is_repetition() || board.get_halfmove_clock() >= 100)
             break;
 
         Move m = shared_tt.get_move(board.get_hash());
@@ -139,7 +139,7 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
 
     for (int i = 0; i < std::min(depth - 1, 10); ++i)
     {
-        if (board.is_repetition())
+        if (board.is_repetition() || board.get_halfmove_clock() >= 100)
             break;
 
         Move m = shared_tt.get_move(board.get_hash());
