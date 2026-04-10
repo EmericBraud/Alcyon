@@ -74,6 +74,9 @@ std::string SearchWorker::get_pv_line(int depth)
 
     for (int i = 0; i < std::min(depth, 10); i++)
     {
+        if (board.is_repetition())
+            break;
+
         Move m = shared_tt.get_move(board.get_hash());
 
         // 1. Si le coup est 0 (Nœud terminal, Mat, ou pas d'entrée), on arrête.
@@ -136,6 +139,9 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
 
     for (int i = 0; i < std::min(depth - 1, 10); ++i)
     {
+        if (board.is_repetition())
+            break;
+
         Move m = shared_tt.get_move(board.get_hash());
         if (m.get_value() == 0)
             break;
