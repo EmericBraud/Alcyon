@@ -61,7 +61,7 @@ public:
         return *this;
     }
 
-    VBoard() : Board(), eval_state(Board::get_all_bitboards())
+    VBoard() : Board()
     {
     }
 

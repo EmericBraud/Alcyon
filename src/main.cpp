@@ -23,7 +23,6 @@ int main(int argc, char **argv)
                 }
                 catch (...)
                 {
-                    bench_depth = 4;
                 }
             }
 
