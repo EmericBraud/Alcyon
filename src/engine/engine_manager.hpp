@@ -232,11 +232,11 @@ public:
         root_best_move.store(0, std::memory_order_relaxed);
 
         time_limit.store(std::numeric_limits<int>::max() / 2, std::memory_order_relaxed);
-        start_time = std::chrono::steady_clock::now();
         tt.next_generation();
 
         SearchWorker worker(*this, position, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
 
+        start_time = std::chrono::steady_clock::now();
         int score = 0;
         for (int d = 1; d <= fixed_depth; ++d)
         {

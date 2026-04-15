@@ -280,6 +280,7 @@ class UCI
         {
             VBoard bench_board;
             bench_board.load_fen(bench_fens[i]);
+            e.clear();
 
             auto result = e.run_benchmark_fixed_depth(bench_board, bench_depth);
             total_nodes += result.nodes;
