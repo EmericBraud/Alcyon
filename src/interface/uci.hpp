@@ -18,8 +18,9 @@
 #ifdef CHESS26_HAS_GUI
 #include "interface/gui.hpp"
 #endif
+#ifdef SPSA_TUNING
 #include "interface/uci_option.hpp"
-
+#endif
 class UCI
 {
     VBoard b;
@@ -163,6 +164,7 @@ class UCI
         std::string word, name, value, option;
         std::string content = is.str();
 
+        #ifdef SPSA_TUNING
         for (UCIOption<int> &int_option : int_options)
         {
             std::istringstream content_copy(content);
@@ -181,6 +183,7 @@ class UCI
                 return;
             }
         }
+        #endif
 
         while (is >> word)
         {
@@ -367,6 +370,8 @@ public:
                 logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
                 logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl; //@TODO
                 logs::uci << "option name Ponder type check default " << (ponder_enabled ? "true" : "false") << std::endl;
+
+#ifdef SPSA_TUNING
                 for (auto int_option : int_options)
                 {
                     int_option.init_print();
@@ -375,6 +380,7 @@ public:
                 {
                     double_option.init_print();
                 }
+#endif
                 logs::uci << "uciok" << std::endl;
             }
             else if (token == "setoption")
