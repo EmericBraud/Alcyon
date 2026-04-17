@@ -101,13 +101,8 @@ public:
         }
         else
         {
-            if (std::floor(parsed) != parsed)
-            {
-                logs::uci << "info string error: cannot set option " << option_name << " to non-integer value " << value << std::endl;
-                return true;
-            }
-
-            const long long clamped = std::clamp(static_cast<long long>(parsed), min_value, max_value);
+            const long long rounded = std::llround(parsed);
+            const long long clamped = std::clamp(rounded, min_value, max_value);
             *option_value = static_cast<T>(clamped);
         }
         logs::debug << option_name << " set to " << *option_value << std::endl;

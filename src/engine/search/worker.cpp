@@ -177,19 +177,22 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
 int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 {
     max_extended_depth = 0;
-    int delta = (depth >= 12) ? 100 : (depth >= 8) ? 50
-                                                   : 16;
+    int delta = engine_constants::search::aspiration::SmallDelta;
+    if (depth >= engine_constants::search::aspiration::HighDepth)
+        delta = engine_constants::search::aspiration::HighDelta;
+    else if (depth >= engine_constants::search::aspiration::MidDepth)
+        delta = engine_constants::search::aspiration::MidDelta;
     int alpha = -engine_constants::eval::Inf;
     int beta = engine_constants::eval::Inf;
 
-    if (depth >= 5)
+    if (depth >= engine_constants::search::aspiration::EnableDepth)
     {
         alpha = last_score - delta;
         beta = last_score + delta;
     }
 
     int iterations = 0;
-    const int max_iterations = 5;
+    const int max_iterations = engine_constants::search::aspiration::MaxIterations;
 
     while (true)
     {
@@ -200,7 +203,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         {
             return score;
         }
-        if (abs(score) >= engine_constants::eval::MateScore - 256)
+        if (abs(score) >= engine_constants::eval::MateScore - engine_constants::search::aspiration::MateWindowMargin)
         {
             alpha = -engine_constants::eval::MateScore;
             beta = engine_constants::eval::MateScore;
@@ -229,7 +232,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         if (score <= alpha)
         {
             // Fail-low
-            delta = std::max(delta * 2, 50);
+            delta = std::max(delta * 2, engine_constants::search::aspiration::WidenMinDelta);
             alpha = std::max(-engine_constants::eval::Inf, alpha - delta);
             if (thread_id == 0)
                 logs::debug << "info string fail low" << std::endl;
@@ -237,14 +240,14 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         else if (score >= beta)
         {
             // Fail-high
-            delta = std::max(delta * 2, 50);
+            delta = std::max(delta * 2, engine_constants::search::aspiration::WidenMinDelta);
             beta = std::min(engine_constants::eval::Inf, beta + delta);
             if (thread_id == 0)
                 logs::debug << "info string fail high" << std::endl;
         }
 
         // Sécurité
-        if (iterations >= max_iterations || delta > 2000)
+        if (iterations >= max_iterations || delta > engine_constants::search::aspiration::WidenMaxDelta)
         {
             alpha = -engine_constants::eval::Inf;
             beta = engine_constants::eval::Inf;

@@ -165,7 +165,7 @@ class UCI
         std::string content = is.str();
         bool handled = false;
 
-        #ifdef SPSA_TUNING
+#ifdef SPSA_TUNING
         for (UCIOption<int> &int_option : int_options)
         {
             std::istringstream content_copy(content);
@@ -186,7 +186,7 @@ class UCI
                 return;
             }
         }
-        #endif
+#endif
 
         while (is >> word)
         {
@@ -332,6 +332,17 @@ public:
         Book::init(file::get_data_path("komodo.bin"));
 #ifdef SPSA_TUNING
         int_options = {
+            UCIOption<int>(&engine_constants::search::aspiration::EnableDepth, "aspiration_enable_depth", 1, 63),
+            UCIOption<int>(&engine_constants::search::aspiration::MidDepth, "aspiration_mid_depth", 1, 63),
+            UCIOption<int>(&engine_constants::search::aspiration::HighDepth, "aspiration_high_depth", 1, 63),
+            UCIOption<int>(&engine_constants::search::aspiration::SmallDelta, "aspiration_small_delta", 1, 1000),
+            UCIOption<int>(&engine_constants::search::aspiration::MidDelta, "aspiration_mid_delta", 1, 1000),
+            UCIOption<int>(&engine_constants::search::aspiration::HighDelta, "aspiration_high_delta", 1, 2000),
+            UCIOption<int>(&engine_constants::search::aspiration::WidenMinDelta, "aspiration_widen_min_delta", 1, 1000),
+            UCIOption<int>(&engine_constants::search::aspiration::WidenMaxDelta, "aspiration_widen_max_delta", 50, 10000),
+            UCIOption<int>(&engine_constants::search::aspiration::MaxIterations, "aspiration_max_iterations", 1, 20),
+            UCIOption<int>(&engine_constants::search::aspiration::MateWindowMargin, "aspiration_mate_window_margin", 1, 1000),
+
             UCIOption<int>(&engine_constants::search::razoring::MaxDepth, "razoring_max_depth"),
             UCIOption<int>(&engine_constants::search::razoring::MarginDepthFactor, "razoring_depth_factor"),
             UCIOption<int>(&engine_constants::search::razoring::MarginConst, "razoring_margin_const"),

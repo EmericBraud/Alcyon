@@ -721,6 +721,8 @@ template void MoveGen::generate_pseudo_legal_captures<WHITE>(const Board &board,
 template void MoveGen::generate_pseudo_legal_captures<BLACK>(const Board &board, MoveList &list);
 template void MoveGen::generate_legal_moves<WHITE>(Board &board, MoveList &list);
 template void MoveGen::generate_legal_moves<BLACK>(Board &board, MoveList &list);
+template void MoveGen::generate_castle_moves<WHITE>(Board &board, MoveList &list);
+template void MoveGen::generate_castle_moves<BLACK>(Board &board, MoveList &list);
 
 template void MoveGen::generate_pseudo_legal_promotions<WHITE>(const Board &board, MoveList &list);
 template void MoveGen::generate_pseudo_legal_promotions<BLACK>(const Board &board, MoveList &list);
