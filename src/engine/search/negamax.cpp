@@ -85,7 +85,7 @@ namespace search
     inline bool nmp(SearchWorker &worker, int depth, int ply, bool allow_null, bool in_check, bool is_mate_node, int alpha, int beta,
                     int static_eval, bool improving, bool is_pv, int &return_score)
     {
-        if (depth >= engine_constants::search::null_move_pruning::MinDepth && ply > 0 && allow_null && !in_check && !is_mate_node && beta < 9000 && alpha > -9000)
+        if (depth >= engine_constants::search::null_move_pruning::MinDepth && ply > 0 && allow_null && !is_pv && !in_check && !is_mate_node && beta < 9000 && alpha > -9000)
         {
             int stored_ep;
             worker.get_tt().prefetch(worker.get_board().get_hash());
