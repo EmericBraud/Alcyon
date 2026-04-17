@@ -40,6 +40,10 @@ struct SearchWorker
     Move out_move = 0;
 
     int max_extended_depth;
+    std::array<int, engine_constants::search::MaxDepth> static_eval_stack{};
+    bool current_improving = false;
+    bool current_is_pv = false;
+    int current_static_eval = 0;
 
     // CONSTRUCTEUR PRINCIPAL
     // Appelé par l'orchestrateur pour chaque thread
@@ -103,6 +107,7 @@ struct SearchWorker
     template <Color Us>
     int score_move(const Move &move, const Move &tt_move, int ply, const Move &prev_move) const;
     int score_capture(const Move &move) const;
+    int score_quiet_history(int raw_score) const;
     template <Color Side>
     int see(int sq, Piece target, Piece attacker, int from_sq) const;
     std::string get_pv_line(int depth);

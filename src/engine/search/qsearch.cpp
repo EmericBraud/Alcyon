@@ -158,5 +158,23 @@ inline int SearchWorker::score_capture(const Move &move) const
     return score;
 }
 
+int SearchWorker::score_quiet_history(int raw_score) const
+{
+    int score = raw_score;
+
+    if (current_is_pv)
+        score += score * engine_constants::search::history_scaling::PvBonusPercent / 100;
+
+    if (current_improving)
+        score += score * engine_constants::search::history_scaling::ImprovingBonusPercent / 100;
+    else
+        score -= score * engine_constants::search::history_scaling::NonImprovingPenaltyPercent / 100;
+
+    if (score < 0)
+        score *= engine_constants::search::history_scaling::NegativeHistoryMultiplier;
+
+    return score;
+}
+
 template int SearchWorker::qsearch<WHITE>(int alpha, int beta, int ply);
 template int SearchWorker::qsearch<BLACK>(int alpha, int beta, int ply);

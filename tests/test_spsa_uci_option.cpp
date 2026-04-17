@@ -25,6 +25,7 @@ namespace
 
         int razoring_max_depth = engine_constants::search::razoring::MaxDepth;
         int nmp_r_const = engine_constants::search::null_move_pruning::RConst;
+        int nmp_beta_margin = engine_constants::search::null_move_pruning::BetaMargin;
         double lmr_table_init_const = engine_constants::search::late_move_reduction::TableInitConst;
 
         ~SearchParamsSnapshot()
@@ -41,10 +42,24 @@ namespace
             engine_constants::search::aspiration::MateWindowMargin = aspiration_mate_window_margin;
             engine_constants::search::razoring::MaxDepth = razoring_max_depth;
             engine_constants::search::null_move_pruning::RConst = nmp_r_const;
+            engine_constants::search::null_move_pruning::BetaMargin = nmp_beta_margin;
             engine_constants::search::late_move_reduction::TableInitConst = lmr_table_init_const;
         }
     };
 } // namespace
+
+TEST(SPSAUCIOptionTest, NmpBetaMarginUpdatesEngineParameter)
+{
+    SearchParamsSnapshot snapshot;
+
+    UCIOption<int> option(&engine_constants::search::null_move_pruning::BetaMargin, "nmp_beta_margin");
+    std::istringstream input("setoption name nmp_beta_margin value 240");
+
+    const bool parsed = option.parse_input(input);
+
+    ASSERT_TRUE(parsed);
+    ASSERT_EQ(engine_constants::search::null_move_pruning::BetaMargin, 240);
+}
 
 TEST(SPSAUCIOptionTest, AspirationOptionUpdatesEngineParameter)
 {

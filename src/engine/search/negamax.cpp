@@ -90,12 +90,31 @@ namespace search
             worker.get_tt().prefetch(worker.get_board().get_hash());
             worker.get_board().play_null_move(stored_ep);
             int R = engine_constants::search::null_move_pruning::RConst + depth / engine_constants::search::null_move_pruning::RDiv;
-            R = std::min(R, depth - 1);
+            const int eval_gap = worker.current_static_eval - beta;
+            if (eval_gap > 0)
+                R += eval_gap / engine_constants::search::null_move_pruning::EvalGapDiv;
+            if (worker.current_improving)
+                R = std::max(1, R - engine_constants::search::null_move_pruning::ImprovingReduction);
+            if (worker.current_is_pv)
+                R = std::max(1, R - engine_constants::search::null_move_pruning::PvReduction);
+            R = std::clamp(R, 1, depth - 1);
             int score = -worker.negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false);
             worker.get_board().unplay_null_move(stored_ep);
 
             if (score >= beta)
             {
+                const bool need_verification =
+                    depth >= engine_constants::search::null_move_pruning::VerificationDepth &&
+                    eval_gap < engine_constants::search::null_move_pruning::BetaMargin;
+
+                if (need_verification)
+                {
+                    const int verification_depth = std::max(1, depth - 1 - engine_constants::search::null_move_pruning::VerificationReduction);
+                    const int verify_score = -worker.negamax<!Us>(verification_depth, -beta, -beta + 1, ply + 1, false);
+                    if (verify_score < beta)
+                        return false;
+                }
+
                 return_score = (score >= engine_constants::eval::MateScore - engine_constants::search::MaxDepth) ? beta : score;
                 return true;
             }
@@ -256,6 +275,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const bool is_pv = (beta - alpha > 1);
     const bool in_check = board.is_king_attacked<Us>();
     const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
+    const int static_eval = Eval::lazy_eval_relative<Us>(board);
+
+    current_static_eval = static_eval;
+    current_is_pv = is_pv;
+    current_improving = (ply >= 2 && static_eval > static_eval_stack[ply - 2]);
+    static_eval_stack[ply] = static_eval;
 
     if (search::razoring<Us>(board, depth, alpha, is_pv, in_check, ply))
         return qsearch<Us>(alpha, beta, ply);

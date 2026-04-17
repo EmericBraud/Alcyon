@@ -58,12 +58,25 @@ namespace engine_constants
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int RConst = 2;
             PARAM_SPECIFIER int RDiv = 6;
+            PARAM_SPECIFIER int BetaMargin = 200;
+            PARAM_SPECIFIER int EvalGapDiv = 64;
+            PARAM_SPECIFIER int ImprovingReduction = 1;
+            PARAM_SPECIFIER int PvReduction = 1;
+            PARAM_SPECIFIER int VerificationDepth = 6;
+            PARAM_SPECIFIER int VerificationReduction = 2;
         }
         namespace futility_pruning
         {
             PARAM_SPECIFIER int MaxDepth = 3;
             PARAM_SPECIFIER int MarginConst = 175;
             PARAM_SPECIFIER int MarginDepthFactor = 110;
+        }
+        namespace history_scaling
+        {
+            PARAM_SPECIFIER int PvBonusPercent = 12;
+            PARAM_SPECIFIER int ImprovingBonusPercent = 12;
+            PARAM_SPECIFIER int NonImprovingPenaltyPercent = 25;
+            PARAM_SPECIFIER int NegativeHistoryMultiplier = 2;
         }
         namespace singular
         {

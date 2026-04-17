@@ -357,10 +357,21 @@ public:
             UCIOption<int>(&engine_constants::search::null_move_pruning::MinDepth, "nmp_min_depth"),
             UCIOption<int>(&engine_constants::search::null_move_pruning::RConst, "nmp_r_const"),
             UCIOption<int>(&engine_constants::search::null_move_pruning::RDiv, "nmp_r_div"),
+            UCIOption<int>(&engine_constants::search::null_move_pruning::BetaMargin, "nmp_beta_margin", 0, 1000),
+            UCIOption<int>(&engine_constants::search::null_move_pruning::EvalGapDiv, "nmp_eval_gap_div", 1, 256),
+            UCIOption<int>(&engine_constants::search::null_move_pruning::ImprovingReduction, "nmp_improving_reduction", 0, 4),
+            UCIOption<int>(&engine_constants::search::null_move_pruning::PvReduction, "nmp_pv_reduction", 0, 4),
+            UCIOption<int>(&engine_constants::search::null_move_pruning::VerificationDepth, "nmp_verification_depth", 1, 12),
+            UCIOption<int>(&engine_constants::search::null_move_pruning::VerificationReduction, "nmp_verification_reduction", 0, 6),
 
             UCIOption<int>(&engine_constants::search::futility_pruning::MaxDepth, "fp_max_depth"),
             UCIOption<int>(&engine_constants::search::futility_pruning::MarginConst, "fp_margin_const"),
             UCIOption<int>(&engine_constants::search::futility_pruning::MarginDepthFactor, "fp_margin_d_fact"),
+
+            UCIOption<int>(&engine_constants::search::history_scaling::PvBonusPercent, "history_pv_bonus_percent", 0, 100),
+            UCIOption<int>(&engine_constants::search::history_scaling::ImprovingBonusPercent, "history_improving_bonus_percent", 0, 100),
+            UCIOption<int>(&engine_constants::search::history_scaling::NonImprovingPenaltyPercent, "history_non_improving_penalty_percent", 0, 100),
+            UCIOption<int>(&engine_constants::search::history_scaling::NegativeHistoryMultiplier, "history_negative_multiplier", 1, 8),
 
             UCIOption<int>(&engine_constants::search::singular::MinDepth, "singular_min_depth"),
 

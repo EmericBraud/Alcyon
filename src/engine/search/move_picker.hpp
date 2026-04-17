@@ -191,7 +191,9 @@ struct MovePicker
                         uint64_t hash = (uint64_t(m.get_value()) + ply) ^ (uint64_t(thread_id) << 32);
                         noise = (hash & 0x7FF) - 1024;
                     }
-                    list.scores[i] = worker.history_moves[Us][m.get_from_sq()][m.get_to_sq()] + noise;
+                    int history_score = worker.history_moves[Us][m.get_from_sq()][m.get_to_sq()];
+                    history_score = worker.score_quiet_history(history_score);
+                    list.scores[i] = history_score + noise;
                     list.is_tactical[i] = false;
                     list[i++] = m;
                 }
