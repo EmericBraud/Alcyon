@@ -383,7 +383,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
                     // On récompense le coup gagnant
                     history_moves[Us][m.get_from_sq()][m.get_to_sq()] += bonus;
-                    
+
                     // Update continuation history
                     if (prev_m != 0)
                     {
@@ -399,7 +399,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                         const int m_to = m.get_to_sq();
                         continuation_hist_2[Us][prev_prev_piece][prev_prev_to][m_to] += bonus;
                     }
-                    
+
                     for (int j = 0; j < list.index - 1; ++j)
                     {
                         Move failed_move = list.list.moves[j];
