@@ -28,6 +28,7 @@ struct MovePicker
     alignas(64) int bad_captures_index;
     int ply;
     Move prev_move;
+    Move prev_prev_move;
     Move tt_move;
     int thread_id;
 
@@ -41,10 +42,17 @@ struct MovePicker
         index = 0;
         ply = _ply;
         prev_move = _prev_move;
+        prev_prev_move = 0;
         tt_move = _tt_move;
         thread_id = _thread_id;
         current_is_tactical = true;
         bad_captures_index = constants::MaxMoves - 1;
+
+        // Extract 2-ply previous move from board history
+        const auto *history = board.get_history();
+        if (history && history->size() >= 2)
+            prev_prev_move = (*history)[history->size() - 2].move;
+
         if (tt_move != 0 && board.is_move_pseudo_legal(tt_move))
         {
             MoveGen::init_move_flags(board, tt_move);
@@ -191,7 +199,9 @@ struct MovePicker
                         uint64_t hash = (uint64_t(m.get_value()) + ply) ^ (uint64_t(thread_id) << 32);
                         noise = (hash & 0x7FF) - 1024;
                     }
-                    list.scores[i] = worker.history_moves[Us][m.get_from_sq()][m.get_to_sq()] + noise;
+                    int history_score = worker.history_moves[Us][m.get_from_sq()][m.get_to_sq()];
+                    history_score = worker.score_quiet_history(history_score, m, prev_move, prev_prev_move, Us);
+                    list.scores[i] = history_score + noise;
                     list.is_tactical[i] = false;
                     list[i++] = m;
                 }

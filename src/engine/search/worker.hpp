@@ -30,6 +30,8 @@ struct SearchWorker
     int history_moves[2][64][64];
     Move killer_moves[engine_constants::search::MaxDepth][2];
     Move counter_moves[2][7][64];
+    int continuation_hist_1[2][7][64][64];  // [side][piece][from][to] for 1-ply continuation
+    int continuation_hist_2[2][7][64][64];  // [side][piece][from][to] for 2-ply continuation
     std::array<Move, engine_constants::search::MaxDepth> move_stack;
 
     // Métriques locales
@@ -89,6 +91,8 @@ struct SearchWorker
         std::memset(history_moves, 0, sizeof(history_moves));
         std::memset(killer_moves, 0, sizeof(killer_moves));
         std::memset(counter_moves, 0, sizeof(counter_moves));
+        std::memset(continuation_hist_1, 0, sizeof(continuation_hist_1));
+        std::memset(continuation_hist_2, 0, sizeof(continuation_hist_2));
     }
 
     void age_history()
@@ -103,6 +107,7 @@ struct SearchWorker
     template <Color Us>
     int score_move(const Move &move, const Move &tt_move, int ply, const Move &prev_move) const;
     int score_capture(const Move &move) const;
+    int score_quiet_history(int raw_score, const Move &move, const Move &prev_move, const Move &prev_prev_move, Color us) const;
     template <Color Side>
     int see(int sq, Piece target, Piece attacker, int from_sq) const;
     std::string get_pv_line(int depth);
