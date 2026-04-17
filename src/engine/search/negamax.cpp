@@ -287,7 +287,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_pv, is_mate_node, alpha);
 
-    const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
+    const auto *history = board.get_history();
+    const Move prev_m = ply > 0 ? history->back().move : 0;
+    const Move prev_prev_m = (history->size() >= 2) ? (*history)[history->size() - 2].move : 0;
     MovePicker list(board, tt_move, ply, prev_m, thread_id);
 
     // 7. PVS Loop (Principal Variation Search)
@@ -381,6 +383,23 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
                     // On récompense le coup gagnant
                     history_moves[Us][m.get_from_sq()][m.get_to_sq()] += bonus;
+                    
+                    // Update continuation history
+                    if (prev_m != 0)
+                    {
+                        const int prev_piece = prev_m.get_from_piece();
+                        const int prev_to = prev_m.get_to_sq();
+                        const int m_to = m.get_to_sq();
+                        continuation_hist_1[Us][prev_piece][prev_to][m_to] += bonus;
+                    }
+                    if (prev_prev_m != 0)
+                    {
+                        const int prev_prev_piece = prev_prev_m.get_from_piece();
+                        const int prev_prev_to = prev_prev_m.get_to_sq();
+                        const int m_to = m.get_to_sq();
+                        continuation_hist_2[Us][prev_prev_piece][prev_prev_to][m_to] += bonus;
+                    }
+                    
                     for (int j = 0; j < list.index - 1; ++j)
                     {
                         Move failed_move = list.list.moves[j];
