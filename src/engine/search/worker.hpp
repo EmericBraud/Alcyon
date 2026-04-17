@@ -28,6 +28,8 @@ struct SearchWorker
 
     // Heuristiques locales (Thread-local)
     int history_moves[2][64][64];
+    int continuation_hist_1[2][7][64][64];
+    int continuation_hist_2[2][7][64][64];
     Move killer_moves[engine_constants::search::MaxDepth][2];
     Move counter_moves[2][7][64];
     std::array<Move, engine_constants::search::MaxDepth> move_stack;
@@ -90,6 +92,8 @@ struct SearchWorker
     void clear_heuristics()
     {
         std::memset(history_moves, 0, sizeof(history_moves));
+        std::memset(continuation_hist_1, 0, sizeof(continuation_hist_1));
+        std::memset(continuation_hist_2, 0, sizeof(continuation_hist_2));
         std::memset(killer_moves, 0, sizeof(killer_moves));
         std::memset(counter_moves, 0, sizeof(counter_moves));
     }
@@ -99,14 +103,50 @@ struct SearchWorker
         for (int c = 0; c < 2; ++c)
             for (int f = 0; f < 64; ++f)
                 for (int t = 0; t < 64; ++t)
+                {
                     history_moves[c][f][t] /= 8;
+                    for (int p = 0; p < 7; ++p)
+                    {
+                        continuation_hist_1[c][p][f][t] /= 8;
+                        continuation_hist_2[c][p][f][t] /= 8;
+                    }
+                }
+    }
+
+    static constexpr int HistoryLimit = 12000;
+
+    inline void update_history_entry(int &entry, int bonus)
+    {
+        bonus = std::clamp(bonus, -HistoryLimit, HistoryLimit);
+        entry += bonus - entry * std::abs(bonus) / HistoryLimit;
+        entry = std::clamp(entry, -HistoryLimit, HistoryLimit);
+    }
+
+    template <Color Us>
+    inline void update_quiet_histories(Move m, Move prev_move, Move prev_prev_move, int bonus)
+    {
+        update_history_entry(history_moves[Us][m.get_from_sq()][m.get_to_sq()], bonus);
+
+        const int to = m.get_to_sq();
+        if (prev_move != 0)
+        {
+            const int prev_piece = prev_move.get_from_piece();
+            const int prev_to = prev_move.get_to_sq();
+            update_history_entry(continuation_hist_1[Us][prev_piece][prev_to][to], bonus);
+        }
+        if (prev_prev_move != 0)
+        {
+            const int prev2_piece = prev_prev_move.get_from_piece();
+            const int prev2_to = prev_prev_move.get_to_sq();
+            update_history_entry(continuation_hist_2[Us][prev2_piece][prev2_to][to], bonus);
+        }
     }
 
     // --- utilitaires ---
     template <Color Us>
     int score_move(const Move &move, const Move &tt_move, int ply, const Move &prev_move) const;
     int score_capture(const Move &move) const;
-    int score_quiet_history(int raw_score, int ply) const;
+    int score_quiet_history(int raw_score, const Move &move, int ply, const Move &prev_move, const Move &prev_prev_move) const;
     template <Color Side>
     int see(int sq, Piece target, Piece attacker, int from_sq) const;
     std::string get_pv_line(int depth);

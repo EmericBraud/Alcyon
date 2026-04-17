@@ -4,6 +4,8 @@
 #include "engine/engine_manager.hpp"
 #include "engine/search/move_picker.hpp"
 
+#include <vector>
+
 namespace search
 {
     inline bool is_null(const VBoard &board, int ply)
@@ -313,7 +315,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_pv, is_mate_node, alpha);
 
-    const Move prev_m = ply > 0 ? (board.get_history()->back()).move : 0;
+    const auto *history = board.get_history();
+    const Move prev_m = ply > 0 ? history->back().move : 0;
+    const Move prev_prev_m = (history->size() >= 2) ? (*history)[history->size() - 2].move : 0;
     MovePicker list(board, tt_move, ply, prev_m, thread_id);
 
     // 7. PVS Loop (Principal Variation Search)
@@ -322,6 +326,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     int best_score = -engine_constants::eval::Inf;
     Move best_move_this_node = 0;
     int moves_searched = 0;
+    std::vector<Move> searched_quiets;
+    searched_quiets.reserve(64);
 
     while (true)
     {
@@ -357,6 +363,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             continue;
 
         ++moves_searched;
+        const int alpha_before_move = alpha;
 
         board.play<Us>(m);
 
@@ -392,6 +399,16 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         board.unplay<Us>(m);
 
+        if (!is_tactical)
+        {
+            searched_quiets.push_back(m);
+            if (score <= alpha_before_move)
+            {
+                const int quiet_malus = depth * depth / 2 + depth;
+                update_quiet_histories<Us>(m, prev_m, prev_prev_m, -quiet_malus);
+            }
+        }
+
         // --- MISE À JOUR DES SCORES ET DES TABLES ---
         if (score >= beta)
         {
@@ -399,22 +416,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
             if (!is_tactical)
             {
+                const int quiet_bonus = depth * depth + 2 * depth;
+                const int quiet_malus = depth * depth / 2 + depth;
+                update_quiet_histories<Us>(m, prev_m, prev_prev_m, quiet_bonus);
 
-                // MALUS : On punit tous les coups calmes testés AVANT et qui ont échoué
-                if (list.stage == PickerStages::QUIETS)
+                for (const Move failed_move : searched_quiets)
                 {
-                    int bonus = depth * depth;
-
-                    // On récompense le coup gagnant
-                    history_moves[Us][m.get_from_sq()][m.get_to_sq()] += bonus;
-                    for (int j = 0; j < list.index - 1; ++j)
-                    {
-                        Move failed_move = list.list.moves[j];
-                        // On ne punit que les coups calmes (pas les captures/promotions)
-
-                        history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] = std::max(history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] - bonus, -10000);
-                    }
+                    if (failed_move == m)
+                        continue;
+                    update_quiet_histories<Us>(failed_move, prev_m, prev_prev_m, -quiet_malus);
                 }
+
+                if (prev_m != 0)
+                    counter_moves[Us][prev_m.get_from_piece()][prev_m.get_to_sq()] = m;
 
                 // 4. Update Killer Moves
                 if (m.get_value() != killer_moves[ply][0].get_value())

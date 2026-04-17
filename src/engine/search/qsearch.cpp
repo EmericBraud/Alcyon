@@ -158,9 +158,18 @@ inline int SearchWorker::score_capture(const Move &move) const
     return score;
 }
 
-int SearchWorker::score_quiet_history(int raw_score, int ply) const
+int SearchWorker::score_quiet_history(int raw_score, const Move &move, int ply, const Move &prev_move, const Move &prev_prev_move) const
 {
     int score = raw_score;
+
+    if (prev_move != 0)
+    {
+        score += continuation_hist_1[board.get_side_to_move()][prev_move.get_from_piece()][prev_move.get_to_sq()][move.get_to_sq()] / 2;
+    }
+    if (prev_prev_move != 0)
+    {
+        score += continuation_hist_2[board.get_side_to_move()][prev_prev_move.get_from_piece()][prev_prev_move.get_to_sq()][move.get_to_sq()] / 4;
+    }
 
     if (pv_stack[ply])
         score += score * engine_constants::search::history_scaling::PvBonusPercent / 100;
