@@ -192,7 +192,7 @@ struct MovePicker
                         noise = (hash & 0x7FF) - 1024;
                     }
                     int history_score = worker.history_moves[Us][m.get_from_sq()][m.get_to_sq()];
-                    history_score = worker.score_quiet_history(history_score);
+                    history_score = worker.score_quiet_history(history_score, ply);
                     list.scores[i] = history_score + noise;
                     list.is_tactical[i] = false;
                     list[i++] = m;

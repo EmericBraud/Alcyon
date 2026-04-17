@@ -158,14 +158,14 @@ inline int SearchWorker::score_capture(const Move &move) const
     return score;
 }
 
-int SearchWorker::score_quiet_history(int raw_score) const
+int SearchWorker::score_quiet_history(int raw_score, int ply) const
 {
     int score = raw_score;
 
-    if (current_is_pv)
+    if (pv_stack[ply])
         score += score * engine_constants::search::history_scaling::PvBonusPercent / 100;
 
-    if (current_improving)
+    if (improving_stack[ply])
         score += score * engine_constants::search::history_scaling::ImprovingBonusPercent / 100;
     else
         score -= score * engine_constants::search::history_scaling::NonImprovingPenaltyPercent / 100;

@@ -82,7 +82,8 @@ namespace search
     }
 
     template <Color Us>
-    inline bool nmp(SearchWorker &worker, int depth, int ply, bool allow_null, bool in_check, bool is_mate_node, int alpha, int beta, int &return_score)
+    inline bool nmp(SearchWorker &worker, int depth, int ply, bool allow_null, bool in_check, bool is_mate_node, int alpha, int beta,
+                    int static_eval, bool improving, bool is_pv, int &return_score)
     {
         if (depth >= engine_constants::search::null_move_pruning::MinDepth && ply > 0 && allow_null && !in_check && !is_mate_node && beta < 9000 && alpha > -9000)
         {
@@ -90,12 +91,12 @@ namespace search
             worker.get_tt().prefetch(worker.get_board().get_hash());
             worker.get_board().play_null_move(stored_ep);
             int R = engine_constants::search::null_move_pruning::RConst + depth / engine_constants::search::null_move_pruning::RDiv;
-            const int eval_gap = worker.current_static_eval - beta;
+            const int eval_gap = static_eval - beta;
             if (eval_gap > 0)
                 R += eval_gap / engine_constants::search::null_move_pruning::EvalGapDiv;
-            if (worker.current_improving)
+            if (improving)
                 R = std::max(1, R - engine_constants::search::null_move_pruning::ImprovingReduction);
-            if (worker.current_is_pv)
+            if (is_pv)
                 R = std::max(1, R - engine_constants::search::null_move_pruning::PvReduction);
             R = std::clamp(R, 1, depth - 1);
             int score = -worker.negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false);
@@ -277,10 +278,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
     const int static_eval = Eval::lazy_eval_relative<Us>(board);
 
-    current_static_eval = static_eval;
-    current_is_pv = is_pv;
-    current_improving = (ply >= 2 && static_eval > static_eval_stack[ply - 2]);
+    const bool improving = (ply >= 2 && static_eval > static_eval_stack[ply - 2]);
     static_eval_stack[ply] = static_eval;
+    improving_stack[ply] = improving;
+    pv_stack[ply] = is_pv;
 
     if (search::razoring<Us>(board, depth, alpha, is_pv, in_check, ply))
         return qsearch<Us>(alpha, beta, ply);
@@ -306,7 +307,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     {
         int return_score;
-        if (search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score))
+        if (search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, static_eval, improving, is_pv, return_score))
             return return_score;
     }
 
