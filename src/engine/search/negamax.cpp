@@ -110,7 +110,7 @@ namespace search
                 if (need_verification)
                 {
                     const int verification_depth = std::max(1, depth - 1 - engine_constants::search::null_move_pruning::VerificationReduction);
-                    const int verify_score = -worker.negamax<!Us>(verification_depth, -beta, -beta + 1, ply + 1, false);
+                    const int verify_score = worker.negamax<Us>(verification_depth, beta - 1, beta, ply, false);
                     if (verify_score < beta)
                         return false;
                 }
