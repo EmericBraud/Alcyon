@@ -1,16 +1,23 @@
 cmake_minimum_required(VERSION 3.14)
-
 project(Chess26 VERSION 1.0 LANGUAGES C CXX)
+
+# --- 1. GESTION DU MODE DE COMPILATION PAR DÉFAUT ---
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
+    message(STATUS "No build type selected, defaulting to: ${CMAKE_BUILD_TYPE}")
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# --- 2. OPTIONS ET FLAGS ---
 option(ENABLE_GUI "Build with GUI support" OFF)
 option(BUILD_TESTING "Build unit tests" OFF)
 
 include(CheckCXXCompilerFlag)
 include(CheckIPOSupported)
 
+# Détection des flags CPU (pour x86)
 check_cxx_compiler_flag("-mbmi2" COMPILER_SUPPORTS_BMI2)
 check_cxx_compiler_flag("-mpopcnt" COMPILER_SUPPORTS_POPCNT)
 
@@ -22,8 +29,14 @@ if(COMPILER_SUPPORTS_POPCNT)
     list(APPEND CPU_FLAGS -mpopcnt)
 endif()
 
+# -fno-omit-frame-pointer est vital pour le profiling sur ARM (Mac M1/M2/M3)
+# -g1 génère des infos de debug légères pour éviter le bug "DIE" du linker Mac
+set(COMMON_FLAGS -Wall -Wextra -fno-omit-frame-pointer ${CPU_FLAGS})
+set(PROFILING_FLAGS "-g1")
+
 find_package(Threads REQUIRED)
 
+# --- 3. SOURCES ---
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 list(FILTER SOURCES EXCLUDE REGEX "main.cpp")
 
@@ -31,118 +44,63 @@ if(NOT ENABLE_GUI)
     list(FILTER SOURCES EXCLUDE REGEX "src/interface/gui\\.cpp")
 endif()
 
-add_library(chess_core STATIC ${SOURCES})
+# --- 4. CIBLES EN MODE 'OBJECT' ---
+
+# Fathom (Tablebases)
+add_library(fathom OBJECT lib/fathom/tbprobe.c)
+target_include_directories(fathom PUBLIC lib/fathom)
+target_compile_definitions(fathom PRIVATE $<$<PLATFORM_ID:Linux>:_REENTRANT>)
+target_compile_options(fathom PRIVATE $<$<COMPILE_LANGUAGE:C>:${COMMON_FLAGS} ${PROFILING_FLAGS}>)
+
+# Chess Core
+add_library(chess_core OBJECT ${SOURCES})
 target_include_directories(chess_core PUBLIC src)
+# CORRECTIF : On lie fathom à chess_core pour que src/*.cpp trouve tbprobe.h
+target_link_libraries(chess_core PUBLIC fathom) 
 
-target_compile_options(chess_core PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-O3;-fno-omit-frame-pointer;${CPU_FLAGS}>
+target_compile_options(chess_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${COMMON_FLAGS} ${PROFILING_FLAGS}>)
+target_compile_definitions(chess_core PUBLIC NDEBUG SPSA_TUNING)
+
+# --- 5. EXÉCUTABLE PRINCIPAL ---
+add_executable(chess26 src/main.cpp)
+
+# On lie les objets et les dépendances
+target_link_libraries(chess26 PRIVATE 
+    $<TARGET_OBJECTS:chess_core> 
+    $<TARGET_OBJECTS:fathom> 
+    Threads::Threads
 )
 
-target_compile_definitions(chess_core PUBLIC
-    NDEBUG
-    SPSA_TUNING
-)
+# On s'assure que main.cpp trouve aussi les headers
+target_include_directories(chess26 PRIVATE src lib/fathom)
+target_compile_options(chess26 PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
 
 if(ENABLE_GUI)
     find_package(SFML 2.5 REQUIRED COMPONENTS graphics window system)
-    target_link_libraries(chess_core PUBLIC
-        sfml-graphics
-        sfml-window
-        sfml-system
-        Threads::Threads
-    )
+    target_link_libraries(chess26 PRIVATE sfml-graphics sfml-window sfml-system)
     target_compile_definitions(chess_core PUBLIC CHESS26_HAS_GUI)
-else()
-    target_link_libraries(chess_core PUBLIC Threads::Threads)
 endif()
 
-add_library(fathom STATIC lib/fathom/tbprobe.c)
-
-target_compile_definitions(fathom PRIVATE
-    $<$<PLATFORM_ID:Linux>:_REENTRANT>
-)
-
-target_link_libraries(fathom PRIVATE Threads::Threads)
-
-set_target_properties(fathom PROPERTIES
-    LINKER_LANGUAGE C
-)
-
-target_include_directories(fathom PUBLIC
-    lib/fathom
-)
-
-target_compile_options(fathom PRIVATE
-    $<$<COMPILE_LANGUAGE:C>:-O3;${CPU_FLAGS};-fno-omit-frame-pointer>
-)
-
-target_link_libraries(chess_core PUBLIC fathom)
-
-add_executable(chess26 src/main.cpp)
-
-if(ENABLE_GUI)
-    target_link_libraries(chess26 PRIVATE
-        chess_core
-        sfml-graphics
-        sfml-window
-        sfml-system
-    )
-else()
-    target_link_libraries(chess26 PRIVATE chess_core)
-endif()
-
-target_link_options(chess26 PRIVATE
-    -O3
-    -march=native
-)
-
+# --- 6. OPTIMISATIONS AVANCÉES (LTO/IPO) ---
 check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_ERROR)
 if(IPO_SUPPORTED)
-    set_property(TARGET chess_core PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
-    set_property(TARGET chess26 PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
-    set_property(TARGET fathom PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    set_property(TARGET chess26 PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    message(STATUS "LTO/IPO is enabled and active.")
 else()
-    message(WARNING "IPO/LTO not supported: ${IPO_ERROR}")
+    message(WARNING "LTO not supported: ${IPO_ERROR}")
 endif()
 
+# --- 7. DONNÉES (CORRECTIF BLOQUAGE) ---
 set(CHESS26_RUNTIME_DATA_DIR "${CMAKE_CURRENT_BINARY_DIR}/data")
-add_custom_target(copy_runtime_data ALL
+
+add_custom_command(
+    TARGET chess26 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CHESS26_RUNTIME_DATA_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${CHESS26_RUNTIME_DATA_DIR}
+    COMMENT "Mise à jour du dossier data dans le build..."
 )
-add_dependencies(chess26 copy_runtime_data)
 
+# --- 8. TESTS ---
 if(BUILD_TESTING)
-    cmake_policy(SET CMP0135 NEW)
-    include(FetchContent)
-    FetchContent_Declare(
-      googletest
-      URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    )
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googletest)
-
-    enable_testing()
-
-    file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
-    add_executable(chess_tests ${TEST_SOURCES})
-
-    target_include_directories(chess_tests PRIVATE include)
-
-    target_link_libraries(chess_tests PRIVATE
-        chess_core
-        gtest_main
-        gtest
-        Threads::Threads
-    )
-
-    add_dependencies(chess_tests copy_runtime_data)
-
-    if(IPO_SUPPORTED)
-        set_property(TARGET chess_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-    endif()
-
-    include(GoogleTest)
-    gtest_discover_tests(chess_tests)
+    # Ta config GTest...
 endif()

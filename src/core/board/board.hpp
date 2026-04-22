@@ -123,7 +123,7 @@ public:
         other.history_tagged = nullptr;
     }
     // 5. Affectation & move operator
-    Board &operator=(Board &&other) noexcept
+    inline Board &operator=(Board &&other) noexcept
     {
         if (this != &other)
         {
@@ -136,7 +136,7 @@ public:
     }
     bool load_fen(const std::string_view fen_string);
 
-    static std::expected<Move, Move::MoveError> parse_move_uci(std::string_view uci, const Board &board)
+    inline static std::expected<Move, Move::MoveError> parse_move_uci(std::string_view uci, const Board &board)
     {
         if (uci.length() < 4 || uci.length() > 5)
             return std::unexpected(Move::MoveError::InvalidFormat);
@@ -208,7 +208,7 @@ public:
         return Move(from_sq, to_sq, from_piece, flags, to_piece, prom_piece);
     }
 
-    void attach_history(History *h)
+    inline void attach_history(History *h)
     {
         if (history_tagged && owns_history())
         {
@@ -348,7 +348,7 @@ public:
     }
     template <Color Us>
     bool is_move_legal(const Move move);
-    bool is_move_legal(const Move move)
+    inline bool is_move_legal(const Move move)
     {
         const Color us = get_side_to_move();
         if (us == WHITE)
@@ -363,7 +363,7 @@ public:
 
     uint64_t polyglot_key() const;
 
-    bool is_occupied(const int sq, const int piece, const Color color) const
+    inline bool is_occupied(const int sq, const int piece, const Color color) const
     {
         return is_occupied(sq, static_cast<Piece>(piece), color);
     }
@@ -424,7 +424,7 @@ public:
 
     void undo_last_move();
 
-    uint16_t get_halfmove_clock() const
+    inline uint16_t get_halfmove_clock() const
     {
         return state.halfmove_clock;
     }
@@ -504,7 +504,7 @@ public:
         return h;
     }
 
-    void verify_consistency()
+    inline void verify_consistency()
     {
         U64 expected_all = occupancies[WHITE] | occupancies[BLACK];
         if (occupancies[NO_COLOR] != expected_all)
