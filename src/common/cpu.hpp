@@ -1,7 +1,9 @@
 #pragma once
 
-#ifdef __SSE2__
+#if defined(__x86_64__) || defined(_M_X64)
 #include <xmmintrin.h>
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#include <arm_neon.h>
 #endif
 
 #if defined(_MSC_VER)
