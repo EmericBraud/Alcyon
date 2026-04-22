@@ -20,6 +20,22 @@ namespace engine_constants
     {
         constexpr int MaxDepth = 64;
 
+        namespace aspiration
+        {
+            PARAM_SPECIFIER int EnableDepth = 5;
+            PARAM_SPECIFIER int MidDepth = 8;
+            PARAM_SPECIFIER int HighDepth = 12;
+
+            PARAM_SPECIFIER int SmallDelta = 16;
+            PARAM_SPECIFIER int MidDelta = 50;
+            PARAM_SPECIFIER int HighDelta = 100;
+
+            PARAM_SPECIFIER int WidenMinDelta = 50;
+            PARAM_SPECIFIER int WidenMaxDelta = 2000;
+            PARAM_SPECIFIER int MaxIterations = 5;
+            PARAM_SPECIFIER int MateWindowMargin = 256;
+        }
+
         namespace razoring
         {
             PARAM_SPECIFIER int MaxDepth = 3;

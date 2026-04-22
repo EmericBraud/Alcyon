@@ -88,7 +88,7 @@ public:
         const double parsed = std::strtod(value.c_str(), &end_ptr);
         if (end_ptr == value.c_str() || (end_ptr && *end_ptr != '\0'))
         {
-            logs::debug << "info string ignoring invalid value for " << option_name << ": " << value << std::endl;
+            logs::uci << "info string error: cannot set option " << option_name << " to invalid value " << value << std::endl;
             return true;
         }
 
@@ -101,13 +101,8 @@ public:
         }
         else
         {
-            if (std::floor(parsed) != parsed)
-            {
-                logs::debug << "info string ignoring non-integer value for " << option_name << ": " << value << std::endl;
-                return true;
-            }
-
-            const long long clamped = std::clamp(static_cast<long long>(parsed), min_value, max_value);
+            const long long rounded = std::llround(parsed);
+            const long long clamped = std::clamp(rounded, min_value, max_value);
             *option_value = static_cast<T>(clamped);
         }
         logs::debug << option_name << " set to " << *option_value << std::endl;

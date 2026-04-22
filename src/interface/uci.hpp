@@ -163,14 +163,16 @@ class UCI
     {
         std::string word, name, value, option;
         std::string content = is.str();
+        bool handled = false;
 
-        #ifdef SPSA_TUNING
+#ifdef SPSA_TUNING
         for (UCIOption<int> &int_option : int_options)
         {
             std::istringstream content_copy(content);
             if (int_option.parse_input(content_copy))
             {
                 logs::debug << "Input parsed : " << int_option.get_name() << std::endl;
+                handled = true;
                 return;
             }
         }
@@ -180,10 +182,11 @@ class UCI
             if (double_option.parse_input(content_copy))
             {
                 logs::debug << "Input parsed : " << double_option.get_name() << std::endl;
+                handled = true;
                 return;
             }
         }
-        #endif
+#endif
 
         while (is >> word)
         {
@@ -207,24 +210,43 @@ class UCI
             {
                 int threads = std::stoi(value);
                 e.set_threads(threads);
+                handled = true;
             }
             catch (...)
             {
-                logs::debug << "info string Error parsing thread value" << std::endl;
+                logs::uci << "info string error: cannot set option Threads to value " << value << std::endl;
+                handled = true;
             }
         }
         else if (name == "Ponder ")
+        {
             ponder_enabled = (value == "true ");
+            handled = true;
+        }
         else if (name == "Hash ")
         {
-            int size = std::stoi(value);
-            e.get_tt().resize(size);
-            logs::debug << "info string Hash table resized" << std::endl;
+            try
+            {
+                int size = std::stoi(value);
+                e.get_tt().resize(size);
+                logs::debug << "info string Hash table resized" << std::endl;
+            }
+            catch (...)
+            {
+                logs::uci << "info string error: cannot set option Hash to value " << value << std::endl;
+            }
+            handled = true;
         }
         else if (name == "Clear Hash ")
         {
             e.get_tt().clear();
             logs::debug << "info string Hash table cleared" << std::endl;
+            handled = true;
+        }
+
+        if (!handled && !name.empty())
+        {
+            logs::uci << "info string error: unknown option " << name << std::endl;
         }
     }
 
@@ -310,6 +332,17 @@ public:
         Book::init(file::get_data_path("komodo.bin"));
 #ifdef SPSA_TUNING
         int_options = {
+            UCIOption<int>(&engine_constants::search::aspiration::EnableDepth, "aspiration_enable_depth", 1, 63),
+            UCIOption<int>(&engine_constants::search::aspiration::MidDepth, "aspiration_mid_depth", 1, 63),
+            UCIOption<int>(&engine_constants::search::aspiration::HighDepth, "aspiration_high_depth", 1, 63),
+            UCIOption<int>(&engine_constants::search::aspiration::SmallDelta, "aspiration_small_delta", 1, 1000),
+            UCIOption<int>(&engine_constants::search::aspiration::MidDelta, "aspiration_mid_delta", 1, 1000),
+            UCIOption<int>(&engine_constants::search::aspiration::HighDelta, "aspiration_high_delta", 1, 2000),
+            UCIOption<int>(&engine_constants::search::aspiration::WidenMinDelta, "aspiration_widen_min_delta", 1, 1000),
+            UCIOption<int>(&engine_constants::search::aspiration::WidenMaxDelta, "aspiration_widen_max_delta", 50, 10000),
+            UCIOption<int>(&engine_constants::search::aspiration::MaxIterations, "aspiration_max_iterations", 1, 20),
+            UCIOption<int>(&engine_constants::search::aspiration::MateWindowMargin, "aspiration_mate_window_margin", 1, 1000),
+
             UCIOption<int>(&engine_constants::search::razoring::MaxDepth, "razoring_max_depth"),
             UCIOption<int>(&engine_constants::search::razoring::MarginDepthFactor, "razoring_depth_factor"),
             UCIOption<int>(&engine_constants::search::razoring::MarginConst, "razoring_margin_const"),

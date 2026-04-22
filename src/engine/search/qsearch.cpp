@@ -158,5 +158,30 @@ inline int SearchWorker::score_capture(const Move &move) const
     return score;
 }
 
+int SearchWorker::score_quiet_history(int raw_score, const Move &move, const Move &prev_move, const Move &prev_prev_move, Color us) const
+{
+    int score = raw_score;
+
+    // Continuation history 1-ply : indexed by previous move's piece and destination
+    if (prev_move != 0)
+    {
+        const int prev_piece = prev_move.get_from_piece();
+        const int prev_to = prev_move.get_to_sq();
+        const int move_to = move.get_to_sq();
+        score += continuation_hist_1[us][prev_piece][prev_to][move_to] / 2;
+    }
+
+    // Continuation history 2-ply : indexed by 2-moves-ago previous move
+    if (prev_prev_move != 0)
+    {
+        const int prev_prev_piece = prev_prev_move.get_from_piece();
+        const int prev_prev_to = prev_prev_move.get_to_sq();
+        const int move_to = move.get_to_sq();
+        score += continuation_hist_2[us][prev_prev_piece][prev_prev_to][move_to] / 4;
+    }
+
+    return score;
+}
+
 template int SearchWorker::qsearch<WHITE>(int alpha, int beta, int ply);
 template int SearchWorker::qsearch<BLACK>(int alpha, int beta, int ply);
