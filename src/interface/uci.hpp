@@ -323,6 +323,31 @@ class UCI
         logs::uci << total_nodes << " nodes " << total_nps << " nps" << std::endl;
     }
 
+    void run_eval(std::istream &is)
+    {
+        int n{0};
+        std::string token;
+        while (is >> token)
+        {
+            ++n;
+        }
+        if (n > 0)
+        {
+            logs::error << "[ERROR] invalid arguments. Usage : 'eval'";
+            return;
+        }
+        int score;
+        if (b.get_side_to_move() == WHITE)
+        {
+            score = Eval::eval_relative<WHITE>(b, -engine_constants::eval::Inf, engine_constants::eval::Inf);
+        }
+        else
+        {
+            score = Eval::eval_relative<BLACK>(b, -engine_constants::eval::Inf, engine_constants::eval::Inf);
+        }
+        logs::uci << "score: " << score << std::endl;
+    }
+
 public:
     UCI() : b(), e(b)
     {
@@ -450,6 +475,10 @@ public:
             else if (token == "bench")
             {
                 run_bench(is);
+            }
+            else if (token == "eval")
+            {
+                run_eval(is);
             }
             else if (token == "quit")
             {

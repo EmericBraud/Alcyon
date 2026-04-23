@@ -1,4 +1,5 @@
 #include "interface/uci.hpp"
+#include "engine/eval/tuning/texel_tuning.hpp"
 
 int main(int argc, char **argv)
 {

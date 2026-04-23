@@ -9,6 +9,16 @@
 #include "engine/config/eval.hpp"
 #include "engine/eval/virtual_board.hpp"
 
+#ifdef TEXEL_TUNING
+#include "engine/eval/tuning/eval_features.hpp"
+
+namespace Eval
+{
+    EvalFeatures extract_eval_features(const VBoard &board);
+    double score_eval_features(const EvalFeatures &f, const VBoard &board);
+}
+#endif
+
 namespace Eval
 {
 

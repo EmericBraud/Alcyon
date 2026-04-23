@@ -14,7 +14,7 @@ PawnTable pawn_table;
 
 namespace Eval
 {
-    static const int *mobility_bonus_tables[] = {
+    static const TUNABLE_TYPE *mobility_bonus_tables[] = {
         nullptr, // PAWN (pas géré ici)
         engine_constants::eval::knight_mob,
         engine_constants::eval::bishop_mob,
@@ -52,8 +52,8 @@ int Eval::evaluate_castling_and_safety(Color us, const VBoard &board)
     uint8_t semi_open = vicinity & ~our_files & enemy_files;
 
     // 3. Calcul du score de base par popcount (Instruction matérielle ultra-rapide)
-    int score = std::popcount(static_cast<uint8_t>(open)) * -35;
-    score += std::popcount(static_cast<uint8_t>(semi_open)) * -15;
+    int score = std::popcount(static_cast<uint8_t>(open)) * engine_constants::eval::openFileMalus;
+    score += std::popcount(static_cast<uint8_t>(semi_open)) * engine_constants::eval::semiOpenFileMalus;
 
     // 4. Masques 64-bit : On traite uniquement les 3 colonnes du voisinage
     U64 open_files_bb = 0;
@@ -75,8 +75,8 @@ int Eval::evaluate_castling_and_safety(Color us, const VBoard &board)
     }
 
     // 5. Pénalité si des pièces lourdes adverses occupent ces couloirs
-    score += std::popcount(enemy_heavies & open_files_bb) * -45;
-    score += std::popcount(enemy_heavies & semi_files_bb) * -25;
+    score += std::popcount(enemy_heavies & open_files_bb) * engine_constants::eval::heavyEnemiesOpenFileMalus;
+    score += std::popcount(enemy_heavies & semi_files_bb) * engine_constants::eval::heavyEnemiesSemiOpenFileMalus;
 
     return score;
 }
@@ -91,16 +91,16 @@ void Eval::evaluate_pawns(Color color, const VBoard &board, int &mg, int &eg)
                                     (our_pawns >> 32) | (our_pawns >> 40) | (our_pawns >> 48) | (our_pawns >> 56));
     // On compte le nombre de colonnes contenant des pions doublés
     int num_doubled_files = std::popcount(get_pawn_files(doubled_mask));
-    mg -= num_doubled_files * 15;
-    eg -= num_doubled_files * 20;
+    mg += num_doubled_files * engine_constants::eval::doubledFilesMgMalus;
+    eg += num_doubled_files * engine_constants::eval::doubledFilesEgMalus;
 
     // 2. DETECTION GLOBALE DES PIONS ISOLÉS (Zéro boucle)
     uint8_t f = get_pawn_files(our_pawns);
     // Une colonne est isolée si ses voisines (f << 1) et (f >> 1) sont vides
     uint8_t iso_files = f & ~((f << 1) | (f >> 1));
     int num_iso = std::popcount(iso_files);
-    mg -= num_iso * 20;
-    eg -= num_iso * 25;
+    mg += num_iso * engine_constants::eval::isolatedFilesMgMalus;
+    eg += num_iso * engine_constants::eval::isolatedFilesEgMalus;
 
     // 3. BOUCLE ALLÉGÉE (Uniquement pour les pions passés)
     U64 temp_pawns = our_pawns;
@@ -114,11 +114,8 @@ void Eval::evaluate_pawns(Color color, const VBoard &board, int &mg, int &eg)
             const int rank = sq >> 3;
             const int relative_rank = (color == WHITE) ? rank : (7 - rank);
 
-            static constexpr int passed_bonus_mg[] = {0, 5, 10, 20, 40, 70, 120, 0};
-            static constexpr int passed_bonus_eg[] = {0, 10, 20, 40, 80, 150, 250, 0};
-
-            mg += passed_bonus_mg[relative_rank];
-            eg += passed_bonus_eg[relative_rank];
+            mg += engine_constants::eval::passed_bonus_mg[relative_rank];
+            eg += engine_constants::eval::passed_bonus_eg[relative_rank];
         }
     }
 }
@@ -148,7 +145,7 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
     mg_score += mg_pawn;
     eg_score += eg_pawn;
     int base_score = (mg_score * state.phase + eg_score * (engine_constants::eval::totalPhase - state.phase)) / engine_constants::eval::totalPhase;
-    const int margin = 110;
+    const int margin = engine_constants::eval::alphaBetaMargin;
     if (base_score >= beta + margin)
         return base_score;
     if (base_score <= alpha - margin)
@@ -171,15 +168,15 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
 
         if (std::popcount(board.get_piece_bitboard(us, BISHOP)) >= 2)
         {
-            bonus_mg += 30; // Bonus milieu de jeu
-            bonus_eg += 50; // Bonus fin de partie (plus important car le plateau est ouvert)
+            bonus_mg += engine_constants::eval::bishopPairMgBonus; // Bonus milieu de jeu
+            bonus_eg += engine_constants::eval::bishopPairEgBonus; // Bonus fin de partie (plus important car le plateau est ouvert)
         }
 
         // Mobilité optimisée
         for (int piece = KNIGHT; piece <= QUEEN; ++piece)
         {
             U64 bb = board.get_piece_bitboard(us, piece);
-            const int *bonus_table = mobility_bonus_tables[piece];
+            const TUNABLE_TYPE *bonus_table = mobility_bonus_tables[piece];
 
             while (bb)
             {
@@ -209,7 +206,7 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
 
         // Application du bonus (Branchless via multiplication par le signe)
         const int sign = (us == WHITE) ? 1 : -1;
-        mg_score += bonus_mg * sign;
+        mg_score += bonus_mg * sign; // @TODO we can optimize it by using templates instead
         eg_score += bonus_eg * sign;
     }
 
@@ -235,7 +232,7 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
 
         // On combine les deux :
         // + on pousse au bord, + on gagne. + on est proche, + on gagne.
-        int mop_up = (dist_from_center * 10) + (14 - dist_between_kings) * 5;
+        int mop_up = (dist_from_center * engine_constants::eval::kingDistFromCenterBonus) + (engine_constants::eval::maxDistBetweenKings - dist_between_kings) * engine_constants::eval::closeKingBonus;
 
         // On applique le bonus selon le gagnant
         if (winner == WHITE)

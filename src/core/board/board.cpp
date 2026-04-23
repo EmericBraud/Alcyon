@@ -1,5 +1,5 @@
 #include "core/board/board.hpp"
-#include "core/move/generator/move_generator.cpp"
+#include "core/move/generator/move_generator.hpp"
 
 // clang-format off
 static constexpr uint8_t CastlingMask[64] = {
