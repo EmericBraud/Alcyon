@@ -1,6 +1,7 @@
 #pragma once
 
 #ifdef TEXEL_TUNING
+#include <cmath>
 
 struct TunableParam
 {
