@@ -9,10 +9,11 @@ endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # --- 2. OPTIONS ET FLAGS ---
 option(ENABLE_GUI "Build with GUI support" OFF)
-option(BUILD_TESTING "Build unit tests" OFF)
+option(BUILD_TESTING "Build unit tests" ON)
 
 include(CheckCXXCompilerFlag)
 include(CheckIPOSupported)
@@ -59,7 +60,11 @@ target_include_directories(chess_core PUBLIC src)
 target_link_libraries(chess_core PUBLIC fathom) 
 
 target_compile_options(chess_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${COMMON_FLAGS} ${PROFILING_FLAGS}>)
-target_compile_definitions(chess_core PUBLIC NDEBUG SPSA_TUNING)
+
+option(ENABLE_TEXEL_TUNING "Enable Texel tuning mode" ON)
+option(ENABLE_SPSA_TUNING "Enable SPSA tuning mode" OFF)
+
+target_compile_definitions(chess_core PUBLIC NDEBUG)
 
 # --- 5. EXÉCUTABLE PRINCIPAL ---
 add_executable(chess26 src/main.cpp)
@@ -74,6 +79,19 @@ target_link_libraries(chess26 PRIVATE
 # On s'assure que main.cpp trouve aussi les headers
 target_include_directories(chess26 PRIVATE src lib/fathom)
 target_compile_options(chess26 PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
+
+
+
+
+if(ENABLE_TEXEL_TUNING)
+    target_compile_definitions(chess_core PUBLIC TEXEL_TUNING)
+    target_compile_definitions(chess26 PRIVATE TEXEL_TUNING)
+endif()
+
+if(ENABLE_SPSA_TUNING)
+    target_compile_definitions(chess_core PUBLIC SPSA_TUNING)
+    target_compile_definitions(chess26 PRIVATE SPSA_TUNING)
+endif()
 
 if(ENABLE_GUI)
     find_package(SFML 2.5 REQUIRED COMPONENTS graphics window system)
@@ -102,5 +120,52 @@ add_custom_command(
 
 # --- 8. TESTS ---
 if(BUILD_TESTING)
-    # Ta config GTest...
+include(CTest)
+    include(FetchContent)
+
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    )
+
+    # Évite d'écraser les settings du parent sur MSVC
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+    FetchContent_MakeAvailable(googletest)
+
+    enable_testing()
+
+    file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
+
+    add_executable(chess26_tests ${TEST_SOURCES})
+
+    target_link_libraries(chess26_tests PRIVATE
+        $<TARGET_OBJECTS:chess_core>
+        $<TARGET_OBJECTS:fathom>
+        Threads::Threads
+        GTest::gtest_main
+    )
+
+    target_include_directories(chess26_tests PRIVATE
+        src
+        lib/fathom
+        tests
+    )
+
+    target_compile_options(chess26_tests PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
+
+    if(ENABLE_TEXEL_TUNING)
+        target_compile_definitions(chess26_tests PRIVATE TEXEL_TUNING)
+    endif()
+
+    if(ENABLE_SPSA_TUNING)
+        target_compile_definitions(chess26_tests PRIVATE SPSA_TUNING)
+    endif()
+
+    if(ENABLE_GUI)
+        target_compile_definitions(chess26_tests PRIVATE CHESS26_HAS_GUI)
+    endif()
+
+    include(GoogleTest)
+    gtest_discover_tests(chess26_tests)
 endif()

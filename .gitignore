@@ -8,3 +8,5 @@ Testing/Temporary/
 
 .env
 data/
+
+data/tuning_epd
