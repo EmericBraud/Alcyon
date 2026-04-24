@@ -142,7 +142,7 @@ namespace MoveGen
         else
         {
 
-            throw std::logic_error("Piece type unsupported");
+            FATAL("Piece type unsupported");
         }
 
         return target_mask & ~board.get_occupancy(color);

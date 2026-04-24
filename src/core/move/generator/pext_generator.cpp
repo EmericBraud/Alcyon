@@ -10,10 +10,10 @@
 #include <vector>
 #include <fstream>
 #include <bit>
-#include <stdexcept>
 
 #include "common/file.hpp"
 #include "common/logger.hpp"
+#include "common/fatal.hpp"
 
 // -----------------------------------------------------------------------------
 // Helper: generate all PEXT attacks for one square
@@ -164,7 +164,7 @@ void MoveGen::load_attack_tables()
         rook_attacks_in.read(reinterpret_cast<char *>(RookAttacks.data()),
                              RookAttacks.size() * sizeof(U64));
         if (rook_attacks_in.gcount() != static_cast<std::streamsize>(RookAttacks.size() * sizeof(U64)))
-            throw std::runtime_error("Failed to read rook_attacks_pext.bin");
+            FATAL("Failed to read rook_attacks_pext.bin");
     }
 
     // Load bishop attacks
@@ -172,7 +172,7 @@ void MoveGen::load_attack_tables()
         bishop_attacks_in.read(reinterpret_cast<char *>(BishopAttacks.data()),
                                BishopAttacks.size() * sizeof(U64));
         if (bishop_attacks_in.gcount() != static_cast<std::streamsize>(BishopAttacks.size() * sizeof(U64)))
-            throw std::runtime_error("Failed to read bishop_attacks_pext.bin");
+            FATAL("Failed to read bishop_attacks_pext.bin");
     }
 
     // Load MagicPEXT info
@@ -180,13 +180,13 @@ void MoveGen::load_attack_tables()
         rook_pext_in.read(reinterpret_cast<char *>(RookMagics.data()),
                           constants::BoardSize * sizeof(MagicPEXT));
         if (rook_pext_in.gcount() != static_cast<std::streamsize>(constants::BoardSize * sizeof(MagicPEXT)))
-            throw std::runtime_error("Failed to read rook_pext.bin");
+            FATAL("Failed to read rook_pext.bin");
     }
     {
         bishop_pext_in.read(reinterpret_cast<char *>(BishopMagics.data()),
                             constants::BoardSize * sizeof(MagicPEXT));
         if (bishop_pext_in.gcount() != static_cast<std::streamsize>(constants::BoardSize * sizeof(MagicPEXT)))
-            throw std::runtime_error("Failed to read bishop_pext.bin");
+            FATAL("Failed to read bishop_pext.bin");
     }
 }
 

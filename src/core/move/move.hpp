@@ -1,10 +1,9 @@
 #pragma once
 
 #include <string>
-#include <stdexcept>
 
 #include "core/piece/piece.hpp"
-
+#include "common/fatal.hpp"
 class Move
 {
 private:
@@ -156,7 +155,7 @@ public:
                 uci += 'r';
                 break;
             default:
-                throw std::logic_error("Unsupported promotion piece type");
+                FATAL("Unsupported promotion piece type");
             }
         }
 
