@@ -123,7 +123,7 @@ class TexelTuner
     static constexpr int epochs = 1000;
     static constexpr std::size_t batch_size = 4096;
 
-    double learning_rate = 300.0;
+    double learning_rate = 10000.0;
 
     double sigmoid(double s) const
     {
@@ -143,6 +143,12 @@ class TexelTuner
 
         double mg = s.base_mg;
         double eg = s.base_eg;
+
+        for (int i = PAWN; i <= QUEEN; ++i)
+        {
+            mg += f.material[i] * pieces_score[i];
+            eg += f.material[i] * pieces_score[i];
+        }
 
         mg += f.doubled_files * doubledFilesMgMalus;
         eg += f.doubled_files * doubledFilesEgMalus;
@@ -202,12 +208,10 @@ class TexelTuner
         const EvalState &state = board.get_eval_state();
 
         const double base_mg =
-            (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -
-            (state.mg_pst[BLACK] + state.pieces_val[BLACK]);
+            state.mg_pst[WHITE] - state.mg_pst[BLACK];
 
         const double base_eg =
-            (state.eg_pst[WHITE] + state.pieces_val[WHITE]) -
-            (state.eg_pst[BLACK] + state.pieces_val[BLACK]);
+            state.eg_pst[WHITE] - state.eg_pst[BLACK];
 
         EvalFeatures features = Eval::extract_eval_features(board);
 
@@ -392,6 +396,11 @@ class TexelTuner
 
         for (int i = 0; i < 28; ++i)
             a.queen_mob[i] += b.queen_mob[i];
+
+        for (int i = PAWN; i <= QUEEN; ++i)
+        {
+            a.pieces_score[i] += b.pieces_score[i];
+        }
     }
 
     void accumulate_gradient_for_sample(const TexelTrainingSample &s, TexelGradients &g, double &loss) const

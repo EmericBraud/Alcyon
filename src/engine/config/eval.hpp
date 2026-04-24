@@ -31,20 +31,6 @@ namespace engine_constants::eval
         /* NONE   */ {0, 0, 0, 0, 0, 0, 0}};
     //clang-format on
 
-    // ================ Mobility ================
-    static CONSTEXPR_GUARD TUNABLE_TYPE knight_mob[9] = {
-        -20, -10, 0, 5, 10, 15, 20, 25, 30};
-
-    static CONSTEXPR_GUARD TUNABLE_TYPE bishop_mob[14] = {
-        -20, -10, 0, 10, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65};
-
-    static CONSTEXPR_GUARD TUNABLE_TYPE rook_mob[15] = {
-        -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55};
-
-    static CONSTEXPR_GUARD TUNABLE_TYPE queen_mob[28] = {
-        -20, -15, -10, -5, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20,
-        22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46};
-
     // ================ PST ================
 
     static constexpr EVAL_ACCUM_TYPE mg_pawn_table[constants::BoardSize] = {
@@ -162,9 +148,6 @@ namespace engine_constants::eval
         -10, 0, 5, 5, 5, 5, 0, -10,
         -20, -10, -10, -5, -5, -10, -10, -20};
 
-    static CONSTEXPR_GUARD std::array<TUNABLE_TYPE, constants::PieceTypeCount> pieces_score = {
-        TUNABLE_TYPE(100), TUNABLE_TYPE(320), TUNABLE_TYPE(330), TUNABLE_TYPE(500), TUNABLE_TYPE(900), engine_constants::eval::Inf};
-
     // Table de correspondance pour le milieu de jeu
     static const EVAL_ACCUM_TYPE *mg_tables[] = {
         mg_pawn_table, mg_knight_table, mg_bishop_table, mg_rook_table, mg_queen_table, mg_king_table};
@@ -182,27 +165,53 @@ namespace engine_constants::eval
     static constexpr int alphaBetaMargin = 110;
 
     static const int phase_values[] = {pawnPhase, knightPhase, bishopPhase, rookPhase, queenPhase, totalPhase};
+    // ================ Mobility ================
+    static CONSTEXPR_GUARD TUNABLE_TYPE knight_mob[9] = {
+        -37, 8, 23, 26, 38, 43, 44, 43, 45};
 
-    static CONSTEXPR_GUARD TUNABLE_TYPE openFileMalus = TUNABLE_TYPE(-35);
-    static CONSTEXPR_GUARD TUNABLE_TYPE semiOpenFileMalus = TUNABLE_TYPE(-15);
+    static CONSTEXPR_GUARD TUNABLE_TYPE bishop_mob[14] = {
+        -11, 1, 12, 15, 23, 29, 28, 31, 36, 33, 37, 39, 38, 28};
 
-    static CONSTEXPR_GUARD TUNABLE_TYPE heavyEnemiesOpenFileMalus = TUNABLE_TYPE(-45);
-    static CONSTEXPR_GUARD TUNABLE_TYPE heavyEnemiesSemiOpenFileMalus = TUNABLE_TYPE(-25);
+    static CONSTEXPR_GUARD TUNABLE_TYPE rook_mob[15] = {
+        21, 30, 30, 28, 30, 39, 41, 50, 58, 62, 68, 73, 81, 81, 86};
 
-    static CONSTEXPR_GUARD TUNABLE_TYPE bishopPairMgBonus = TUNABLE_TYPE(30);
-    static CONSTEXPR_GUARD TUNABLE_TYPE bishopPairEgBonus = TUNABLE_TYPE(50);
+    static CONSTEXPR_GUARD TUNABLE_TYPE queen_mob[28] = {
+        51, 53, 55, 56, 60, 67, 69, 66, 65, 71, 71, 72, 70, 73,
+        73, 75, 79, 79, 89, 90, 92, 96, 99, 100, 89, 100, 76, 76};
 
-    static CONSTEXPR_GUARD TUNABLE_TYPE kingDistFromCenterBonus = TUNABLE_TYPE(10);
-    static CONSTEXPR_GUARD TUNABLE_TYPE maxDistBetweenKings = TUNABLE_TYPE(14);
-    static CONSTEXPR_GUARD TUNABLE_TYPE closeKingBonus = TUNABLE_TYPE(5);
+    // ================ Material ================
+    static CONSTEXPR_GUARD std::array<TUNABLE_TYPE, constants::PieceTypeCount> pieces_score = {
+        TUNABLE_TYPE(91), TUNABLE_TYPE(376), TUNABLE_TYPE(394),
+        TUNABLE_TYPE(607), TUNABLE_TYPE(1225), TUNABLE_TYPE(10000)};
 
-    static CONSTEXPR_GUARD TUNABLE_TYPE doubledFilesMgMalus = -15;
-    static CONSTEXPR_GUARD TUNABLE_TYPE doubledFilesEgMalus = -20;
+    // ================ Pawn structure ================
+    static CONSTEXPR_GUARD TUNABLE_TYPE doubledFilesMgMalus = 2;
+    static CONSTEXPR_GUARD TUNABLE_TYPE doubledFilesEgMalus = -25;
 
-    static CONSTEXPR_GUARD TUNABLE_TYPE isolatedFilesMgMalus = -20;
-    static CONSTEXPR_GUARD TUNABLE_TYPE isolatedFilesEgMalus = -25;
+    static CONSTEXPR_GUARD TUNABLE_TYPE isolatedFilesMgMalus = -26;
+    static CONSTEXPR_GUARD TUNABLE_TYPE isolatedFilesEgMalus = -11;
 
-    static CONSTEXPR_GUARD TUNABLE_TYPE passed_bonus_mg[] = {0, 5, 10, 20, 40, 70, 120, 0};
-    static CONSTEXPR_GUARD TUNABLE_TYPE passed_bonus_eg[] = {0, 10, 20, 40, 80, 150, 250, 0};
+    static CONSTEXPR_GUARD TUNABLE_TYPE passed_bonus_mg[] = {
+        0, -7, -8, -16, 5, -10, 31, 0};
+
+    static CONSTEXPR_GUARD TUNABLE_TYPE passed_bonus_eg[] = {
+        0, 29, 23, 40, 72, 160, 231, 0};
+
+    // ================ King safety ================
+    static CONSTEXPR_GUARD TUNABLE_TYPE openFileMalus = -46;
+    static CONSTEXPR_GUARD TUNABLE_TYPE semiOpenFileMalus = -32;
+
+    static CONSTEXPR_GUARD TUNABLE_TYPE heavyEnemiesOpenFileMalus = -24;
+    static CONSTEXPR_GUARD TUNABLE_TYPE heavyEnemiesSemiOpenFileMalus = -5;
+
+    // ================ Bishop pair ================
+    static CONSTEXPR_GUARD TUNABLE_TYPE bishopPairMgBonus = 51;
+    static CONSTEXPR_GUARD TUNABLE_TYPE bishopPairEgBonus = 57;
+
+    // ================ Endgame / Mop-up ================
+    static CONSTEXPR_GUARD TUNABLE_TYPE kingDistFromCenterBonus = 21;
+    static CONSTEXPR_GUARD TUNABLE_TYPE closeKingBonus = -9;
+
+    static CONSTEXPR_GUARD TUNABLE_TYPE maxDistBetweenKings = 14;
 
 }
