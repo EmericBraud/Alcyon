@@ -30,8 +30,6 @@ struct TexelSample
 struct TexelTrainingSample
 {
     double result = 0.5;
-    double base_mg = 0.0;
-    double base_eg = 0.0;
     int phase = 0;
     EvalFeatures features;
 };
@@ -47,6 +45,22 @@ void dump_array(std::ofstream &out, const char *name, const TunableParam (&arr)[
         out << arr[i].value;
     }
     out << " }\n";
+}
+template <std::size_t N>
+void dump_pst(std::ofstream &out, const char *name, const TunableParam (&arr)[N])
+{
+    out << name << " = {\n";
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        out << "    " << arr[i].value;
+        if (i + 1 != N)
+            out << ",";
+        if ((i + 1) % 8 == 0)
+            out << "\n";
+        else
+            out << " ";
+    }
+    out << "}\n\n";
 }
 struct TexelGradients
 {
@@ -77,6 +91,9 @@ struct TexelGradients
     std::array<double, 28> queen_mob{};
 
     std::array<double, constants::PieceTypeCount> pieces_score{};
+
+    std::array<std::array<double, constants::BoardSize>, constants::PieceTypeCount> mg_pst{};
+    std::array<std::array<double, constants::BoardSize>, constants::PieceTypeCount> eg_pst{};
 };
 
 static std::optional<TexelSample> parse_quiet_labeled_line(const std::string &line)
@@ -141,8 +158,8 @@ class TexelTuner
 
         const EvalFeatures &f = s.features;
 
-        double mg = s.base_mg;
-        double eg = s.base_eg;
+        double mg = 0.0;
+        double eg = 0.0;
 
         for (int i = PAWN; i <= QUEEN; ++i)
         {
@@ -197,6 +214,15 @@ class TexelTuner
             eg += f.queen_mob[i] * queen_mob[i];
         }
 
+        for (int piece = PAWN; piece <= KING; ++piece)
+        {
+            for (int sq = 0; sq < constants::BoardSize; ++sq)
+            {
+                mg += f.mg_pst[piece][sq] * mg_tables[piece][sq];
+                eg += f.eg_pst[piece][sq] * eg_tables[piece][sq];
+            }
+        }
+
         return (mg * s.phase + eg * (totalPhase - s.phase)) / totalPhase;
     }
 
@@ -207,18 +233,10 @@ class TexelTuner
 
         const EvalState &state = board.get_eval_state();
 
-        const double base_mg =
-            state.mg_pst[WHITE] - state.mg_pst[BLACK];
-
-        const double base_eg =
-            state.eg_pst[WHITE] - state.eg_pst[BLACK];
-
         EvalFeatures features = Eval::extract_eval_features(board);
 
         return TexelTrainingSample{
             sample.result,
-            base_mg,
-            base_eg,
             state.phase,
             features};
     }
@@ -275,6 +293,20 @@ class TexelTuner
             out << pieces_score[i].value;
         }
         out << " }\n";
+
+        dump_pst(out, "mg_pawn_table", mg_pawn_table);
+        dump_pst(out, "mg_knight_table", mg_knight_table);
+        dump_pst(out, "mg_bishop_table", mg_bishop_table);
+        dump_pst(out, "mg_rook_table", mg_rook_table);
+        dump_pst(out, "mg_queen_table", mg_queen_table);
+        dump_pst(out, "mg_king_table", mg_king_table);
+
+        dump_pst(out, "eg_pawn_table", eg_pawn_table);
+        dump_pst(out, "eg_knight_table", eg_knight_table);
+        dump_pst(out, "eg_bishop_table", eg_bishop_table);
+        dump_pst(out, "eg_rook_table", eg_rook_table);
+        dump_pst(out, "eg_queen_table", eg_queen_table);
+        dump_pst(out, "eg_king_table", eg_king_table);
     }
 
     std::vector<TexelSample> load_raw_samples()
@@ -401,6 +433,15 @@ class TexelTuner
         {
             a.pieces_score[i] += b.pieces_score[i];
         }
+
+        for (int piece = PAWN; piece <= KING; ++piece)
+        {
+            for (int sq = 0; sq < constants::BoardSize; ++sq)
+            {
+                a.mg_pst[piece][sq] += b.mg_pst[piece][sq];
+                a.eg_pst[piece][sq] += b.eg_pst[piece][sq];
+            }
+        }
     }
 
     void accumulate_gradient_for_sample(const TexelTrainingSample &s, TexelGradients &g, double &loss) const
@@ -460,6 +501,14 @@ class TexelTuner
         {
             g.pieces_score[i] += common * f.material[i]; // mg_scale + eg_scale = 1
         }
+        for (int piece = PAWN; piece <= KING; ++piece)
+        {
+            for (int sq = 0; sq < constants::BoardSize; ++sq)
+            {
+                g.mg_pst[piece][sq] += common * f.mg_pst[piece][sq] * mg_scale;
+                g.eg_pst[piece][sq] += common * f.eg_pst[piece][sq] * eg_scale;
+            }
+        }
     }
 
     void apply_gradients(const TexelGradients &g, double scale)
@@ -505,6 +554,14 @@ class TexelTuner
         for (int i = PAWN; i <= QUEEN; ++i)
         {
             pieces_score[i].value -= scale * g.pieces_score[i];
+        }
+        for (int piece = PAWN; piece <= KING; ++piece)
+        {
+            for (int sq = 0; sq < constants::BoardSize; ++sq)
+            {
+                mg_tables[piece][sq].value -= scale * g.mg_pst[piece][sq];
+                eg_tables[piece][sq].value -= scale * g.eg_pst[piece][sq];
+            }
         }
     }
 
