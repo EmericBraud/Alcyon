@@ -161,10 +161,10 @@ namespace engine_constants::eval
     static const int knightPhase = 1;
     static const int bishopPhase = 1;
     static const int rookPhase = 2;
-    static const int queenPhase = 3;
-    static const int totalPhase = 19;
+    static const int queenPhase = 4;
+    static const int totalPhase = 24;
 
-    static constexpr int alphaBetaMargin = 90;
+    static constexpr int alphaBetaMargin = 110;
 
     static const int phase_values[] = {pawnPhase, knightPhase, bishopPhase, rookPhase, queenPhase, totalPhase};
     // ================ Mobility ================
