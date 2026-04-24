@@ -1,6 +1,5 @@
 #pragma once
 
-#include <stdexcept>
 #include <expected>
 #include <cstdint>
 #include <array>
@@ -9,6 +8,7 @@
 #include "common/mask.hpp"
 #include "common/constants.hpp"
 #include "common/cpu.hpp"
+#include "common/fatal.hpp"
 #include "core/move/history.hpp"
 #include "core/move/move_list.hpp"
 #include "core/board/zobrist.hpp"
@@ -509,7 +509,7 @@ public:
         U64 expected_all = occupancies[WHITE] | occupancies[BLACK];
         if (occupancies[NO_COLOR] != expected_all)
         {
-            throw std::logic_error("Corrupted bitboards");
+            FATAL("Corrupted bitboards");
         }
     }
 };

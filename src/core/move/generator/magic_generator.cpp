@@ -15,6 +15,7 @@
 #include "common/logger.hpp"
 #include "common/mask.hpp"
 #include "common/file.hpp"
+#include "common/fatal.hpp"
 
 static void generate_all_blocker_occupancies(int sq, U64 mask, bool is_rook,
                                              std::vector<U64> &occupancy_list,
@@ -98,7 +99,7 @@ static MoveGen::Magic find_magic(int sq, bool is_rook, int max_iterations, long 
         }
     }
 
-    throw std::runtime_error("No magic number found for square " + std::to_string(sq));
+    FATAL("No magic number found for square " + std::to_string(sq));
 }
 
 void MoveGen::export_attack_table(const std::array<MoveGen::Magic, constants::BoardSize> m_array, bool is_rook)
@@ -113,7 +114,7 @@ void MoveGen::export_attack_table(const std::array<MoveGen::Magic, constants::Bo
 
         if (magic.index_start != output_v.size())
         {
-            throw std::logic_error("Index start and real size not matching");
+            FATAL("Index start and real size not matching");
         }
         output_v.insert(output_v.end(), static_cast<size_t>(1ULL << (constants::BoardSize - magic.shift)), 0ULL);
         for (long unsigned int i{0}; i < occupancies.size(); ++i)
@@ -126,7 +127,7 @@ void MoveGen::export_attack_table(const std::array<MoveGen::Magic, constants::Bo
     std::ofstream piece_attacks(attacks_file, std::ios::binary);
     if (!piece_attacks.is_open())
     {
-        throw std::runtime_error("Could not write in attacks file");
+        FATAL("Could not write in attacks file");
     }
     piece_attacks.write(reinterpret_cast<const char *>(output_v.data()), output_v.size() * sizeof(U64));
 
@@ -164,7 +165,7 @@ void MoveGen::run_magic_searcher()
     std::ofstream bishop_m_file(file::get_data_path("bishop_m.bin"), std::ios::binary);
     if (!rook_m_file.is_open() || !bishop_m_file.is_open())
     {
-        throw std::runtime_error("Magic number files could not be opened");
+        FATAL("Magic number files could not be opened");
     }
 
     rook_m_file.write(
@@ -186,13 +187,13 @@ void MoveGen::get_sizes(bool is_rook)
 
     if (!attacks_file.is_open())
     {
-        throw std::runtime_error("File can't be opened to check size");
+        FATAL("File can't be opened to check size");
     }
     std::streamsize attacks_file_sz = attacks_file.tellg();
 
     if (attacks_file_sz % sizeof(U64) != 0)
     {
-        throw std::runtime_error("Attack file size isn't a mutliple of U64 size");
+        FATAL("Attack file size isn't a mutliple of U64 size");
     }
     logs::debug << (is_rook ? "Rook " : "Bishop ") << "file size : " << attacks_file_sz << std::endl;
 }
@@ -201,7 +202,7 @@ void MoveGen::load_magics(bool is_rook)
     std::ifstream file(file::get_data_path(is_rook ? "rook_m.bin" : "bishop_m.bin"), std::ios::binary);
     if (!file.is_open())
     {
-        throw std::runtime_error("Magics file couln't be opened for read operation");
+        FATAL("Magics file couln't be opened for read operation");
     }
     file.read(reinterpret_cast<char *>(
                   (is_rook ? MoveGen::RookMagics : MoveGen::BishopMagics).data()),
@@ -218,14 +219,14 @@ void MoveGen::load_attacks_rook()
     std::ifstream file(file::get_data_path("rook_attacks.bin"), std::ios::binary);
     if (!file.is_open())
     {
-        throw std::runtime_error("Attacks file couln't be opened for read operation");
+        FATAL("Attacks file couln't be opened for read operation");
     }
     file.read(reinterpret_cast<char *>(
                   MoveGen::RookAttacks.data()),
               file::RookAttacksFileSize * sizeof(U64));
     if (file.gcount() != file::RookAttacksFileSize * sizeof(U64))
     {
-        throw std::runtime_error("Failed to read complete rook attacks table");
+        FATAL("Failed to read complete rook attacks table");
     }
 }
 void MoveGen::load_attacks_bishop()
@@ -233,14 +234,14 @@ void MoveGen::load_attacks_bishop()
     std::ifstream file(file::get_data_path("bishop_attacks.bin"), std::ios::binary);
     if (!file.is_open())
     {
-        throw std::runtime_error("Attacks file couln't be opened for read operation");
+        FATAL("Attacks file couln't be opened for read operation");
     }
     file.read(reinterpret_cast<char *>(
                   MoveGen::BishopAttacks.data()),
               file::BishopAttacksFileSize * sizeof(U64));
     if (file.gcount() != file::BishopAttacksFileSize * sizeof(U64))
     {
-        throw std::runtime_error("Failed to read complete bishop attacks table");
+        FATAL("Failed to read complete bishop attacks table");
     }
 }
 

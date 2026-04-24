@@ -10,6 +10,7 @@
 #include "core/piece/piece.hpp"
 #include "core/move/history.hpp"
 #include "core/board/board.hpp"
+#include "common/fatal.hpp"
 
 #include "engine/engine_manager.hpp"
 
@@ -40,7 +41,7 @@ public:
 
                 if (!m_piece_textures[color][piece].loadFromFile(fullPath))
                 {
-                    throw std::runtime_error("Impossible to open piece's image file: " + fullPath);
+                    FATAL("Impossible to open piece's image file: " + fullPath);
                 }
                 m_piece_textures[color][piece].setSmooth(false);
             }
