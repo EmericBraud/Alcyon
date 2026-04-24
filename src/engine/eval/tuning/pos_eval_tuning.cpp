@@ -133,6 +133,15 @@ namespace Eval
         }
     }
 
+    static void accumulate_material_features(Color us, const VBoard &board, EvalFeatures &f, double sign)
+    {
+        for (int piece = PAWN; piece <= QUEEN; ++piece)
+        {
+            const int count = std::popcount(board.get_piece_bitboard(us, piece));
+            f.material[piece] += sign * count;
+        }
+    }
+
     static void accumulate_mopup_features(const VBoard &board, EvalFeatures &f)
     {
         const EvalState &state = board.get_eval_state();
@@ -161,6 +170,23 @@ namespace Eval
         f.king_closeness += sign * (engine_constants::eval::maxDistBetweenKings - dist_between_kings);
     }
 
+    static void accumulate_pst_features(Color us, const VBoard &board, EvalFeatures &f, double sign)
+    {
+        for (int piece = PAWN; piece <= KING; ++piece)
+        {
+            U64 bb = board.get_piece_bitboard(us, piece);
+
+            while (bb)
+            {
+                const int sq = cpu::pop_lsb(bb);
+                const int psq = us == WHITE ? sq : sq ^ 56;
+
+                f.mg_pst[piece][psq] += sign;
+                f.eg_pst[piece][psq] += sign;
+            }
+        }
+    }
+
     EvalFeatures extract_eval_features(const VBoard &board)
     {
         EvalFeatures f{};
@@ -177,7 +203,13 @@ namespace Eval
         accumulate_mobility_features(WHITE, board, f, +1.0);
         accumulate_mobility_features(BLACK, board, f, -1.0);
 
+        accumulate_material_features(WHITE, board, f, +1.0);
+        accumulate_material_features(BLACK, board, f, -1.0);
+
         accumulate_mopup_features(board, f);
+
+        accumulate_pst_features(WHITE, board, f, +1.0);
+        accumulate_pst_features(BLACK, board, f, -1.0);
 
         return f;
     }
@@ -187,11 +219,17 @@ namespace Eval
         const EvalState &state = board.get_eval_state();
 
         // Base fixe non tunée : material + PST
-        double mg = (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -
-                    (state.mg_pst[BLACK] + state.pieces_val[BLACK]);
+        double mg = (state.mg_pst[WHITE]) -
+                    (state.mg_pst[BLACK]);
 
-        double eg = (state.eg_pst[WHITE] + state.pieces_val[WHITE]) -
-                    (state.eg_pst[BLACK] + state.pieces_val[BLACK]);
+        double eg = (state.eg_pst[WHITE]) -
+                    (state.eg_pst[BLACK]);
+
+        for (int i = PAWN; i <= QUEEN; ++i)
+        {
+            mg += f.material[i] * engine_constants::eval::pieces_score[i];
+            eg += f.material[i] * engine_constants::eval::pieces_score[i];
+        }
 
         mg += f.doubled_files * engine_constants::eval::doubledFilesMgMalus;
         eg += f.doubled_files * engine_constants::eval::doubledFilesEgMalus;

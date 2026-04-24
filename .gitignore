@@ -10,3 +10,6 @@ Testing/Temporary/
 data/
 
 data/tuning_epd
+
+data/tuning_output
+py_scripts/
