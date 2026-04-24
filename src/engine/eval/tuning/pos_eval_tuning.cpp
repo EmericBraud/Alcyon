@@ -170,6 +170,23 @@ namespace Eval
         f.king_closeness += sign * (engine_constants::eval::maxDistBetweenKings - dist_between_kings);
     }
 
+    static void accumulate_pst_features(Color us, const VBoard &board, EvalFeatures &f, double sign)
+    {
+        for (int piece = PAWN; piece <= KING; ++piece)
+        {
+            U64 bb = board.get_piece_bitboard(us, piece);
+
+            while (bb)
+            {
+                const int sq = cpu::pop_lsb(bb);
+                const int psq = us == WHITE ? sq : sq ^ 56;
+
+                f.mg_pst[piece][psq] += sign;
+                f.eg_pst[piece][psq] += sign;
+            }
+        }
+    }
+
     EvalFeatures extract_eval_features(const VBoard &board)
     {
         EvalFeatures f{};
@@ -190,6 +207,9 @@ namespace Eval
         accumulate_material_features(BLACK, board, f, -1.0);
 
         accumulate_mopup_features(board, f);
+
+        accumulate_pst_features(WHITE, board, f, +1.0);
+        accumulate_pst_features(BLACK, board, f, -1.0);
 
         return f;
     }

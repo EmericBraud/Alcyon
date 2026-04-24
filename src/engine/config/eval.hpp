@@ -9,11 +9,13 @@
 #include "engine/config/texel_param.hpp"
 
 #define CONSTEXPR_GUARD
+#define CONST_GUARD
 #define TUNABLE_TYPE TunableParam
 #define EVAL_ACCUM_TYPE double
 #else
 #define EVAL_ACCUM_TYPE int
 #define CONSTEXPR_GUARD constexpr
+#define CONST_GUARD const
 #define TUNABLE_TYPE int
 #endif
 
@@ -33,7 +35,7 @@ namespace engine_constants::eval
 
     // ================ PST ================
 
-    static constexpr EVAL_ACCUM_TYPE mg_pawn_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE mg_pawn_table[constants::BoardSize] = {
         0, 0, 0, 0, 0, 0, 0, 0,
         5, 5, 5, 5, 5, 5, 5, 5,
         6, 6, 8, 10, 10, 8, 6, 6,
@@ -43,7 +45,7 @@ namespace engine_constants::eval
         0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0};
 
-    static constexpr EVAL_ACCUM_TYPE mg_knight_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE mg_knight_table[constants::BoardSize] = {
         -30, -20, -10, -10, -10, -10, -20, -30,
         -20, -5, 0, 5, 5, 0, -5, -20,
         -10, 5, 10, 15, 15, 10, 5, -10,
@@ -52,7 +54,7 @@ namespace engine_constants::eval
         -10, 5, 10, 15, 15, 10, 5, -10,
         -20, -5, 0, 5, 5, 0, -5, -20,
         -30, -20, -10, -10, -10, -10, -20, -30};
-    static constexpr EVAL_ACCUM_TYPE mg_bishop_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE mg_bishop_table[constants::BoardSize] = {
         -15, -10, -10, -10, -10, -10, -10, -15,
         -10, 0, 0, 5, 5, 0, 0, -10,
         -10, 5, 10, 10, 10, 10, 5, -10,
@@ -62,7 +64,7 @@ namespace engine_constants::eval
         -10, 0, 0, 5, 5, 0, 0, -10,
         -15, -10, -10, -10, -10, -10, -10, -15};
 
-    static constexpr EVAL_ACCUM_TYPE mg_rook_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE mg_rook_table[constants::BoardSize] = {
         0, 0, 0, 5, 5, 0, 0, 0,
         5, 10, 15, 15, 15, 15, 10, 5, // 2e rangée
         -5, 0, 0, 0, 0, 0, 0, -5,
@@ -72,7 +74,7 @@ namespace engine_constants::eval
         5, 10, 15, 15, 15, 15, 10, 5, // 7e rangée (après miroir)
         0, 0, 0, 5, 5, 0, 0, 0};
 
-    static constexpr EVAL_ACCUM_TYPE mg_queen_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE mg_queen_table[constants::BoardSize] = {
         -20, -10, -10, -5, -5, -10, -10, -20,
         -10, 0, 0, 0, 0, 0, 0, -10,
         -10, 0, 5, 5, 5, 5, 0, -10,
@@ -82,7 +84,7 @@ namespace engine_constants::eval
         -10, 0, 5, 0, 0, 0, 0, -10,
         -20, -10, -10, -5, -5, -10, -10, -20};
 
-    static constexpr EVAL_ACCUM_TYPE mg_king_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE mg_king_table[constants::BoardSize] = {
         30, 40, 20, 0, 0, 20, 40, 30,
         20, 30, 10, 0, 0, 10, 30, 20,
         0, 10, -10, -20, -20, -10, 10, 0,
@@ -91,7 +93,7 @@ namespace engine_constants::eval
         -20, -30, -40, -50, -50, -40, -30, -20,
         -20, -30, -40, -50, -50, -40, -30, -20,
         -20, -30, -40, -50, -50, -40, -30, -20};
-    static constexpr EVAL_ACCUM_TYPE eg_king_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE eg_king_table[constants::BoardSize] = {
         -10, -5, 0, -5, -5, 0, -5, -10,
         -5, -5, 0, 5, 7, 5, -5, -5,
         -5, -5, 5, 10, 10, 5, -5, -5,
@@ -100,7 +102,7 @@ namespace engine_constants::eval
         -10, -5, 5, 10, 10, 5, -5, -10,
         -15, -10, -5, 0, 0, -5, -10, -15,
         -20, -15, -10, -5, -5, -10, -15, -20};
-    static constexpr EVAL_ACCUM_TYPE eg_pawn_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE eg_pawn_table[constants::BoardSize] = {
         0, 0, 0, 0, 0, 0, 0, 0,
         5, 6, 7, 8, 8, 7, 6, 5,
         10, 12, 14, 16, 16, 14, 12, 10,
@@ -110,7 +112,7 @@ namespace engine_constants::eval
         45, 45, 45, 45, 45, 45, 45, 45,
         0, 0, 0, 0, 0, 0, 0, 0};
 
-    static constexpr EVAL_ACCUM_TYPE eg_knight_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE eg_knight_table[constants::BoardSize] = {
         -30, -20, -10, -10, -10, -10, -20, -30,
         -20, -5, 0, 5, 5, 0, -5, -20,
         -10, 5, 10, 15, 15, 10, 5, -10,
@@ -119,7 +121,7 @@ namespace engine_constants::eval
         -10, 5, 10, 15, 15, 10, 5, -10,
         -20, -5, 0, 5, 5, 0, -5, -20,
         -30, -20, -10, -10, -10, -10, -20, -30};
-    static constexpr EVAL_ACCUM_TYPE eg_bishop_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE eg_bishop_table[constants::BoardSize] = {
         -15, -10, -10, -10, -10, -10, -10, -15,
         -10, 0, 0, 5, 5, 0, 0, -10,
         -10, 5, 10, 10, 10, 10, 5, -10,
@@ -129,7 +131,7 @@ namespace engine_constants::eval
         -10, 0, 0, 5, 5, 0, 0, -10,
         -15, -10, -10, -10, -10, -10, -10, -15};
 
-    static constexpr EVAL_ACCUM_TYPE eg_rook_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE eg_rook_table[constants::BoardSize] = {
         0, 0, 0, 5, 5, 0, 0, 0,
         5, 10, 15, 15, 15, 15, 10, 5, // 2e rangée
         -5, 0, 0, 0, 0, 0, 0, -5,
@@ -138,7 +140,7 @@ namespace engine_constants::eval
         -5, 0, 0, 0, 0, 0, 0, -5,
         5, 10, 15, 15, 15, 15, 10, 5, // 7e rangée (après miroir)
         0, 0, 0, 5, 5, 0, 0, 0};
-    static constexpr EVAL_ACCUM_TYPE eg_queen_table[constants::BoardSize] = {
+    static CONSTEXPR_GUARD TUNABLE_TYPE eg_queen_table[constants::BoardSize] = {
         -20, -10, -10, -5, -5, -10, -10, -20,
         -10, 0, 5, 5, 5, 5, 0, -10,
         -10, 5, 10, 10, 10, 10, 5, -10,
@@ -149,10 +151,10 @@ namespace engine_constants::eval
         -20, -10, -10, -5, -5, -10, -10, -20};
 
     // Table de correspondance pour le milieu de jeu
-    static const EVAL_ACCUM_TYPE *mg_tables[] = {
+    static CONST_GUARD TUNABLE_TYPE *mg_tables[] = {
         mg_pawn_table, mg_knight_table, mg_bishop_table, mg_rook_table, mg_queen_table, mg_king_table};
 
-    static const EVAL_ACCUM_TYPE *eg_tables[] = {
+    static CONST_GUARD TUNABLE_TYPE *eg_tables[] = {
         eg_pawn_table, eg_knight_table, eg_bishop_table, eg_rook_table, eg_queen_table, eg_king_table};
 
     static const int pawnPhase = 0;
