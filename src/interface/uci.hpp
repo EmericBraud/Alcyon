@@ -501,6 +501,11 @@ public:
                 TexelTuner t = TexelTuner();
                 t.start_tuning();
             }
+            else if (token == "mean_eval")
+            {
+                TexelTuner t;
+                logs::uci << "[INFO] Mean Abs : " << t.compute_mean_abs_eval() << std::endl;
+            }
 #endif
         }
     }

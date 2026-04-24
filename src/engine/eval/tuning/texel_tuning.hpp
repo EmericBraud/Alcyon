@@ -730,6 +730,55 @@ public:
         train();
         logs::uci << "[INFO] Task done !" << std::endl;
     }
+
+    double compute_mean_abs_eval()
+    {
+        logs::uci << "[INFO] Loading raw samples..." << std::endl;
+        std::vector<TexelSample> raw = load_raw_samples();
+
+        logs::uci << "[INFO] Building compact training samples..." << std::endl;
+        std::vector<TexelTrainingSample> samples = build_training_samples_parallel(raw);
+
+        raw.clear();
+        raw.shrink_to_fit();
+
+        if (samples.empty())
+            throw std::runtime_error("No training samples loaded");
+
+        const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
+        const unsigned thread_count = std::min<unsigned>(hw, 8);
+
+        std::vector<double> partial(thread_count, 0.0);
+        std::vector<std::thread> threads;
+
+        const std::size_t n = samples.size();
+        const std::size_t chunk = (n + thread_count - 1) / thread_count;
+
+        for (unsigned t = 0; t < thread_count; ++t)
+        {
+            const std::size_t b = t * chunk;
+            const std::size_t e = std::min(n, b + chunk);
+
+            threads.emplace_back([&, t, b, e]()
+                                 {
+            double local = 0.0;
+
+            for (std::size_t i = b; i < e; ++i)
+                local += std::abs(score_sample(samples[i]));
+
+            partial[t] = local; });
+        }
+
+        for (auto &th : threads)
+            th.join();
+
+        const double sum = std::accumulate(partial.begin(), partial.end(), 0.0);
+        const double mean = sum / static_cast<double>(n);
+
+        logs::uci << "[INFO] Mean absolute eval = " << mean << std::endl;
+
+        return mean;
+    }
 };
 
 #endif
