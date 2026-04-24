@@ -21,6 +21,10 @@
 #ifdef SPSA_TUNING
 #include "interface/uci_option.hpp"
 #endif
+
+#ifdef TEXEL_TUNING
+#include "engine/eval/tuning/texel_tuning.hpp"
+#endif
 class UCI
 {
     VBoard b;
@@ -489,6 +493,13 @@ public:
             {
                 GUI g{b};
                 g.run();
+            }
+#endif
+#ifdef TEXEL_TUNING
+            else if (token == "texel")
+            {
+                TexelTuner t = TexelTuner();
+                t.start_tuning();
             }
 #endif
         }

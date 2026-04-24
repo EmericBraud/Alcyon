@@ -33,6 +33,9 @@ struct EvalFeatures
     // ===== Mop-up =====
     double king_dist_center = 0.0;
     double king_closeness = 0.0;
+
+    // ===== Piec-Values =====
+    std::array<double, constants::PieceTypeCount> material{};
 };
 
 #endif
