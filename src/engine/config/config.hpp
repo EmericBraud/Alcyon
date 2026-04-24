@@ -26,9 +26,9 @@ namespace engine_constants
             PARAM_SPECIFIER int MidDepth = 8;
             PARAM_SPECIFIER int HighDepth = 12;
 
-            PARAM_SPECIFIER int SmallDelta = 16;
-            PARAM_SPECIFIER int MidDelta = 50;
-            PARAM_SPECIFIER int HighDelta = 100;
+            PARAM_SPECIFIER int SmallDelta = 15;
+            PARAM_SPECIFIER int MidDelta = 32;
+            PARAM_SPECIFIER int HighDelta = 25;
 
             PARAM_SPECIFIER int WidenMinDelta = 50;
             PARAM_SPECIFIER int WidenMaxDelta = 2000;
@@ -45,8 +45,8 @@ namespace engine_constants
         namespace reverse_futility_pruning
         {
             PARAM_SPECIFIER int MaxDepth = 7;
-            PARAM_SPECIFIER int MarginDepthFactor = 120;
-            PARAM_SPECIFIER int MarginConst = 0;
+            PARAM_SPECIFIER int MarginDepthFactor = 57;
+            PARAM_SPECIFIER int MarginConst = 55;
         }
         namespace iterative_deepening
         {
@@ -55,15 +55,15 @@ namespace engine_constants
         }
         namespace null_move_pruning
         {
-            PARAM_SPECIFIER int MinDepth = 3;
-            PARAM_SPECIFIER int RConst = 2;
-            PARAM_SPECIFIER int RDiv = 6;
+            PARAM_SPECIFIER int MinDepth = 2;
+            PARAM_SPECIFIER int RConst = 3;
+            PARAM_SPECIFIER int RDiv = 5;
         }
         namespace futility_pruning
         {
-            PARAM_SPECIFIER int MaxDepth = 3;
-            PARAM_SPECIFIER int MarginConst = 175;
-            PARAM_SPECIFIER int MarginDepthFactor = 110;
+            PARAM_SPECIFIER int MaxDepth = 8;
+            PARAM_SPECIFIER int MarginConst = 82;
+            PARAM_SPECIFIER int MarginDepthFactor = 105;
         }
         namespace singular
         {
@@ -81,8 +81,8 @@ namespace engine_constants
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 2;
 
-            PARAM_SPECIFIER double TableInitConst = 0.5;
-            PARAM_SPECIFIER double TableInitDiv = 2.25;
+            PARAM_SPECIFIER double TableInitConst = 0.6295;
+            PARAM_SPECIFIER double TableInitDiv = 2.3783;
         }
         namespace see_pruning
         {
