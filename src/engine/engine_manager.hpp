@@ -48,6 +48,7 @@ class EngineManager
 
     std::jthread search_thread;
     alignas(64) std::atomic<bool> stop_search{false};
+    alignas(64) std::atomic<bool> stop_requested{false};
     alignas(64) std::atomic<bool> is_pondering{false};
     alignas(64) std::atomic<long long> total_nodes{0};
     alignas(64) std::atomic<bool> is_infinite{false};
@@ -86,6 +87,7 @@ public:
 
     void stop()
     {
+        stop_requested.store(true, std::memory_order_relaxed);
         is_pondering.store(false, std::memory_order_relaxed);
         stop_search.store(true, std::memory_order_relaxed);
     }
@@ -94,6 +96,7 @@ public:
     {
         tt.clear();
         stop_search.store(false);
+        stop_requested.store(false, std::memory_order_relaxed);
         total_nodes.store(0);
         is_pondering.store(false);
         root_best_move.store(0);
@@ -110,6 +113,7 @@ public:
         tt.next_generation();
 
         stop_search.store(false, std::memory_order_relaxed);
+        stop_requested.store(false, std::memory_order_relaxed);
         is_pondering.store(ponder, std::memory_order_relaxed);
         is_infinite.store(infinite, std::memory_order_relaxed);
         this->ponder_enabled.store(ponder_enabled, std::memory_order_relaxed);
@@ -174,6 +178,7 @@ public:
             search_thread.join();
 
         stop_search.store(false, std::memory_order_relaxed);
+        stop_requested.store(false, std::memory_order_relaxed);
         is_pondering.store(false, std::memory_order_relaxed);
         is_infinite.store(false, std::memory_order_relaxed);
         total_nodes.store(0, std::memory_order_relaxed);
@@ -226,6 +231,7 @@ public:
         const int fixed_depth = std::clamp(depth, 1, engine_constants::search::MaxDepth - 1);
 
         stop_search.store(false, std::memory_order_relaxed);
+        stop_requested.store(false, std::memory_order_relaxed);
         is_pondering.store(false, std::memory_order_relaxed);
         is_infinite.store(true, std::memory_order_relaxed);
         total_nodes.store(0, std::memory_order_relaxed);
@@ -409,7 +415,7 @@ private:
                 break;
         }
 
-        if (ponder_enabled.load(std::memory_order_relaxed) && !stop_search.load(std::memory_order_relaxed))
+        if (ponder_enabled.load(std::memory_order_relaxed) && !stop_requested.load(std::memory_order_relaxed))
         {
             main_board.play(best_move);
             auto guard = CHESS26_SCOPE_EXIT([&best_move, this]
