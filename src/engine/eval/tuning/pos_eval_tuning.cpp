@@ -15,6 +15,97 @@ inline uint8_t get_pawn_files(U64 pawns)
 
 namespace Eval
 {
+    static void accumulate_structured_threat_features(Color us, const VBoard &board, EvalFeatures &f, double sign)
+    {
+        const Color them = (Color)!us;
+        const U64 occupied = board.get_occupancy(NO_COLOR);
+
+        std::array<U64, constants::PieceTypeCount> our_attacks{};
+        std::array<U64, constants::PieceTypeCount> enemy_attacks{};
+
+        auto accumulate_attacks = [&](Color side, std::array<U64, constants::PieceTypeCount> &attacks)
+        {
+            U64 pawns = board.get_piece_bitboard(side, PAWN);
+            while (pawns)
+            {
+                const int sq = cpu::pop_lsb(pawns);
+                attacks[PAWN] |= side == WHITE ? MoveGen::PawnAttacksWhite[sq] : MoveGen::PawnAttacksBlack[sq];
+            }
+
+            for (int piece = KNIGHT; piece <= QUEEN; ++piece)
+            {
+                U64 bb = board.get_piece_bitboard(side, piece);
+                while (bb)
+                {
+                    const int sq = cpu::pop_lsb(bb);
+
+                    U64 moves;
+                    if (piece == KNIGHT)
+                        moves = MoveGen::KnightAttacks[sq];
+                    else if (piece == BISHOP)
+                        moves = MoveGen::generate_bishop_moves(sq, occupied);
+                    else if (piece == ROOK)
+                        moves = MoveGen::generate_rook_moves(sq, occupied);
+                    else
+                        moves = MoveGen::generate_bishop_moves(sq, occupied) | MoveGen::generate_rook_moves(sq, occupied);
+
+                    attacks[piece] |= moves;
+                }
+            }
+
+            attacks[KING] = MoveGen::KingAttacks[board.king_sq[side]];
+        };
+
+        accumulate_attacks(us, our_attacks);
+        accumulate_attacks(them, enemy_attacks);
+
+        U64 enemy_defended_squares = 0;
+        for (int piece = PAWN; piece <= KING; ++piece)
+            enemy_defended_squares |= enemy_attacks[piece];
+
+        const U64 enemy_pieces = board.get_occupancy(them);
+
+        for (int piece = KNIGHT; piece <= QUEEN; ++piece)
+        {
+            U64 threats = our_attacks[piece] & enemy_pieces;
+
+            U64 defended = threats & enemy_defended_squares;
+            while (defended)
+            {
+                const int sq = cpu::pop_lsb(defended);
+                const Piece victim_piece = board.get_piece_on_square(sq).second;
+                f.defended_threats[piece][victim_piece] += sign;
+            }
+
+            U64 undefended = threats & ~enemy_defended_squares;
+            while (undefended)
+            {
+                const int sq = cpu::pop_lsb(undefended);
+                const Piece victim_piece = board.get_piece_on_square(sq).second;
+                f.undefended_threats[piece][victim_piece] += sign;
+            }
+        }
+
+        const U64 our_pawns = board.get_piece_bitboard(us, PAWN);
+        U64 pawn_pushes = us == WHITE
+                              ? (our_pawns << 8) & ~occupied
+                              : (our_pawns >> 8) & ~occupied;
+
+        const U64 double_pushes = us == WHITE
+                                      ? (((pawn_pushes & 0x0000000000FF0000ULL) << 8) & ~occupied)
+                                      : (((pawn_pushes & 0x0000FF0000000000ULL) >> 8) & ~occupied);
+        pawn_pushes |= double_pushes;
+
+        const U64 safe_pushes = pawn_pushes & ~enemy_defended_squares;
+        const U64 non_pawn_enemies = enemy_pieces & ~board.get_piece_bitboard(them, PAWN);
+
+        const U64 push_attacks = us == WHITE
+                                     ? (((safe_pushes & ~core::mask::File[0]) << 7) | ((safe_pushes & ~core::mask::File[7]) << 9))
+                                     : (((safe_pushes & ~core::mask::File[7]) >> 7) | ((safe_pushes & ~core::mask::File[0]) >> 9));
+
+        f.pawn_push_threats += sign * std::popcount(push_attacks & non_pawn_enemies);
+    }
+
     static void accumulate_castling_and_safety_features(Color us, const VBoard &board, EvalFeatures &f, double sign)
     {
         const Color them = (Color)!us;
@@ -197,6 +288,9 @@ namespace Eval
         accumulate_castling_and_safety_features(WHITE, board, f, +1.0);
         accumulate_castling_and_safety_features(BLACK, board, f, -1.0);
 
+        accumulate_structured_threat_features(WHITE, board, f, +1.0);
+        accumulate_structured_threat_features(BLACK, board, f, -1.0);
+
         accumulate_bishop_pair_features(WHITE, board, f, +1.0);
         accumulate_bishop_pair_features(BLACK, board, f, -1.0);
 
@@ -241,6 +335,17 @@ namespace Eval
         mg += f.semi_open_files_near_king * engine_constants::eval::semiOpenFileMalus;
         mg += f.heavy_on_open * engine_constants::eval::heavyEnemiesOpenFileMalus;
         mg += f.heavy_on_semi_open * engine_constants::eval::heavyEnemiesSemiOpenFileMalus;
+
+        for (int attacker = 0; attacker < constants::PieceTypeCount; ++attacker)
+        {
+            for (int victim = 0; victim < constants::PieceTypeCount; ++victim)
+            {
+                mg += f.defended_threats[attacker][victim] * engine_constants::eval::defendedThreatsBonus[attacker][victim];
+                mg += f.undefended_threats[attacker][victim] * engine_constants::eval::undefendedThreatsBonus[attacker][victim];
+            }
+        }
+
+        mg += f.pawn_push_threats * engine_constants::eval::pawnPushThreatBonus;
 
         mg += f.bishop_pair_mg * engine_constants::eval::bishopPairMgBonus;
         eg += f.bishop_pair_eg * engine_constants::eval::bishopPairEgBonus;

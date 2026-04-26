@@ -20,6 +20,100 @@ namespace Eval
         engine_constants::eval::bishop_mob,
         engine_constants::eval::rook_mob,
         engine_constants::eval::queen_mob};
+
+    static int evaluate_structured_threats(Color us, const VBoard &board)
+    {
+        const Color them = (Color)!us;
+        const U64 occupied = board.get_occupancy(NO_COLOR);
+
+        std::array<U64, constants::PieceTypeCount> our_attacks{};
+        std::array<U64, constants::PieceTypeCount> enemy_attacks{};
+
+        auto accumulate_attacks = [&](Color side, std::array<U64, constants::PieceTypeCount> &attacks)
+        {
+            U64 pawns = board.get_piece_bitboard(side, PAWN);
+            while (pawns)
+            {
+                const int sq = cpu::pop_lsb(pawns);
+                attacks[PAWN] |= side == WHITE ? MoveGen::PawnAttacksWhite[sq] : MoveGen::PawnAttacksBlack[sq];
+            }
+
+            for (int piece = KNIGHT; piece <= QUEEN; ++piece)
+            {
+                U64 bb = board.get_piece_bitboard(side, piece);
+                while (bb)
+                {
+                    const int sq = cpu::pop_lsb(bb);
+
+                    U64 moves;
+                    if (piece == KNIGHT)
+                        moves = MoveGen::KnightAttacks[sq];
+                    else if (piece == BISHOP)
+                        moves = MoveGen::generate_bishop_moves(sq, occupied);
+                    else if (piece == ROOK)
+                        moves = MoveGen::generate_rook_moves(sq, occupied);
+                    else
+                        moves = MoveGen::generate_bishop_moves(sq, occupied) | MoveGen::generate_rook_moves(sq, occupied);
+
+                    attacks[piece] |= moves;
+                }
+            }
+
+            attacks[KING] = MoveGen::KingAttacks[board.king_sq[side]];
+        };
+
+        accumulate_attacks(us, our_attacks);
+        accumulate_attacks(them, enemy_attacks);
+
+        U64 enemy_defended_squares = 0;
+        for (int piece = PAWN; piece <= KING; ++piece)
+            enemy_defended_squares |= enemy_attacks[piece];
+
+        const U64 enemy_pieces = board.get_occupancy(them);
+        int score = 0;
+
+        for (int piece = KNIGHT; piece <= QUEEN; ++piece)
+        {
+            U64 threats = our_attacks[piece] & enemy_pieces;
+
+            U64 defended = threats & enemy_defended_squares;
+            while (defended)
+            {
+                const int sq = cpu::pop_lsb(defended);
+                const Piece victim_piece = board.get_piece_on_square(sq).second;
+                score += engine_constants::eval::defendedThreatsBonus[piece][victim_piece];
+            }
+
+            U64 undefended = threats & ~enemy_defended_squares;
+            while (undefended)
+            {
+                const int sq = cpu::pop_lsb(undefended);
+                const Piece victim_piece = board.get_piece_on_square(sq).second;
+                score += engine_constants::eval::undefendedThreatsBonus[piece][victim_piece];
+            }
+        }
+
+        const U64 our_pawns = board.get_piece_bitboard(us, PAWN);
+        U64 pawn_pushes = us == WHITE
+                              ? (our_pawns << 8) & ~occupied
+                              : (our_pawns >> 8) & ~occupied;
+
+        const U64 double_pushes = us == WHITE
+                                      ? (((pawn_pushes & 0x0000000000FF0000ULL) << 8) & ~occupied)
+                                      : (((pawn_pushes & 0x0000FF0000000000ULL) >> 8) & ~occupied);
+        pawn_pushes |= double_pushes;
+
+        const U64 safe_pushes = pawn_pushes & ~enemy_defended_squares;
+        const U64 non_pawn_enemies = enemy_pieces & ~board.get_piece_bitboard(them, PAWN);
+
+        const U64 push_attacks = us == WHITE
+                                     ? (((safe_pushes & ~core::mask::File[0]) << 7) | ((safe_pushes & ~core::mask::File[7]) << 9))
+                                     : (((safe_pushes & ~core::mask::File[7]) >> 7) | ((safe_pushes & ~core::mask::File[0]) >> 9));
+
+        score += std::popcount(push_attacks & non_pawn_enemies) * engine_constants::eval::pawnPushThreatBonus;
+
+        return score;
+    }
 }
 
 // Transforme un bitboard de pions en un masque où chaque bit
@@ -209,6 +303,10 @@ int Eval::eval(const VBoard &board, int alpha, int beta)
         mg_score += bonus_mg * sign; // @TODO we can optimize it by using templates instead
         eg_score += bonus_eg * sign;
     }
+
+    const int threats_score = evaluate_structured_threats(WHITE, board) - evaluate_structured_threats(BLACK, board);
+    mg_score += threats_score;
+    eg_score += threats_score;
 
     if (std::abs(eg_score) > 200)
     {

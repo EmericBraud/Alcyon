@@ -20,6 +20,11 @@ struct EvalFeatures
     double heavy_on_open = 0.0;
     double heavy_on_semi_open = 0.0;
 
+    // ===== Structured threats =====
+    std::array<std::array<double, constants::PieceTypeCount>, constants::PieceTypeCount> defended_threats{};
+    std::array<std::array<double, constants::PieceTypeCount>, constants::PieceTypeCount> undefended_threats{};
+    double pawn_push_threats = 0.0;
+
     // ===== Bishop pair =====
     double bishop_pair_mg = 0.0;
     double bishop_pair_eg = 0.0;

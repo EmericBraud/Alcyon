@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -29,9 +30,17 @@ struct TexelSample
 
 struct TexelTrainingSample
 {
+    struct SparsePstTerm
+    {
+        std::uint8_t sq = 0;
+        double coeff = 0.0;
+    };
+
     double result = 0.5;
     int phase = 0;
     EvalFeatures features;
+    std::array<std::array<SparsePstTerm, constants::BoardSize>, constants::PieceTypeCount> sparse_pst{};
+    std::array<std::uint8_t, constants::PieceTypeCount> sparse_pst_count{};
 };
 
 template <std::size_t N>
@@ -75,6 +84,10 @@ struct TexelGradients
 
     double heavyEnemiesOpenFileMalus = 0.0;
     double heavyEnemiesSemiOpenFileMalus = 0.0;
+
+    std::array<std::array<double, constants::PieceTypeCount>, constants::PieceTypeCount> defendedThreatsBonus{};
+    std::array<std::array<double, constants::PieceTypeCount>, constants::PieceTypeCount> undefendedThreatsBonus{};
+    double pawnPushThreatBonus = 0.0;
 
     double bishopPairMgBonus = 0.0;
     double bishopPairEgBonus = 0.0;
@@ -178,6 +191,21 @@ class TexelTuner
         mg += f.heavy_on_open * heavyEnemiesOpenFileMalus;
         mg += f.heavy_on_semi_open * heavyEnemiesSemiOpenFileMalus;
 
+        for (int attacker = PAWN; attacker <= KING; ++attacker)
+        {
+            for (int victim = PAWN; victim <= KING; ++victim)
+            {
+                mg += f.defended_threats[attacker][victim] * defendedThreatsBonus[attacker][victim];
+                eg += f.defended_threats[attacker][victim] * defendedThreatsBonus[attacker][victim];
+
+                mg += f.undefended_threats[attacker][victim] * undefendedThreatsBonus[attacker][victim];
+                eg += f.undefended_threats[attacker][victim] * undefendedThreatsBonus[attacker][victim];
+            }
+        }
+
+        mg += f.pawn_push_threats * pawnPushThreatBonus;
+        eg += f.pawn_push_threats * pawnPushThreatBonus;
+
         mg += f.bishop_pair_mg * bishopPairMgBonus;
         eg += f.bishop_pair_eg * bishopPairEgBonus;
 
@@ -216,10 +244,12 @@ class TexelTuner
 
         for (int piece = PAWN; piece <= KING; ++piece)
         {
-            for (int sq = 0; sq < constants::BoardSize; ++sq)
+            const std::uint8_t count = s.sparse_pst_count[piece];
+            for (std::uint8_t i = 0; i < count; ++i)
             {
-                mg += f.mg_pst[piece][sq] * mg_tables[piece][sq];
-                eg += f.eg_pst[piece][sq] * eg_tables[piece][sq];
+                const auto &term = s.sparse_pst[piece][i];
+                mg += term.coeff * mg_tables[piece][term.sq];
+                eg += term.coeff * eg_tables[piece][term.sq];
             }
         }
 
@@ -235,10 +265,30 @@ class TexelTuner
 
         EvalFeatures features = Eval::extract_eval_features(board);
 
+        std::array<std::array<TexelTrainingSample::SparsePstTerm, constants::BoardSize>, constants::PieceTypeCount> sparse_pst{};
+        std::array<std::uint8_t, constants::PieceTypeCount> sparse_pst_count{};
+
+        for (int piece = PAWN; piece <= KING; ++piece)
+        {
+            std::uint8_t count = 0;
+            for (int sq = 0; sq < constants::BoardSize; ++sq)
+            {
+                const double coeff = features.mg_pst[piece][sq];
+                if (coeff == 0.0)
+                    continue;
+
+                sparse_pst[piece][count] = {static_cast<std::uint8_t>(sq), coeff};
+                ++count;
+            }
+            sparse_pst_count[piece] = count;
+        }
+
         return TexelTrainingSample{
             sample.result,
             state.phase,
-            features};
+            features,
+            sparse_pst,
+            sparse_pst_count};
     }
 
     void save_params(const std::string &path, int epoch, double train_loss, double valid_loss)
@@ -265,6 +315,42 @@ class TexelTuner
         out << "semiOpenFileMalus = " << semiOpenFileMalus.value << "\n";
         out << "heavyEnemiesOpenFileMalus = " << heavyEnemiesOpenFileMalus.value << "\n";
         out << "heavyEnemiesSemiOpenFileMalus = " << heavyEnemiesSemiOpenFileMalus.value << "\n";
+
+        out << "pawnPushThreatBonus = " << pawnPushThreatBonus.value << "\n";
+
+        out << "defendedThreatsBonus = {\n";
+        for (int attacker = 0; attacker < constants::PieceTypeCount; ++attacker)
+        {
+            out << "    { ";
+            for (int victim = 0; victim < constants::PieceTypeCount; ++victim)
+            {
+                if (victim)
+                    out << ", ";
+                out << defendedThreatsBonus[attacker][victim].value;
+            }
+            out << " }";
+            if (attacker + 1 != constants::PieceTypeCount)
+                out << ",";
+            out << "\n";
+        }
+        out << "}\n\n";
+
+        out << "undefendedThreatsBonus = {\n";
+        for (int attacker = 0; attacker < constants::PieceTypeCount; ++attacker)
+        {
+            out << "    { ";
+            for (int victim = 0; victim < constants::PieceTypeCount; ++victim)
+            {
+                if (victim)
+                    out << ", ";
+                out << undefendedThreatsBonus[attacker][victim].value;
+            }
+            out << " }";
+            if (attacker + 1 != constants::PieceTypeCount)
+                out << ",";
+            out << "\n";
+        }
+        out << "}\n\n";
 
         out << "bishopPairMgBonus = " << bishopPairMgBonus.value << "\n";
         out << "bishopPairEgBonus = " << bishopPairEgBonus.value << "\n";
@@ -405,6 +491,17 @@ class TexelTuner
         a.heavyEnemiesOpenFileMalus += b.heavyEnemiesOpenFileMalus;
         a.heavyEnemiesSemiOpenFileMalus += b.heavyEnemiesSemiOpenFileMalus;
 
+        for (int attacker = 0; attacker < constants::PieceTypeCount; ++attacker)
+        {
+            for (int victim = 0; victim < constants::PieceTypeCount; ++victim)
+            {
+                a.defendedThreatsBonus[attacker][victim] += b.defendedThreatsBonus[attacker][victim];
+                a.undefendedThreatsBonus[attacker][victim] += b.undefendedThreatsBonus[attacker][victim];
+            }
+        }
+
+        a.pawnPushThreatBonus += b.pawnPushThreatBonus;
+
         a.bishopPairMgBonus += b.bishopPairMgBonus;
         a.bishopPairEgBonus += b.bishopPairEgBonus;
 
@@ -471,6 +568,17 @@ class TexelTuner
         g.heavyEnemiesOpenFileMalus += common * f.heavy_on_open * mg_scale;
         g.heavyEnemiesSemiOpenFileMalus += common * f.heavy_on_semi_open * mg_scale;
 
+        for (int attacker = 0; attacker < constants::PieceTypeCount; ++attacker)
+        {
+            for (int victim = 0; victim < constants::PieceTypeCount; ++victim)
+            {
+                g.defendedThreatsBonus[attacker][victim] += common * f.defended_threats[attacker][victim];
+                g.undefendedThreatsBonus[attacker][victim] += common * f.undefended_threats[attacker][victim];
+            }
+        }
+
+        g.pawnPushThreatBonus += common * f.pawn_push_threats;
+
         g.bishopPairMgBonus += common * f.bishop_pair_mg * mg_scale;
         g.bishopPairEgBonus += common * f.bishop_pair_eg * eg_scale;
 
@@ -501,12 +609,17 @@ class TexelTuner
         {
             g.pieces_score[i] += common * f.material[i]; // mg_scale + eg_scale = 1
         }
+        const double mg_common = common * mg_scale;
+        const double eg_common = common * eg_scale;
+
         for (int piece = PAWN; piece <= KING; ++piece)
         {
-            for (int sq = 0; sq < constants::BoardSize; ++sq)
+            const std::uint8_t count = s.sparse_pst_count[piece];
+            for (std::uint8_t i = 0; i < count; ++i)
             {
-                g.mg_pst[piece][sq] += common * f.mg_pst[piece][sq] * mg_scale;
-                g.eg_pst[piece][sq] += common * f.eg_pst[piece][sq] * eg_scale;
+                const auto &term = s.sparse_pst[piece][i];
+                g.mg_pst[piece][term.sq] += mg_common * term.coeff;
+                g.eg_pst[piece][term.sq] += eg_common * term.coeff;
             }
         }
     }
@@ -526,6 +639,17 @@ class TexelTuner
 
         heavyEnemiesOpenFileMalus.value -= scale * g.heavyEnemiesOpenFileMalus;
         heavyEnemiesSemiOpenFileMalus.value -= scale * g.heavyEnemiesSemiOpenFileMalus;
+
+        for (int attacker = 0; attacker < constants::PieceTypeCount; ++attacker)
+        {
+            for (int victim = 0; victim < constants::PieceTypeCount; ++victim)
+            {
+                defendedThreatsBonus[attacker][victim].value -= scale * g.defendedThreatsBonus[attacker][victim];
+                undefendedThreatsBonus[attacker][victim].value -= scale * g.undefendedThreatsBonus[attacker][victim];
+            }
+        }
+
+        pawnPushThreatBonus.value -= scale * g.pawnPushThreatBonus;
 
         bishopPairMgBonus.value -= scale * g.bishopPairMgBonus;
         bishopPairEgBonus.value -= scale * g.bishopPairEgBonus;
