@@ -17,6 +17,7 @@
 
 #include "common/file.hpp"
 #include "common/logger.hpp"
+#include "common/fatal.hpp"
 #include "engine/config/eval.hpp"
 #include "engine/eval/tuning/eval_features.hpp"
 #include "engine/eval/virtual_board.hpp"
@@ -140,7 +141,7 @@ class TexelTuner
     static constexpr int epochs = 1000;
     static constexpr std::size_t batch_size = 4096;
 
-    double learning_rate = 10000.0;
+    double learning_rate = 100.0;
 
     double sigmoid(double s) const
     {
@@ -252,7 +253,7 @@ class TexelTuner
         std::ofstream out(output_path);
 
         if (!out.is_open())
-            throw std::runtime_error("Cannot open params output file: " + path);
+            FATAL("Cannot open params output file: " + path);
 
         using namespace engine_constants::eval;
 
@@ -314,7 +315,7 @@ class TexelTuner
         std::ifstream epd_file(file::get_data_path("tuning_epd/quiet-labeled.v7.epd"));
 
         if (!epd_file.is_open())
-            throw std::runtime_error("Cannot open tuning file");
+            FATAL("Cannot open tuning file");
 
         std::vector<TexelSample> raw;
         raw.reserve(lines_nb);
@@ -660,7 +661,7 @@ class TexelTuner
         raw.shrink_to_fit();
 
         if (samples.empty())
-            throw std::runtime_error("No training samples loaded");
+            FATAL("No training samples loaded");
 
         std::mt19937 rng(42);
         std::shuffle(samples.begin(), samples.end(), rng);
@@ -743,7 +744,7 @@ public:
         raw.shrink_to_fit();
 
         if (samples.empty())
-            throw std::runtime_error("No training samples loaded");
+            FATAL("No training samples loaded");
 
         const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
         const unsigned thread_count = std::min<unsigned>(hw, 8);

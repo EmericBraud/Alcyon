@@ -4,6 +4,8 @@
 #include <expected>
 #include <iostream>
 #include <vector>
+#include <charconv>
+#include <cctype>
 
 #include "common/file.hpp"
 #include "common/logger.hpp"
@@ -34,6 +36,21 @@ class UCI
     std::vector<UCIOption<double>> double_options;
 #endif
     bool ponder_enabled = true;
+
+    static bool parse_int(const std::string &s, int &out)
+    {
+        const char *begin = s.data();
+        const char *end = s.data() + s.size();
+
+        while (begin < end && std::isspace(static_cast<unsigned char>(*begin)))
+            ++begin;
+
+        while (end > begin && std::isspace(static_cast<unsigned char>(*(end - 1))))
+            --end;
+
+        auto [ptr, ec] = std::from_chars(begin, end, out);
+        return ec == std::errc() && ptr == end;
+    }
 
     std::expected<int, Move::MoveError> parse_position(VBoard &board, std::istringstream &is)
     {
@@ -210,17 +227,16 @@ class UCI
 
         if (name == "Threads ")
         {
-            try
+            int threads = 0;
+            if (parse_int(value, threads))
             {
-                int threads = std::stoi(value);
                 e.set_threads(threads);
-                handled = true;
             }
-            catch (...)
+            else
             {
                 logs::uci << "info string error: cannot set option Threads to value " << value << std::endl;
-                handled = true;
             }
+            handled = true;
         }
         else if (name == "Ponder ")
         {
@@ -229,13 +245,13 @@ class UCI
         }
         else if (name == "Hash ")
         {
-            try
+            int size = 0;
+            if (parse_int(value, size))
             {
-                int size = std::stoi(value);
                 e.get_tt().resize(size);
                 logs::debug << "info string Hash table resized" << std::endl;
             }
-            catch (...)
+            else
             {
                 logs::uci << "info string error: cannot set option Hash to value " << value << std::endl;
             }
@@ -279,12 +295,9 @@ class UCI
         std::string arg;
         if (is >> arg)
         {
-            try
+            if (!parse_int(arg, bench_depth))
             {
-                bench_depth = std::stoi(arg);
-            }
-            catch (...)
-            {
+                bench_depth = 4;
                 logs::debug << "info string bench: invalid depth, using default 4" << std::endl;
             }
         }
