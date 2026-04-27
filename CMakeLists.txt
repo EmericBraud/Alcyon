@@ -32,7 +32,7 @@ endif()
 
 # -fno-omit-frame-pointer est vital pour le profiling sur ARM (Mac M1/M2/M3)
 # -g1 génère des infos de debug légères pour éviter le bug "DIE" du linker Mac
-set(COMMON_FLAGS -Wall -Wextra -fno-omit-frame-pointer ${CPU_FLAGS})
+set(COMMON_FLAGS -Wall -Wextra -fno-omit-frame-pointer -fno-exceptions ${CPU_FLAGS})
 set(PROFILING_FLAGS "-g1")
 
 find_package(Threads REQUIRED)
@@ -61,8 +61,8 @@ target_link_libraries(chess_core PUBLIC fathom)
 
 target_compile_options(chess_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${COMMON_FLAGS} ${PROFILING_FLAGS}>)
 
-option(ENABLE_TEXEL_TUNING "Enable Texel tuning mode" OFF)
-option(ENABLE_SPSA_TUNING "Enable SPSA tuning mode" ON)
+option(ENABLE_TEXEL_TUNING "Enable Texel tuning mode" ON)
+option(ENABLE_SPSA_TUNING "Enable SPSA tuning mode" OFF)
 
 target_compile_definitions(chess_core PUBLIC NDEBUG)
 
