@@ -11,6 +11,7 @@
 
 #include "common/fatal.hpp"
 #include "engine/eval/nnue/nnue_model.hpp"
+#include "features_encoder.hpp"
 
 class NnueEval
 {
