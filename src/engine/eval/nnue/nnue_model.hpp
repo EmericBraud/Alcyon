@@ -86,4 +86,9 @@ public:
 
         return forward_dense<0>(input);
     }
+    template <bool activate, Color perspective>
+    void update_feature(int feature)
+    {
+        accumulator.template update_feature<activate, perspective>(feature);
+    }
 };
