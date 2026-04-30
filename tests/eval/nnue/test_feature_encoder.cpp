@@ -20,19 +20,19 @@ concept HasFeatureIndex = requires {
         static_cast<int>(Square::a3));
 };
 
-TEST(FeatureEncoderTest, KingShouldThrow)
+TEST_F(FeatureEncoderTest, KingShouldThrow)
 {
     ASSERT_DEATH(feature_encoder::get_feature_index<WHITE>(Square::a3, WHITE, KING, Square::a3), ".*");
 }
 
-TEST(FeatureEncoderTest, NoColorShouldNotBeCallable)
+TEST_F(FeatureEncoderTest, NoColorShouldNotBeCallable)
 {
     static_assert(!HasFeatureIndex<NO_COLOR>);
     static_assert(HasFeatureIndex<WHITE>);
     static_assert(HasFeatureIndex<BLACK>);
 }
 
-TEST(FeatureEncoderTest, ShouldReturnCorrectValueWhenAllyPiece)
+TEST_F(FeatureEncoderTest, ShouldReturnCorrectValueWhenAllyPiece)
 {
     int king_sq = Square::a3;
     int piece_square = Square::e4;
@@ -42,7 +42,7 @@ TEST(FeatureEncoderTest, ShouldReturnCorrectValueWhenAllyPiece)
     ASSERT_EQ(expected_idx, idx);
 }
 
-TEST(FeatureEncoderTest, ShouldReturnCorrectValueWhenEnemyPiece)
+TEST_F(FeatureEncoderTest, ShouldReturnCorrectValueWhenEnemyPiece)
 {
     int king_sq = Square::a3;
     int piece_square = Square::e4;
@@ -52,7 +52,7 @@ TEST(FeatureEncoderTest, ShouldReturnCorrectValueWhenEnemyPiece)
     ASSERT_EQ(expected_idx, idx);
 }
 
-TEST(FeatureEncoderTest, ShouldReturnCorrectValueWhenBlackSide)
+TEST_F(FeatureEncoderTest, ShouldReturnCorrectValueWhenBlackSide)
 {
     int king_sq = Square::a3;
     int piece_square = Square::e4;
