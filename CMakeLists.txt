@@ -63,6 +63,7 @@ target_compile_options(chess_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${COMMON_FLA
 
 option(ENABLE_TEXEL_TUNING "Enable Texel tuning mode" ON)
 option(ENABLE_SPSA_TUNING "Enable SPSA tuning mode" OFF)
+option(ENABLE_NNUE_DATAGEN "Enable NNUE dataset generation mode" ON)
 
 target_compile_definitions(chess_core PUBLIC NDEBUG)
 
@@ -91,6 +92,11 @@ endif()
 if(ENABLE_SPSA_TUNING)
     target_compile_definitions(chess_core PUBLIC SPSA_TUNING)
     target_compile_definitions(chess26 PRIVATE SPSA_TUNING)
+endif()
+
+if(ENABLE_NNUE_DATAGEN)
+    target_compile_definitions(chess_core PUBLIC NNUE_DATAGEN)
+    target_compile_definitions(chess26 PRIVATE NNUE_DATAGEN)
 endif()
 
 if(ENABLE_GUI)
@@ -151,6 +157,8 @@ include(CTest)
         lib/fathom
         tests
     )
+
+    target_compile_definitions(chess26_tests PRIVATE CHESS26_UNIT_TESTING)
 
     target_compile_options(chess26_tests PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
 

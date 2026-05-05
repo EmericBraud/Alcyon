@@ -12,35 +12,44 @@
 #include "common/fatal.hpp"
 #include "engine/eval/nnue/nnue_model.hpp"
 #include "features_encoder.hpp"
+#include "core/piece/color.hpp"
 
+template <int Features = 40960, int Accum = 256, int Layer1Dims = 32, int Layer2Dims = 32, int Layer3Dims = 1>
 class NnueEval
 {
 public:
-    static constexpr int NFeatures = 40960;
-    static constexpr int NAccumulator = 256;
-    static constexpr int Layer1Dims = 32;
-    static constexpr int Layer2Dims = 32;
-    static constexpr int Layer3Dims = 1;
-
     using Model = NnueModel<
-        NFeatures,
-        NAccumulator,
+        Features,
+        Accum,
         Layer1Dims, Layer2Dims, Layer3Dims>;
 
 private:
     Model model;
 
 public:
-    explicit NnueEval(const std::string &path = "model.nnue")
+    NnueEval(Model &&_model) : model(std::move(_model)) {}
+
+    explicit NnueEval(const std::string &path)
         : model(load_model(path))
     {
     }
 
-    std::int32_t evaluate()
+    std::int32_t evaluate_abs()
     {
-        return model.get_result<WHITE>();
+        return model.template get_result<WHITE>();
     }
 
+    template <bool activate, Color perspective>
+    void update_feature(int feature_idx)
+    {
+        model.template update_feature<activate, perspective>(feature_idx);
+    }
+#ifdef CHESS26_UNIT_TESTING
+    const auto &get_accumulator() const
+    {
+        return model.get_accumulator();
+    }
+#endif
 private:
     static Model load_model(const std::string &path)
     {
@@ -49,14 +58,14 @@ private:
         if (!file)
             FATAL("Could not open NNUE file: " + path);
 
-        std::array<std::int16_t, NAccumulator> accumulator_biases{};
-        std::array<std::array<std::int8_t, NAccumulator>, NFeatures> accumulator_weights{};
+        std::array<std::int16_t, Accum> accumulator_biases{};
+        std::array<std::array<std::int8_t, Accum>, Features> accumulator_weights{};
 
         read_binary(file, accumulator_biases);
         read_binary(file, accumulator_weights);
 
         auto dense_layers = std::make_tuple(
-            read_dense_layer<2 * NAccumulator, Layer1Dims>(file),
+            read_dense_layer<2 * Accum, Layer1Dims>(file),
             read_dense_layer<Layer1Dims, Layer2Dims>(file),
             read_dense_layer<Layer2Dims, Layer3Dims>(file));
 
