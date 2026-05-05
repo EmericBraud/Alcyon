@@ -14,7 +14,7 @@
 #include "features_encoder.hpp"
 #include "core/piece/color.hpp"
 
-template <int Features = 40960, int Accum = 256, int Layer1Dims = 32, int Layer2Dims = 32, int Layer3Dims = 1>
+template <int Features = 24576, int Accum = 256, int Layer1Dims = 32, int Layer2Dims = 32, int Layer3Dims = 1>
 class NnueEval
 {
 public:
@@ -61,6 +61,10 @@ private:
         std::array<std::int16_t, Accum> accumulator_biases{};
         std::array<std::array<std::int8_t, Accum>, Features> accumulator_weights{};
 
+        std::uint32_t magic, version;
+        read_binary(file, magic);
+        read_binary(file, version);
+        file.seekg(128, std::ios::beg);
         read_binary(file, accumulator_biases);
         read_binary(file, accumulator_weights);
 
