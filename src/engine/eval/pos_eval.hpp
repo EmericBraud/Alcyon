@@ -28,6 +28,8 @@ namespace Eval
         std::array<U64, 8> adjacent;
         std::array<std::array<U64, 64>, 2> passed;
     };
+
+#ifndef NNUE_EVAL
     constexpr PawnMasks generate_masks()
     {
         PawnMasks m = {};
@@ -71,6 +73,7 @@ namespace Eval
     }
 
     static constexpr PawnMasks masks = generate_masks();
+#endif
 
     int evaluate_castling_and_safety(Color color, const VBoard &board);
 
@@ -89,17 +92,19 @@ namespace Eval
         return engine_constants::eval::pieces_score[piece];
     }
 
-    void print_pawn_stats();
-
+#ifndef NNUE_EVAL
     inline int king_distance(int sq1, int sq2)
     {
         int dx = std::abs((sq1 & 7) - (sq2 & 7));
         int dy = std::abs((sq1 >> 3) - (sq2 >> 3));
         return std::max(dx, dy);
     }
+    void print_pawn_stats();
+#endif
 
     template <Color Us>
     int lazy_eval_relative(const VBoard &board)
+#ifndef NNUE_EVAL
     {
         const EvalState &state = board.get_eval_state();
         const int mg_score = (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -
@@ -109,4 +114,9 @@ namespace Eval
         const int base_score = (mg_score * state.phase + eg_score * (engine_constants::eval::totalPhase - state.phase)) / engine_constants::eval::totalPhase;
         return Us == WHITE ? base_score : -base_score;
     }
+#else
+    {
+        return this->eval_relative<Us>(board, 0, 0); // WIP @TODO
+    }
+#endif
 }

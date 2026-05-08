@@ -5,7 +5,7 @@
 
 #include "engine/eval/tablebase.hpp"
 #include "engine/config/config.hpp"
-#include "engine/eval/hce/pos_eval.hpp"
+#include "engine/eval/pos_eval.hpp"
 #include "engine/tt/transp_table.hpp"
 #include "engine/eval/virtual_board.hpp"
 

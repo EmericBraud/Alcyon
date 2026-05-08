@@ -1,6 +1,6 @@
 #ifdef TEXEL_TUNING
 
-#include "engine/eval/hce/pos_eval.hpp"
+#include "engine/eval/pos_eval.hpp"
 #include "core/move/generator/move_generator.hpp"
 
 // Transforme un bitboard de pions en un masque où chaque bit

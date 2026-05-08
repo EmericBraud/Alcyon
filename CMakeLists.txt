@@ -61,7 +61,7 @@ target_link_libraries(chess_core PUBLIC fathom)
 
 target_compile_options(chess_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${COMMON_FLAGS} ${PROFILING_FLAGS}>)
 
-option(ENABLE_TEXEL_TUNING "Enable Texel tuning mode" ON)
+option(ENABLE_TEXEL_TUNING "Enable Texel tuning mode" OFF)
 option(ENABLE_SPSA_TUNING "Enable SPSA tuning mode" OFF)
 option(ENABLE_NNUE_EVAL "Enable NNUE evaluation" OFF)
 

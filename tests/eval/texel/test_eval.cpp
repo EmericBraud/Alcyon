@@ -1,6 +1,6 @@
 #ifdef TEXEL_TUNING
 
-#include "engine/eval/hce/pos_eval.hpp"
+#include "engine/eval/pos_eval.hpp"
 #include "engine/eval/tuning/eval_features.hpp"
 #include "engine/eval/virtual_board.hpp"
 #include "engine/config/eval.hpp"
