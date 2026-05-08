@@ -1,4 +1,4 @@
-#include "engine/eval/pos_eval.hpp"
+#include "engine/eval/hce/pos_eval.hpp"
 #include "gtest/gtest.h"
 #include "core/move/generator/move_generator.hpp"
 #include "engine/eval/virtual_board.hpp"

@@ -1,4 +1,5 @@
 #include "interface/uci.hpp"
+#include "engine/eval/nnue/nnue_eval.hpp"
 
 #include <charconv>
 #include <string>
