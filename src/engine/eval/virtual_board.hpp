@@ -5,11 +5,18 @@
 
 #include "core/piece/color.hpp"
 #include "core/board/board.hpp"
-#include "engine/eval/move_eval_increment.hpp"
+#include "engine/eval/hce/move_eval_increment.hpp"
+#include "common/file.hpp"
+#ifdef NNUE_EVAL
+#include "engine/eval/nnue/nnue_eval.hpp"
+#endif
 
 class VBoard : public Board
 {
     EvalState eval_state;
+#ifdef NNUE_EVAL
+    NnueEval<> nnue_eval{file::get_data_path("data/nnue/v1.nnue")};
+#endif
 
 public:
     VBoard &operator=(const VBoard &other)
@@ -19,6 +26,9 @@ public:
             Board::operator=(other);
 
             eval_state = other.eval_state;
+#ifdef NNUE_EVAL
+            nnue_eval = other.nnue_eval;
+#endif
         };
 
         return *this;
@@ -57,6 +67,9 @@ public:
         {
             Board::operator=(std::move(other));
             eval_state = std::move(other.eval_state);
+#ifdef NNUE_EVAL
+            nnue_eval = std::move(other.nnue_eval);
+#endif
         }
         return *this;
     }

@@ -1,5 +1,5 @@
 #include "pos_eval.hpp"
-#include "engine/eval/pawn_entry.hpp"
+#include "engine/eval/hce/pawn_entry.hpp"
 
 #include "common/logger.hpp"
 #include "common/cpu.hpp"
