@@ -17,14 +17,14 @@ private:
     alignas(64) std::array<std::array<std::int8_t, NInputs_>, NNeurons_> weights;
     alignas(64) std::array<std::int32_t, NNeurons_> biases;
 
-    std::int8_t relu(std::int32_t acc);
+    std::int8_t relu(std::int32_t acc) const;
 
 public:
     void process(
         const std::array<std::int8_t, NInputs_> &inputs,
-        std::array<std::int8_t, NNeurons_> &output);
+        std::array<std::int8_t, NNeurons_> &output) const;
 
-    std::int32_t get_result(const std::array<std::int8_t, NInputs_> &inputs)
+    std::int32_t get_result(const std::array<std::int8_t, NInputs_> &inputs) const
         requires(NNeurons_ == 1);
 
     template <typename T, typename U>
@@ -34,7 +34,7 @@ public:
 };
 
 template <int NInputs_, int NNeurons_>
-inline std::int8_t DenseLayer<NInputs_, NNeurons_>::relu(std::int32_t acc)
+inline std::int8_t DenseLayer<NInputs_, NNeurons_>::relu(std::int32_t acc) const
 {
     return static_cast<std::int8_t>(std::clamp(acc, 0, 127));
 }
@@ -42,7 +42,7 @@ inline std::int8_t DenseLayer<NInputs_, NNeurons_>::relu(std::int32_t acc)
 template <int NInputs_, int NNeurons_>
 inline void DenseLayer<NInputs_, NNeurons_>::process(
     const std::array<std::int8_t, NInputs_> &inputs,
-    std::array<std::int8_t, NNeurons_> &output)
+    std::array<std::int8_t, NNeurons_> &output) const
 {
     for (int j = 0; j < NNeurons_; ++j)
     {
@@ -57,7 +57,7 @@ inline void DenseLayer<NInputs_, NNeurons_>::process(
 
 template <int NInputs_, int NNeurons_>
 inline std::int32_t DenseLayer<NInputs_, NNeurons_>::get_result(
-    const std::array<std::int8_t, NInputs_> &inputs)
+    const std::array<std::int8_t, NInputs_> &inputs) const
     requires(NNeurons_ == 1)
 {
     std::int32_t acc = biases[0];

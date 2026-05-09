@@ -3,15 +3,16 @@
 #include <array>
 #include <cstdint>
 #include <utility>
+#include <memory>
 
 #include "core/piece/color.hpp"
 
 template <int NFeatures, int NNeurons>
 class AccumulatorLayer
 {
-    std::array<std::array<std::int16_t, NNeurons>, 2> accumulators;
-    std::array<std::int16_t, NNeurons> biases;
-    std::array<std::array<std::int8_t, NNeurons>, NFeatures> weights;
+    std::unique_ptr<std::array<std::array<std::int16_t, NNeurons>, 2>> accumulators;
+    std::unique_ptr<std::array<std::int16_t, NNeurons>> biases;
+    std::unique_ptr<std::array<std::array<std::int8_t, NNeurons>, NFeatures>> weights;
 
 public:
     template <typename B, typename W>

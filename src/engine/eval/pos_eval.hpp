@@ -116,7 +116,7 @@ namespace Eval
     }
 #else
     {
-        return this->eval_relative<Us>(board, 0, 0); // WIP @TODO
+        return eval_relative<Us>(board, 0, 0); // WIP @TODO
     }
 #endif
 }

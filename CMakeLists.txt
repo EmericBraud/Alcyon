@@ -63,7 +63,7 @@ target_compile_options(chess_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${COMMON_FLA
 
 option(ENABLE_TEXEL_TUNING "Enable Texel tuning mode" OFF)
 option(ENABLE_SPSA_TUNING "Enable SPSA tuning mode" OFF)
-option(ENABLE_NNUE_EVAL "Enable NNUE evaluation" OFF)
+option(ENABLE_NNUE_EVAL "Enable NNUE evaluation" ON)
 
 target_compile_definitions(chess_core PUBLIC NDEBUG)
 

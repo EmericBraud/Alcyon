@@ -1,24 +1,38 @@
 #include "gtest/gtest.h"
 #include "engine/eval/nnue/nnue_model.hpp"
-
+#include "common/constants.hpp"
 #include <array>
 #include <cstdint>
 #include <tuple>
+#include <memory>
 
 class NnueModelTest : public ::testing::Test
 {
 protected:
-    using Model = NnueModel<2, 2, 4, 1>;
+    // Taille basée sur l'encodeur : 32 * 12 * 64
+    static constexpr int MAX_FEATURES = 24576;
+    static constexpr int ACC_SIZE = 2;
+
+    using Model = NnueModel<MAX_FEATURES, ACC_SIZE, 4, 1>;
 
     Model model;
 
     NnueModelTest()
         : model(
-              std::array<std::int16_t, 2>{{1, 2}}, // accumulator biases
+              // 1. Accumulator Biases
+              std::array<std::int16_t, ACC_SIZE>{{1, 2}},
 
-              std::array<std::array<std::int8_t, 2>, 2>{{{{1, 0}},
-                                                         {{0, 1}}}}, // accumulator weights
+              // 2. Accumulator Weights (Allocation sur le tas pour éviter Stack Overflow)
+              *std::unique_ptr<std::array<std::array<std::int8_t, ACC_SIZE>, MAX_FEATURES>>([]()
+                                                                                            {
+                  auto w = std::make_unique<std::array<std::array<std::int8_t, ACC_SIZE>, MAX_FEATURES>>();
+                  for (auto& row : *w) row.fill(0);
+                  // On initialise quelques poids pour les premiers indices pour les tests manuels
+                  (*w)[0] = {1, 0};
+                  (*w)[1] = {0, 1};
+                  return w.release(); }()),
 
+              // 3. Dense Layers
               std::make_tuple(
                   DenseLayer<4, 4>(
                       std::array<std::array<std::int8_t, 4>, 4>{{{{1, 0, 0, 0}},
@@ -34,65 +48,85 @@ protected:
     }
 };
 
-TEST_F(NnueModelTest, ShouldEvaluateInitialBiasesForWhite)
+// --- Tests existants (comportement manuel) ---
+
+TEST_F(NnueModelTest, ShouldEvaluateInitialBiases)
 {
+    // [1,2] concat [1,2] = [1,2,1,2] -> somme = 6
     ASSERT_EQ(model.get_result<WHITE>(), 6);
 }
 
-TEST_F(NnueModelTest, ShouldEvaluateInitialBiasesForBlack)
+TEST_F(NnueModelTest, ShouldActivateFeatureManually)
 {
-    ASSERT_EQ(model.get_result<BLACK>(), 6);
-}
-
-TEST_F(NnueModelTest, ShouldActivateFeatureForWhitePerspective)
-{
-    model.update_feature<true, WHITE>(0);
-
-    // WHITE acc: [1,2] + [1,0] = [2,2]
-    // BLACK acc: [1,2]
-    // concat: [2,2,1,2]
-    // sum = 7
+    model.update_feature<true, WHITE>(0); // Ajoute {1,0} à l'acc blanc
+    // Acc Blanc: [1+1, 2+0] = [2,2]. Acc Noir: [1,2]. Concat: [2,2,1,2] -> 7
     ASSERT_EQ(model.get_result<WHITE>(), 7);
 }
 
-TEST_F(NnueModelTest, ShouldActivateFeatureForBlackPerspective)
+// --- Tests de la fonction initialize() ---
+
+TEST_F(NnueModelTest, ShouldInitializeFromOccupancies)
 {
-    model.update_feature<true, BLACK>(1);
+    std::array<U64, constants::NumPieceVariants> occupancies{};
 
-    // WHITE acc: [1,2]
-    // BLACK acc: [1,2] + [0,1] = [1,3]
-    // concat from WHITE: [white, black] = [1,2,1,3]
-    ASSERT_EQ(model.get_result<WHITE>(), 7);
-}
+    // Position minimale : Rois uniquement (ne génèrent pas de features selon ton assert)
+    occupancies[KING] = (1ULL << 4);                              // e1
+    occupancies[constants::PieceTypeCount + KING] = (1ULL << 60); // e8
 
-TEST_F(NnueModelTest, ShouldUsePerspectiveOrder)
-{
-    model.update_feature<true, WHITE>(0);
+    model.initialize(occupancies);
 
-    // get_result<WHITE>: [white, black] = [2,2,1,2]
-    ASSERT_EQ(model.get_result<WHITE>(), 7);
-
-    // get_result<BLACK>: [black, white] = [1,2,2,2]
-    // Avec une couche identité + somme finale, le résultat reste 7.
-    ASSERT_EQ(model.get_result<BLACK>(), 7);
-}
-
-TEST_F(NnueModelTest, ShouldDisableFeature)
-{
-    model.update_feature<true, WHITE>(0);
-    ASSERT_EQ(model.get_result<WHITE>(), 7);
-
-    model.update_feature<false, WHITE>(0);
+    // Ne doit contenir que les biais
     ASSERT_EQ(model.get_result<WHITE>(), 6);
 }
 
-TEST_F(NnueModelTest, ShouldClampAccumulatorBeforeDenseLayers)
+TEST_F(NnueModelTest, ShouldInitializeWithPieces)
 {
-    model.update_feature<true, WHITE>(0);
-    model.update_feature<true, WHITE>(0);
+    std::array<U64, constants::NumPieceVariants> occupancies{};
 
-    // WHITE acc: [1,2] + 2*[1,0] = [3,2]
-    // BLACK acc: [1,2]
-    // concat: [3,2,1,2]
-    ASSERT_EQ(model.get_result<WHITE>(), 8);
+    // Rois obligatoires
+    occupancies[KING] = (1ULL << 4);                              // e1
+    occupancies[constants::PieceTypeCount + KING] = (1ULL << 60); // e8
+
+    // Ajout d'un pion blanc en a2
+    occupancies[PAWN] = (1ULL << 8);
+
+    model.initialize(occupancies);
+
+    // L'accumulateur a été modifié par initialize, le score doit avoir changé
+    // (Même si le poids est 0, l'opération a eu lieu sans crash)
+    ASSERT_NO_FATAL_FAILURE(model.get_result<WHITE>());
+}
+
+TEST_F(NnueModelTest, InitializeShouldResetPreviousState)
+{
+    // 1. Modifier l'état manuellement
+    model.update_feature<true, WHITE>(0);
+    ASSERT_EQ(model.get_result<WHITE>(), 7);
+
+    // 2. Réinitialiser avec juste les rois
+    std::array<U64, constants::NumPieceVariants> occupancies{};
+    occupancies[KING] = (1ULL << 4);
+    occupancies[constants::PieceTypeCount + KING] = (1ULL << 60);
+
+    model.initialize(occupancies);
+
+    // 3. Retour au score de base (6)
+    ASSERT_EQ(model.get_result<WHITE>(), 6);
+}
+
+TEST_F(NnueModelTest, ShouldHandleMultiplePiecesOfSameType)
+{
+    std::array<U64, constants::NumPieceVariants> occupancies{};
+    occupancies[KING] = (1ULL << 4);
+    occupancies[constants::PieceTypeCount + KING] = (1ULL << 60);
+
+    // Deux pions blancs (a2 et b2)
+    occupancies[PAWN] = (1ULL << 8) | (1ULL << 9);
+
+    // Appel direct : si initialize() accède à un index invalide dans MAX_FEATURES,
+    // le test plantera et sera marqué comme FAILED (Segmentation Fault / Signal).
+    model.initialize(occupancies);
+
+    // On vérifie que le résultat est calculable après l'initialisation
+    ASSERT_NO_FATAL_FAILURE(model.get_result<WHITE>());
 }

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "common/fatal.hpp"
+#include "common/constants.hpp"
 #include "engine/eval/nnue/nnue_model.hpp"
 #include "features_encoder.hpp"
 #include "core/piece/color.hpp"
@@ -34,9 +35,14 @@ public:
     {
     }
 
-    std::int32_t evaluate_abs()
+    std::int32_t evaluate_abs() const
     {
         return model.template get_result<WHITE>();
+    }
+
+    void initialize(const std::array<U64, constants::NumPieceVariants> &occupancies)
+    {
+        this->model.initialize(occupancies);
     }
 
     template <bool activate, Color perspective>

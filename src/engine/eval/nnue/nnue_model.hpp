@@ -7,7 +7,12 @@
 #include <type_traits>
 #include <algorithm>
 
+#include "common/constants.hpp"
+#include "common/mask.hpp"
+#include "common/cpu.hpp"
 #include "core/piece/color.hpp"
+#include "core/piece/piece.hpp"
+#include "engine/eval/nnue/features_encoder.hpp"
 #include "engine/eval/nnue/accumulator_layer.hpp"
 #include "engine/eval/nnue/dense_layer.hpp"
 
@@ -38,7 +43,7 @@ class NnueModel
     LayersTuple dense_layers;
 
     template <std::size_t I, typename Input>
-    auto forward_dense(const Input &input)
+    auto forward_dense(const Input &input) const
     {
         auto &layer = std::get<I>(dense_layers);
         using Layer = std::remove_reference_t<decltype(layer)>;
@@ -64,8 +69,49 @@ public:
     {
     }
 
+    void initialize(const std::array<U64, constants::NumPieceVariants> &occupancies)
+    {
+        this->accumulator.reset();
+
+        int white_king_sq, black_king_sq;
+        {
+            U64 white_king_occ = occupancies[KING];
+            assert(white_king_occ);
+            white_king_sq = cpu::pop_lsb(white_king_occ);
+        }
+        {
+            U64 black_king_occ = occupancies[KING + constants::PieceTypeCount];
+            assert(black_king_occ);
+            black_king_sq = cpu::pop_lsb(black_king_occ);
+        }
+        for (int piece_color = WHITE; piece_color <= BLACK; ++piece_color)
+        {
+            for (int piece_type = PAWN; piece_type <= QUEEN; ++piece_type)
+            {
+                U64 occupancy = occupancies[piece_type + piece_color * constants::PieceTypeCount];
+                while (occupancy != 0ULL)
+                {
+                    int sq = cpu::pop_lsb(occupancy);
+                    accumulator.template update_feature<true, WHITE>(feature_encoder::get_feature_index<WHITE>(white_king_sq, static_cast<Color>(piece_color), static_cast<Piece>(piece_type), sq));
+                }
+            }
+        }
+        for (int piece_color = WHITE; piece_color <= BLACK; ++piece_color)
+        {
+            for (int piece_type = PAWN; piece_type <= QUEEN; ++piece_type)
+            {
+                U64 occupancy = occupancies[piece_type + piece_color * constants::PieceTypeCount];
+                while (occupancy != 0ULL)
+                {
+                    int sq = cpu::pop_lsb(occupancy);
+                    accumulator.template update_feature<true, BLACK>(feature_encoder::get_feature_index<BLACK>(black_king_sq, static_cast<Color>(piece_color), static_cast<Piece>(piece_type), sq));
+                }
+            }
+        }
+    }
+
     template <Color perspective>
-    std::int32_t get_result()
+    std::int32_t get_result() const
     {
         std::array<std::int8_t, 2 * NAccumulator> input{};
 
