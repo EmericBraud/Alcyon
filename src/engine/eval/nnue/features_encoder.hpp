@@ -13,29 +13,28 @@ namespace feature_encoder
         requires(color != NO_COLOR)
     int get_feature_index(int king_sq, Color piece_color, Piece piece_type, int piece_sq)
     {
-        assert(piece_type != KING);
-        // 1. Mise à jour de la perspective (Vertical Flip pour les Noirs)
-        // Pour les blancs, on ne change rien. Pour les noirs, le roi en e8 devient e1.
-        int final_ksq = color == WHITE ? king_sq : (king_sq ^ 56);
-        int final_psq = color == WHITE ? piece_sq : (piece_sq ^ 56);
+        assert(piece_type != NO_PIECE);
 
-        // 2. Miroir horizontal (hm^) : On ramène toujours le roi sur les colonnes a-d
-        if ((final_ksq % 8) > 3)
-        {
-            final_ksq ^= 7;
-            final_psq ^= 7;
-        }
+        constexpr int piece_square_span = 64;
+        constexpr int piece_types_per_bucket = 11;
 
-        // 3. Calcul de l'index de la pièce (0 à 11)
-        // Typiquement : PionAllié=0...RoiAllié=5, PionEnnemi=6...RoiEnnemi=11
-        // /!\ Vérifie que ton enum Piece correspond (Pion=0, Cavalier=1, etc.)
-        const int p_idx = static_cast<int>(piece_type) + (piece_color == color ? 0 : 6);
+        const int flip = (color == WHITE) ? 0 : 56;
+        const int oriented_king_sq = king_sq ^ flip;
+        const int oriented_piece_sq = piece_sq ^ flip;
 
-        // 4. Mapping du Roi sur 32 cases (Rangée * 4 colonnes + Colonne)
-        int king_mapped_idx = (final_ksq / 8) * 4 + (final_ksq % 8);
+        const int king_file = oriented_king_sq % 8;
+        const int mirrored_file = (king_file < 4) ? king_file : (7 - king_file);
+        const int king_rank = oriented_king_sq / 8;
+        const int king_bucket = (7 - king_rank) * 4 + mirrored_file;
 
-        // 5. Index final : 32 cases roi * 12 pièces * 64 cases
-        // 32 * 12 * 64 = 24576 total
-        return (king_mapped_idx * 12 * 64) + (p_idx * 64) + final_psq;
+        const int p_idx = (piece_type == KING)
+                              ? 10
+                              : static_cast<int>(piece_type) * 2 + (piece_color != color ? 1 : 0);
+
+        int final_piece_sq = oriented_piece_sq;
+        if (king_file < 4)
+            final_piece_sq ^= 7;
+
+        return (king_bucket * piece_types_per_bucket * piece_square_span) + (p_idx * piece_square_span) + final_piece_sq;
     }
 }

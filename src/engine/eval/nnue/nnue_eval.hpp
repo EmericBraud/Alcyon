@@ -8,6 +8,7 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "common/logger.hpp"
 #include "common/fatal.hpp"
@@ -16,7 +17,7 @@
 #include "features_encoder.hpp"
 #include "core/piece/color.hpp"
 
-template <int Features = 24576, int Accum = 256, int Layer1Dims = 32, int Layer2Dims = 32, int Layer3Dims = 1>
+template <int Features = 22528, int Accum = 256, int Layer1Dims = 32, int Layer2Dims = 32, int Layer3Dims = 1>
 class NnueEval
 {
 public:
@@ -86,6 +87,126 @@ private:
             FATAL("NNUE read failed after: " + label);
     }
 
+    template <typename T>
+    struct ElementCount
+    {
+        static constexpr std::size_t value = 1;
+    };
+
+    template <typename T, std::size_t N>
+    struct ElementCount<std::array<T, N>>
+    {
+        static constexpr std::size_t value = N * ElementCount<T>::value;
+    };
+
+    static bool next_is_leb128_marker(std::ifstream &file)
+    {
+        constexpr std::string_view marker_text = "COMPRESSED_LEB128";
+        constexpr std::streamsize marker_len = static_cast<std::streamsize>(marker_text.size());
+        const auto marker_pos = tell(file);
+
+        char marker[marker_len] = {};
+        file.read(marker, marker_len);
+        if (!file)
+        {
+            file.clear();
+            file.seekg(marker_pos, std::ios::beg);
+            return false;
+        }
+
+        const bool is_marker = (std::string(marker, marker_len) == marker_text);
+
+        file.clear();
+        file.seekg(marker_pos, std::ios::beg);
+        check(file, "rewind after marker probe");
+
+        return is_marker;
+    }
+
+    static std::vector<std::int64_t> decode_leb128_signed(
+        const std::vector<std::uint8_t> &bytes,
+        std::size_t expected_count)
+    {
+        std::vector<std::int64_t> out;
+        out.reserve(expected_count);
+
+        std::size_t k = 0;
+        for (std::size_t i = 0; i < expected_count; ++i)
+        {
+            std::int64_t r = 0;
+            int shift = 0;
+
+            while (true)
+            {
+                if (k >= bytes.size())
+                    FATAL("Unexpected end of compressed LEB128 stream");
+
+                const std::uint8_t byte = bytes[k++];
+                r |= (static_cast<std::int64_t>(byte & 0x7F) << shift);
+                shift += 7;
+
+                if ((byte & 0x80) == 0)
+                {
+                    const std::int64_t value =
+                        ((byte & 0x40) == 0)
+                            ? r
+                            : (r | ~((static_cast<std::int64_t>(1) << shift) - 1));
+                    out.push_back(value);
+                    break;
+                }
+
+                if (shift >= 63)
+                    FATAL("Invalid LEB128 value: too many continuation bytes");
+            }
+        }
+
+        return out;
+    }
+
+    template <typename T>
+    static void assign_flat_values(const std::vector<std::int64_t> &values, std::size_t &index, T &out)
+    {
+        out = static_cast<T>(values[index++]);
+    }
+
+    template <typename T, std::size_t N>
+    static void assign_flat_values(const std::vector<std::int64_t> &values, std::size_t &index, std::array<T, N> &out)
+    {
+        for (auto &item : out)
+            assign_flat_values(values, index, item);
+    }
+
+    template <typename T>
+    static void read_tensor(std::ifstream &file, T &value, const std::string &label)
+    {
+        if (!next_is_leb128_marker(file))
+        {
+            read_binary(file, value);
+            check(file, label);
+            return;
+        }
+
+        constexpr std::string_view marker_text = "COMPRESSED_LEB128";
+        constexpr std::streamsize marker_len = static_cast<std::streamsize>(marker_text.size());
+        char marker[marker_len] = {};
+        file.read(marker, marker_len);
+        check(file, label + " marker");
+
+        std::uint32_t compressed_len = 0;
+        read_binary(file, compressed_len);
+        check(file, label + " compressed_len");
+
+        std::vector<std::uint8_t> bytes(compressed_len);
+        file.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(compressed_len));
+        check(file, label + " compressed payload");
+
+        constexpr std::size_t expected_count = ElementCount<T>::value;
+        const auto decoded = decode_leb128_signed(bytes, expected_count);
+
+        std::size_t idx = 0;
+        assign_flat_values(decoded, idx, value);
+    }
+
     static Model load_model(const std::string &path)
     {
         logs::debug << "Loading NNUE..." << std::endl;
@@ -134,8 +255,7 @@ private:
         logs::debug << "[NNUE] ft_hash = 0x" << std::hex << ft_hash << std::dec << std::endl;
         logs::debug << "[NNUE] after ft_hash offset = " << tell(file) << std::endl;
 
-        read_binary(file, accumulator_biases);
-        check(file, "accumulator_biases");
+        read_tensor(file, accumulator_biases, "accumulator_biases");
 
         logs::debug << "[NNUE] after accumulator_biases offset = " << tell(file) << std::endl;
 
@@ -144,8 +264,7 @@ private:
             logs::debug << accumulator_biases[i] << " ";
         logs::debug << std::endl;
 
-        read_binary(file, accumulator_weights);
-        check(file, "accumulator_weights");
+        read_tensor(file, accumulator_weights, "accumulator_weights");
 
         logs::debug << "[NNUE] after accumulator_weights offset = " << tell(file) << std::endl;
 
@@ -203,10 +322,14 @@ private:
         logs::debug << "[NNUE] fc_hash = 0x" << std::hex << fc_hash << std::dec << std::endl;
         logs::debug << "[NNUE] after fc_hash offset = " << tell(file) << std::endl;
 
+        auto layer1 = read_dense_layer_debug<2 * Accum, Layer1Dims>(file, "layer1");
+        auto layer2 = read_dense_layer_debug<Layer1Dims, Layer2Dims>(file, "layer2");
+        auto output = read_dense_layer_debug<Layer2Dims, Layer3Dims>(file, "output");
+
         auto dense_layers = std::make_tuple(
-            read_dense_layer_debug<2 * Accum, Layer1Dims>(file, "layer1"),
-            read_dense_layer_debug<Layer1Dims, Layer2Dims>(file, "layer2"),
-            read_dense_layer_debug<Layer2Dims, Layer3Dims>(file, "output"));
+            std::move(layer1),
+            std::move(layer2),
+            std::move(output));
 
         check(file, "dense layers");
 

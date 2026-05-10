@@ -116,7 +116,8 @@ namespace Eval
     }
 #else
     {
-        return eval_relative<Us>(board, 0, 0); // WIP @TODO
+        const int score = eval(board, 0, 0);
+        return (Us == WHITE) ? score : -score;
     }
 #endif
 }

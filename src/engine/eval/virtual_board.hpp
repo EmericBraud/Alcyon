@@ -17,6 +17,28 @@ class VBoard : public Board
 #ifdef NNUE_EVAL
 #define NNUE_FULL_MODEL_PATH file::get_data_path("nnue/v1.nnue")
     NnueEval<> nnue_eval{NNUE_FULL_MODEL_PATH};
+
+    template <bool activate, Color perspective>
+    inline void update_nnue_piece(int king_sq, Color piece_color, Piece piece_type, int piece_sq)
+    {
+        if (piece_type == NO_PIECE)
+            return;
+
+        const int feature_idx = feature_encoder::get_feature_index<perspective>(
+            king_sq,
+            piece_color,
+            piece_type,
+            piece_sq);
+
+        nnue_eval.template update_feature<activate, perspective>(feature_idx);
+    }
+
+    template <bool activate>
+    inline void update_nnue_piece_both_perspectives(int white_king_sq, int black_king_sq, Color piece_color, Piece piece_type, int piece_sq)
+    {
+        update_nnue_piece<activate, WHITE>(white_king_sq, piece_color, piece_type, piece_sq);
+        update_nnue_piece<activate, BLACK>(black_king_sq, piece_color, piece_type, piece_sq);
+    }
 #endif
 public:
     VBoard &operator=(const VBoard &other)
@@ -110,28 +132,103 @@ public:
 
     inline void play(const Move move)
     {
-        Color Us = get_side_to_move();
-        eval_state.increment(move, Us);
-        Board::play(move);
+        if (get_side_to_move() == WHITE)
+            play<WHITE>(move);
+        else
+            play<BLACK>(move);
     }
     inline void unplay(const Move move)
     {
-        Color Us = !get_side_to_move();
-        Board::unplay(move);
-        eval_state.decrement(move, Us);
+        if (get_side_to_move() == WHITE)
+            unplay<BLACK>(move);
+        else
+            unplay<WHITE>(move);
     }
 
     template <Color Us>
     inline void play(const Move move)
     {
+#ifdef NNUE_EVAL
+        constexpr Color Them = static_cast<Color>(!Us);
+        const Piece from_piece = move.get_from_piece();
+
+        if (from_piece != KING)
+        {
+            const int white_king_sq = king_sq[WHITE];
+            const int black_king_sq = king_sq[BLACK];
+
+            const int from_sq = move.get_from_sq();
+            const int to_sq = move.get_to_sq();
+            const uint32_t flags = move.get_flags();
+            const Piece to_piece = move.get_to_piece();
+
+            update_nnue_piece_both_perspectives<false>(white_king_sq, black_king_sq, Us, from_piece, from_sq);
+
+            if (flags == Move::Flags::PROMOTION_MASK)
+                update_nnue_piece_both_perspectives<true>(white_king_sq, black_king_sq, Us, move.get_promo_piece(), to_sq);
+            else
+                update_nnue_piece_both_perspectives<true>(white_king_sq, black_king_sq, Us, from_piece, to_sq);
+
+            if (flags == Move::Flags::EN_PASSANT_CAP)
+            {
+                const int cap_sq = (Us == WHITE) ? to_sq - 8 : to_sq + 8;
+                update_nnue_piece_both_perspectives<false>(white_king_sq, black_king_sq, Them, PAWN, cap_sq);
+            }
+            else if (to_piece != NO_PIECE)
+            {
+                update_nnue_piece_both_perspectives<false>(white_king_sq, black_king_sq, Them, to_piece, to_sq);
+            }
+        }
+#endif
+
         eval_state.increment(move, Us);
         Board::play<Us>(move);
+
+#ifdef NNUE_EVAL
+        if (move.get_from_piece() == KING)
+            nnue_eval.initialize(get_all_bitboards());
+#endif
     }
     template <Color Us>
     inline void unplay(const Move move)
     {
+#ifdef NNUE_EVAL
+        constexpr Color Them = static_cast<Color>(!Us);
+        const Piece from_piece = move.get_from_piece();
+
+        if (from_piece != KING)
+        {
+            const int white_king_sq = king_sq[WHITE];
+            const int black_king_sq = king_sq[BLACK];
+
+            const int from_sq = move.get_from_sq();
+            const int to_sq = move.get_to_sq();
+            const uint32_t flags = move.get_flags();
+            const Piece to_piece = move.get_to_piece();
+            const Piece moved_piece = (flags == Move::Flags::PROMOTION_MASK) ? move.get_promo_piece() : from_piece;
+
+            update_nnue_piece_both_perspectives<false>(white_king_sq, black_king_sq, Us, moved_piece, to_sq);
+            update_nnue_piece_both_perspectives<true>(white_king_sq, black_king_sq, Us, from_piece, from_sq);
+
+            if (flags == Move::Flags::EN_PASSANT_CAP)
+            {
+                const int cap_sq = (Us == WHITE) ? to_sq - 8 : to_sq + 8;
+                update_nnue_piece_both_perspectives<true>(white_king_sq, black_king_sq, Them, PAWN, cap_sq);
+            }
+            else if (to_piece != NO_PIECE)
+            {
+                update_nnue_piece_both_perspectives<true>(white_king_sq, black_king_sq, Them, to_piece, to_sq);
+            }
+        }
+#endif
+
         Board::unplay<Us>(move);
         eval_state.decrement(move, Us);
+
+#ifdef NNUE_EVAL
+        if (move.get_from_piece() == KING)
+            nnue_eval.initialize(get_all_bitboards());
+#endif
     }
 
     inline EvalState &get_eval_state()

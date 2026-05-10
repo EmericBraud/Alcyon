@@ -1,5 +1,4 @@
 #include "interface/uci.hpp"
-#include "engine/eval/nnue/nnue_eval.hpp"
 
 #include <charconv>
 #include <string>
@@ -18,10 +17,6 @@ int main(int argc, char **argv)
 {
 
     UCI u;
-    VBoard b;
-    b.load_fen("r3b1r1/2k1ppp1/1pqp1b2/8/p2PQP2/2PNKB2/5BR1/R7 w - - 0 1");
-    int j = Eval::eval(b, 0, 0);
-    std::cout << "EVAL : " << j << std::endl;
     if (argc >= 2)
     {
         std::string cmd = argv[1];

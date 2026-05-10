@@ -86,7 +86,7 @@ public:
         }
         for (int piece_color = WHITE; piece_color <= BLACK; ++piece_color)
         {
-            for (int piece_type = PAWN; piece_type <= QUEEN; ++piece_type)
+            for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
             {
                 U64 occupancy = occupancies[piece_type + piece_color * constants::PieceTypeCount];
                 while (occupancy != 0ULL)
@@ -98,7 +98,7 @@ public:
         }
         for (int piece_color = WHITE; piece_color <= BLACK; ++piece_color)
         {
-            for (int piece_type = PAWN; piece_type <= QUEEN; ++piece_type)
+            for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
             {
                 U64 occupancy = occupancies[piece_type + piece_color * constants::PieceTypeCount];
                 while (occupancy != 0ULL)
