@@ -1,5 +1,7 @@
-#include "pos_eval.hpp"
-#include "engine/eval/pawn_entry.hpp"
+#ifndef NNUE_EVAL
+
+#include "engine/eval/pos_eval.hpp"
+#include "engine/eval/hce/pawn_entry.hpp"
 
 #include "common/logger.hpp"
 #include "common/cpu.hpp"
@@ -251,3 +253,4 @@ void Eval::print_pawn_stats()
     logs::debug << " - Misses: " << pawn_table.misses << std::endl;
     logs::debug << " - Rate:   " << pawn_table.get_hit_rate() << "%" << std::endl;
 }
+#endif

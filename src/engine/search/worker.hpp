@@ -30,8 +30,8 @@ struct SearchWorker
     int history_moves[2][64][64];
     Move killer_moves[engine_constants::search::MaxDepth][2];
     Move counter_moves[2][7][64];
-    int continuation_hist_1[2][7][64][64];  // [side][piece][from][to] for 1-ply continuation
-    int continuation_hist_2[2][7][64][64];  // [side][piece][from][to] for 2-ply continuation
+    int continuation_hist_1[2][7][64][64]; // [side][piece][from][to] for 1-ply continuation
+    int continuation_hist_2[2][7][64][64]; // [side][piece][from][to] for 2-ply continuation
     std::array<Move, engine_constants::search::MaxDepth> move_stack;
 
     // Métriques locales

@@ -5,12 +5,19 @@
 
 #include "core/piece/color.hpp"
 #include "core/board/board.hpp"
-#include "engine/eval/move_eval_increment.hpp"
+#include "engine/eval/hce/move_eval_increment.hpp"
+#include "common/file.hpp"
+#ifdef NNUE_EVAL
+#include "engine/eval/nnue/nnue_eval.hpp"
+#endif
 
 class VBoard : public Board
 {
     EvalState eval_state;
-
+#ifdef NNUE_EVAL
+#define NNUE_FULL_MODEL_PATH file::get_data_path("nnue/v1.nnue")
+    NnueEval<> nnue_eval{NNUE_FULL_MODEL_PATH};
+#endif
 public:
     VBoard &operator=(const VBoard &other)
     {
@@ -19,6 +26,9 @@ public:
             Board::operator=(other);
 
             eval_state = other.eval_state;
+#ifdef NNUE_EVAL
+            nnue_eval = other.nnue_eval;
+#endif
         };
 
         return *this;
@@ -30,6 +40,10 @@ public:
             Board::operator=(other);
 
             eval_state = EvalState(pieces_occ);
+#ifdef NNUE_EVAL
+            nnue_eval = NnueEval{NNUE_FULL_MODEL_PATH};
+            nnue_eval.initialize(other.get_all_bitboards());
+#endif
         };
 
         return *this;
@@ -37,17 +51,32 @@ public:
     VBoard(const VBoard &other)
         : Board(other),
           eval_state(other.eval_state)
+#ifdef NNUE_EVAL
+          ,
+          nnue_eval(other.nnue_eval)
+#endif
     {
     }
     VBoard(const Board &other)
         : Board(other),
           eval_state(other.get_all_bitboards())
+#ifdef NNUE_EVAL
+          ,
+          nnue_eval{NNUE_FULL_MODEL_PATH}
+#endif
     {
+#ifdef NNUE_EVAL
+        nnue_eval.initialize(other.get_all_bitboards());
+#endif
     }
 
     VBoard(VBoard &&other) noexcept
         : Board(std::move(other)),
           eval_state(std::move(other.eval_state))
+#ifdef NNUE_EVAL
+          ,
+          nnue_eval(std::move(other.nnue_eval))
+#endif
     {
     }
 
@@ -57,6 +86,9 @@ public:
         {
             Board::operator=(std::move(other));
             eval_state = std::move(other.eval_state);
+#ifdef NNUE_EVAL
+            nnue_eval = std::move(other.nnue_eval);
+#endif
         }
         return *this;
     }
@@ -69,6 +101,10 @@ public:
     {
         bool r = Board::load_fen(fen_string);
         eval_state = EvalState(get_all_bitboards());
+#ifdef NNUE_EVAL
+        nnue_eval.initialize(get_all_bitboards());
+#endif
+
         return r;
     }
 
@@ -107,4 +143,16 @@ public:
     {
         return eval_state;
     }
+#ifdef NNUE_EVAL
+    inline auto &get_nnue_eval()
+    {
+        return nnue_eval;
+    }
+
+    inline auto &get_nnue_eval() const
+    {
+        return nnue_eval;
+    }
+
+#endif
 };
