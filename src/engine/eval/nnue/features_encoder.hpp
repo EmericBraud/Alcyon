@@ -32,7 +32,7 @@ namespace feature_encoder
                               : static_cast<int>(piece_type) * 2 + (piece_color != color ? 1 : 0);
 
         int final_piece_sq = oriented_piece_sq;
-        if (king_file < 4)
+        if (king_file > 3)
             final_piece_sq ^= 7;
 
         return (king_bucket * piece_types_per_bucket * piece_square_span) + (p_idx * piece_square_span) + final_piece_sq;

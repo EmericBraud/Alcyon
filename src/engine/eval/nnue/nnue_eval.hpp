@@ -17,7 +17,7 @@
 #include "features_encoder.hpp"
 #include "core/piece/color.hpp"
 
-template <int Features = 22528, int Accum = 256, int Layer1Dims = 32, int Layer2Dims = 32, int Layer3Dims = 1>
+template <int Features = 24576, int Accum = 256, int Layer1Dims = 32, int Layer2Dims = 32, int Layer3Dims = 1>
 class NnueEval
 {
 public:
