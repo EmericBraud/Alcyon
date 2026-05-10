@@ -15,7 +15,7 @@ class VBoard : public Board
 {
     EvalState eval_state;
 #ifdef NNUE_EVAL
-#define NNUE_FULL_MODEL_PATH file::get_data_path("data/nnue/v1.nnue")
+#define NNUE_FULL_MODEL_PATH file::get_data_path("nnue/v1.nnue")
     NnueEval<> nnue_eval{NNUE_FULL_MODEL_PATH};
 #endif
 public:
@@ -101,6 +101,10 @@ public:
     {
         bool r = Board::load_fen(fen_string);
         eval_state = EvalState(get_all_bitboards());
+#ifdef NNUE_EVAL
+        nnue_eval.initialize(get_all_bitboards());
+#endif
+
         return r;
     }
 

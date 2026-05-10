@@ -103,7 +103,7 @@ TEST_F(NnueEvalTest, ShouldLoadRealModelFile)
     // On utilise les vraies dimensions du modèle entraîné
     using RealEval = NnueEval<24576, 256, 32, 32, 1>;
 
-    const std::string path = "data/nnue/v1.nnue";
+    const std::string path = "nnue/v1.nnue";
 
     // Test de chargement
     // Si le fichier n'existe pas dans le path spécifié, le test échouera via FATAL
