@@ -12,3 +12,5 @@ data/tuning_epd
 
 data/tuning_output
 py_scripts/
+
+compile_commands.json
