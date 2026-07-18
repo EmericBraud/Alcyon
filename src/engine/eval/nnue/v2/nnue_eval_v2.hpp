@@ -46,6 +46,7 @@
 #include "core/piece/piece.hpp"
 #include "engine/eval/nnue/v2/nnue_model_v2.hpp"
 #include "engine/eval/nnue/v2/full_threats_encoder.hpp"
+#include "engine/eval/nnue/v2/full_threats_incremental.hpp"
 #include "engine/eval/nnue/v2/halfka_v2_hm_encoder.hpp"
 
 namespace nnue_v2
@@ -122,6 +123,59 @@ namespace nnue_v2
             return side_to_move == WHITE
                        ? model.template get_result<WHITE>(piece_count)
                        : model.template get_result<BLACK>(piece_count);
+        }
+
+        // Incremental HalfKAv2_hm^ update for a single piece (add or remove),
+        // analogous to v1's per-piece feature update. Not valid for the piece
+        // whose own move is a king move -- callers must fall back to
+        // initialize() (full refresh) in that case, since a king move changes
+        // every HalfKAv2_hm^ feature for that perspective (king square/bucket
+        // is baked into every other piece's index).
+        template <bool activate, Color perspective>
+        void update_halfka_piece(int king_sq, Color piece_color, Piece piece_type, int piece_sq)
+        {
+            if (piece_type == NO_PIECE)
+                return;
+            const int idx = NumFullThreatsFeatures + halfka::feature_index<perspective>(king_sq, piece_color, piece_type, piece_sq);
+            model.template update_feature<activate, perspective>(idx);
+        }
+
+        // Incremental Full_Threats update for a non-king move: `board_before`/
+        // `board_after` must be the exact board snapshots immediately before
+        // and after Board::play() (or unplay()) applied the move, and
+        // `touched_squares` the squares whose occupant changed (from/to/
+        // en-passant-capture square). See full_threats_incremental.hpp for the
+        // scoped-recompute design/tradeoff.
+        template <Color perspective>
+        void update_threats_scoped(const Board &board_before, const Board &board_after, const std::vector<int> &touched_squares)
+        {
+            std::vector<int> old_idx;
+            std::vector<int> new_idx;
+            threats::collect_move_scoped_features<perspective>(board_before, touched_squares, old_idx);
+            threats::collect_move_scoped_features<perspective>(board_after, touched_squares, new_idx);
+
+            std::sort(old_idx.begin(), old_idx.end());
+            old_idx.erase(std::unique(old_idx.begin(), old_idx.end()), old_idx.end());
+            std::sort(new_idx.begin(), new_idx.end());
+            new_idx.erase(std::unique(new_idx.begin(), new_idx.end()), new_idx.end());
+
+            std::size_t i = 0, j = 0;
+            while (i < old_idx.size() && j < new_idx.size())
+            {
+                if (old_idx[i] < new_idx[j])
+                    model.template update_feature<false, perspective>(old_idx[i++]);
+                else if (new_idx[j] < old_idx[i])
+                    model.template update_feature<true, perspective>(new_idx[j++]);
+                else
+                {
+                    ++i;
+                    ++j;
+                } // unchanged feature, skip
+            }
+            while (i < old_idx.size())
+                model.template update_feature<false, perspective>(old_idx[i++]);
+            while (j < new_idx.size())
+                model.template update_feature<true, perspective>(new_idx[j++]);
         }
 
 #ifdef CHESS26_UNIT_TESTING
