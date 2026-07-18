@@ -25,7 +25,13 @@ namespace nnue::threats
     template <int Capacity>
     struct FixedIntList
     {
-        std::array<int, Capacity> data{};
+        // Deliberately NOT value-initialized ({}): zero-filling the whole
+        // array on every construction (memset over Capacity ints, up to 8KB
+        // for MAX_THREAT_FEATURES=2048) showed up as the top profiling hotspot
+        // once heap allocation was removed from this hot path. Safe because
+        // every accessor (operator[], begin/end, push_back) is bounded by
+        // `count`, which only ever exposes slots that were actually written.
+        std::array<int, Capacity> data;
         int count = 0;
 
         inline void push_back(int value)
