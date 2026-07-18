@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "engine/eval/nnue/full_threats_encoder.hpp"
+#include "engine/eval/nnue/fixed_int_list.hpp"
 #include "core/board/board.hpp"
 #include "common/constants.hpp"
 #include <vector>
@@ -78,4 +79,41 @@ TEST(FullThreatsEncoderTest, KnightAttackingPawnProducesOneFeaturePerPerspective
 
     EXPECT_GT(white_features.size(), 0u);
     EXPECT_GT(black_features.size(), 0u);
+}
+
+// FixedIntList (see fixed_int_list.hpp) is the fixed-capacity, stack-only
+// replacement for std::vector<int> in the Full_Threats scoped-update hot
+// path. It must never silently truncate on overflow -- verify it aborts
+// (FATAL) instead, and that ordinary push/iterate usage works as expected.
+TEST(FixedIntListTest, PushBackAndIterationWorks)
+{
+    nnue::threats::FixedIntList<4> list;
+    list.push_back(10);
+    list.push_back(20);
+    list.push_back(30);
+
+    EXPECT_EQ(list.size(), 3);
+    std::vector<int> collected(list.begin(), list.end());
+    EXPECT_EQ(collected, (std::vector<int>{10, 20, 30}));
+}
+
+TEST(FixedIntListTest, PushBackAbortsOnOverflowRatherThanTruncating)
+{
+    EXPECT_DEATH(
+        {
+            nnue::threats::FixedIntList<2> list;
+            list.push_back(1);
+            list.push_back(2);
+            list.push_back(3); // capacity exceeded: must abort, not truncate.
+        },
+        "");
+}
+
+// MAX_THREAT_FEATURES must have real headroom over the derived worst-case
+// scoped-collect count (see full_threats_encoder.hpp for the derivation).
+TEST(FixedIntListTest, MaxThreatFeaturesHasHeadroomOverDerivedWorstCase)
+{
+    constexpr int kDerivedWorstCase = 981;
+    EXPECT_GE(nnue::threats::MAX_THREAT_FEATURES, kDerivedWorstCase);
+    EXPECT_GT(nnue::threats::MAX_THREAT_FEATURES, kDerivedWorstCase * 1.5);
 }
