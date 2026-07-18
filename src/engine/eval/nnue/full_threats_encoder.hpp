@@ -13,7 +13,6 @@
 
 #include <array>
 #include <bit>
-#include <vector>
 
 #include "common/mask.hpp"
 #include "common/cpu.hpp"
@@ -21,6 +20,7 @@
 #include "core/piece/piece.hpp"
 #include "core/board/board.hpp"
 #include "core/move/generator/move_generator.hpp"
+#include "engine/eval/nnue/fixed_int_list.hpp"
 
 namespace nnue::threats
 {
@@ -74,6 +74,48 @@ namespace nnue::threats
 
     static_assert(MAX_THREAT_FEATURES >= 981,
                   "MAX_THREAT_FEATURES must cover the derived worst-case scoped-collect count");
+
+    // Bound for how many raw feature indices a single *full-board* scan
+    // (fill_features() below, used by NnueEval::initialize() on king moves
+    // and at startup) can produce for one perspective. This is a much
+    // tighter bound than MAX_THREAT_FEATURES above, which covers the scoped
+    // per-move incremental-update path (touched squares + targeted-slider
+    // rescan), not a full-board scan.
+    //
+    // Derivation: fill_features() only emits a feature for (attacker,
+    // target) pairs where the target square is *occupied* -- attacks are
+    // masked with `all_pieces` before iterating targets. So the number of
+    // features contributed by one attacking piece is bounded by how many
+    // occupied squares its (blocker-aware) attack set can contain:
+    //   - Knight / King: attack set is a fixed <= 8-square pattern, so
+    //     <= 8 occupied targets.
+    //   - Bishop / Rook: `generate_bishop_moves`/`generate_rook_moves` are
+    //     already blocker-aware (each ray stops at -- and includes -- the
+    //     first occupied square), so at most one occupied square per ray:
+    //     <= 4 for Bishop (4 diagonals), <= 4 for Rook (4 files/ranks).
+    //   - Queen: Rook rays + Bishop rays combined, blocker-aware the same
+    //     way: <= 4 + 4 = 8.
+    //   - Pawn: <= 2 diagonal-capture squares + <= 1 forward-push square
+    //     (only counted if occupied, which is illegal in a legal position
+    //     but the loop doesn't special-case it away): <= 3.
+    //   - King as attacker never contributes (threat_map's King row is all
+    //     -1), but the scan still visits it, contributing 0.
+    //   So the per-piece max across all types is 8 (Knight/King/Queen).
+    //
+    //   A legal chess position has at most 16 non-king pieces per side (the
+    //   original 15 pieces + king, with promotions only ever *replacing* a
+    //   pawn, never increasing total piece count), i.e. <= 15 non-king
+    //   pieces per side, <= 30 non-king pieces total across both sides.
+    //
+    //   Total worst case = 30 pieces * 8 features/piece = 240.
+    //
+    // MAX_FULL_SCAN_THREAT_FEATURES below rounds this up to the next clean
+    // power of two with generous headroom, matching MAX_THREAT_FEATURES'
+    // style; a static_assert keeps this bound self-documenting.
+    constexpr int MAX_FULL_SCAN_THREAT_FEATURES = 512;
+
+    static_assert(MAX_FULL_SCAN_THREAT_FEATURES >= 240,
+                  "MAX_FULL_SCAN_THREAT_FEATURES must cover the derived worst-case full-board-scan count");
 
     struct ThreatOffsetTable
     {
@@ -230,7 +272,7 @@ namespace nnue::threats
     // Appends all active Full_Threats feature indices (from `perspective`'s
     // point of view) for the given board to `out`.
     template <Color perspective>
-    inline void fill_features(const Board &board, std::vector<int> &out)
+    inline void fill_features(const Board &board, FixedIntList<MAX_FULL_SCAN_THREAT_FEATURES> &out)
     {
         const int ksq = board.king_sq[perspective];
         const U64 all_pieces = board.occupancies[NO_COLOR];

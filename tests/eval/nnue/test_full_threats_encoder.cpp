@@ -21,8 +21,8 @@ TEST(FullThreatsEncoderTest, StartingPositionProducesInRangeIndices)
     Board board;
     ASSERT_TRUE(board.load_fen(constants::FenInitPos));
 
-    std::vector<int> white_features;
-    std::vector<int> black_features;
+    nnue::threats::FixedIntList<nnue::threats::MAX_FULL_SCAN_THREAT_FEATURES> white_features;
+    nnue::threats::FixedIntList<nnue::threats::MAX_FULL_SCAN_THREAT_FEATURES> black_features;
     nnue::threats::fill_features<WHITE>(board, white_features);
     nnue::threats::fill_features<BLACK>(board, black_features);
 
@@ -54,8 +54,8 @@ TEST(FullThreatsEncoderTest, KingsNeverProduceFeaturesAsAttacker)
     Board board;
     ASSERT_TRUE(board.load_fen("8/8/8/3k4/3K4/8/8/8 w - - 0 1"));
 
-    std::vector<int> white_features;
-    std::vector<int> black_features;
+    nnue::threats::FixedIntList<nnue::threats::MAX_FULL_SCAN_THREAT_FEATURES> white_features;
+    nnue::threats::FixedIntList<nnue::threats::MAX_FULL_SCAN_THREAT_FEATURES> black_features;
     nnue::threats::fill_features<WHITE>(board, white_features);
     nnue::threats::fill_features<BLACK>(board, black_features);
 
@@ -72,8 +72,8 @@ TEST(FullThreatsEncoderTest, KnightAttackingPawnProducesOneFeaturePerPerspective
     Board board;
     ASSERT_TRUE(board.load_fen("4k3/8/1p6/3N4/8/8/8/4K3 w - - 0 1"));
 
-    std::vector<int> white_features;
-    std::vector<int> black_features;
+    nnue::threats::FixedIntList<nnue::threats::MAX_FULL_SCAN_THREAT_FEATURES> white_features;
+    nnue::threats::FixedIntList<nnue::threats::MAX_FULL_SCAN_THREAT_FEATURES> black_features;
     nnue::threats::fill_features<WHITE>(board, white_features);
     nnue::threats::fill_features<BLACK>(board, black_features);
 
