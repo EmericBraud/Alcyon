@@ -89,13 +89,19 @@ private:
     {
         constexpr int Half = NAccumulator / 2;
 
+        // Matches nnue-pytorch's double_feature_transform + ComposedFeatureTransformer.forward:
+        // accumulator halves are clamped to [0, ft_quantized_max=255] (not 127 -- the FT
+        // accumulator is quantized at ft_quantized_one=256, twice the hidden-layer scale of
+        // 128), multiplied, and the raw product is divided by inference_l0_division_factor=512
+        // (== ft_quantized_one^2 / hidden_quantized_one, since l0_correction_factor == 1 here),
+        // not by 128 (2^7). No extra *127 factor is applied.
         auto pairwise_square_half = [](const std::array<std::int16_t, NAccumulator> &acc, std::int8_t *out)
         {
             for (int i = 0; i < Half; ++i)
             {
-                std::int32_t a = std::clamp<std::int32_t>(acc[i], 0, 127);
-                std::int32_t b = std::clamp<std::int32_t>(acc[i + Half], 0, 127);
-                std::int32_t prod = (a * b * 127) >> 7;
+                std::int32_t a = std::clamp<std::int32_t>(acc[i], 0, 255);
+                std::int32_t b = std::clamp<std::int32_t>(acc[i + Half], 0, 255);
+                std::int32_t prod = (a * b) / 512;
                 out[i] = static_cast<std::int8_t>(std::clamp(prod, 0, 127));
             }
         };
