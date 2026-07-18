@@ -129,30 +129,42 @@ namespace nnue::threats
     // Full scoped-recompute entry point for one board snapshot (either strictly
     // before or strictly after a non-king move): `touched_squares` are the
     // squares whose occupant changed (from/to/en-passant-capture square).
+    //
+    // Instead of rescanning every slider on the board (O(sliders in play) per
+    // move), we only need to recompute the outgoing threats of sliders whose
+    // ray could actually be affected by this move: a slider's attack set can
+    // only change if one of the touched squares is its nearest blocker along
+    // some ray -- i.e. exactly the sliders that currently "see" a touched
+    // square T under this board's real occupancy. For each touched square we
+    // find those candidates in O(1) via the same magic-bitboard/pext attack
+    // generator used elsewhere (rook_attacks(T, occ) & (rooks|queens),
+    // bishop_attacks(T, occ) & (bishops|queens)); any slider not in this set
+    // for T has some other blocker strictly between it and T, so T's
+    // occupancy change cannot affect what that slider currently attacks.
     template <Color perspective>
     inline void collect_move_scoped_features(const Board &board, const std::vector<int> &touched_squares, std::vector<int> &out)
     {
         const int ksq = board.king_sq[perspective];
+        const U64 occ = board.occupancies[NO_COLOR];
+        const U64 rooks_queens = board.pieces_occ[get_piece_index(ROOK, WHITE)] | board.pieces_occ[get_piece_index(ROOK, BLACK)] |
+                                 board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
+        const U64 bishops_queens = board.pieces_occ[get_piece_index(BISHOP, WHITE)] | board.pieces_occ[get_piece_index(BISHOP, BLACK)] |
+                                    board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
 
+        U64 slider_candidates = 0ULL;
         for (int sq : touched_squares)
         {
             collect_attacker_features_from<perspective>(board, ksq, sq, out);
             collect_defender_features_at<perspective>(board, ksq, sq, out);
+
+            slider_candidates |= MoveGen::generate_rook_moves(sq, occ) & rooks_queens;
+            slider_candidates |= MoveGen::generate_bishop_moves(sq, occ) & bishops_queens;
         }
 
-        constexpr Piece Sliders[3] = {BISHOP, ROOK, QUEEN};
-        for (int c = 0; c < 2; ++c)
+        while (slider_candidates)
         {
-            const Color color = static_cast<Color>(c);
-            for (Piece pt : Sliders)
-            {
-                U64 bb = board.pieces_occ[get_piece_index(pt, color)];
-                while (bb)
-                {
-                    const int sq = cpu::pop_lsb(bb);
-                    collect_attacker_features_from<perspective>(board, ksq, sq, out);
-                }
-            }
+            const int sq = cpu::pop_lsb(slider_candidates);
+            collect_attacker_features_from<perspective>(board, ksq, sq, out);
         }
     }
 }
