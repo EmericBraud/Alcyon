@@ -2,6 +2,8 @@
 
 #include "engine/eval/pos_eval.hpp"
 
+#ifdef NNUE_EVAL
+
 namespace Eval
 {
     int eval(const VBoard &board, int alpha, int beta)
@@ -9,14 +11,8 @@ namespace Eval
         const int piece_count = std::popcount(board.get_occupancy<NO_COLOR>());
         const Color side_to_move = board.get_side_to_move();
 
-#ifdef NNUE_EVAL_V2
         // Uses VBoard's incrementally-maintained accumulator (see
-        // virtual_board.hpp's NNUE_EVAL_V2 play/unplay hooks) -- no
-        // per-call recompute. Same WHITE-relative absolute score contract
-        // as the v1 path below.
-        const int score_v2 = board.get_nnue_eval_v2().evaluate_abs(side_to_move, piece_count);
-        return side_to_move == WHITE ? score_v2 : -score_v2;
-#else
+        // virtual_board.hpp's play/unplay hooks) -- no per-call recompute.
         // evaluate_abs() returns centipawns relative to the side to move (the
         // network is always evaluated as if "us" = whoever is on move). This
         // function's contract (matching the HCE eval and eval_relative<Us> in
@@ -24,6 +20,7 @@ namespace Eval
         // the sign back for black to move.
         const int score = board.get_nnue_eval().evaluate_abs(side_to_move, piece_count);
         return side_to_move == WHITE ? score : -score;
-#endif
     }
 }
+
+#endif

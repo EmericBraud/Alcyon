@@ -1,47 +1,59 @@
 #pragma once
 
+// NNUE v2 model: implements the "Full_Threats + HalfKAv2_hm^" combined feature
+// set and the layer-stack architecture produced by nnue-pytorch commit
+// 4289208fe20cc6ec8753e5ee14c2f210de783ff0 with default hyperparameters
+// (L1=1024, L2=32, L3=32, 8 PSQT buckets, 8 layer-stack buckets). Confirmed
+// against data/nnue/v2.nnue's header hash (see nnue_eval.hpp for the
+// verification note).
+//
+// This differs from v1's layer-stack forward() (nnue_model.hpp) in several
+// material ways (verified against model/modules/layer_stacks.py and
+// model/quantize.py at the above commit):
+//   - The L1 stacked-linear layer outputs exactly L2 columns (not L2+1): the
+//     "skip" term is `l1_raw[L2-2] - l1_raw[L2-1]`, i.e. the last two of the
+//     normal L2 outputs, not a dedicated extra column.
+//   - L2's squared-CReLU output (both the squared and raw halves) is
+//     concatenated with L1's squared-CReLU output to form the *output* layer's
+//     input (2*L2 + 2*L3 = 128 wide), not just L2's output alone.
+//   - Weight scales differ (L1 uses weight_scale_l1=128 => 2^7, not 2^6).
+// Both networks share the same FT "pairwise square" (double_feature_transform)
+// input stage and the same final PSQT-combination/output-descale arithmetic,
+// which is why AccumulatorLayer/PsqtAccumulatorLayer/DenseLayer are reused
+// as-is.
+
+#include <algorithm>
 #include <array>
 #include <cstdint>
-#include <cstddef>
 #include <utility>
-#include <algorithm>
 
-#include "common/constants.hpp"
-#include "common/mask.hpp"
-#include "common/cpu.hpp"
 #include "core/piece/color.hpp"
-#include "core/piece/piece.hpp"
-#include "engine/eval/nnue/features_encoder.hpp"
 #include "engine/eval/nnue/accumulator_layer.hpp"
 #include "engine/eval/nnue/psqt_accumulator_layer.hpp"
 #include "engine/eval/nnue/dense_layer.hpp"
 
-// Implements the "squared-CReLU with skip connection" layer-stack architecture
-// used by nnue-pytorch (feature transformer -> pairwise-square L0 -> 8
-// material-bucketed FC stacks with a linear skip path -> PSQT combination).
-// Reference: nnue-pytorch commit 00bdf75 (model/model.py, model/utils/serialize.py),
-// which matches this project's .nnue format (version 0x7AF32F20).
-template <int NFeatures, int NAccumulator = 256, int NumPsqtBuckets = 8, int NumLsBuckets = 8, int L2 = 32, int L3 = 32>
+template <int NFeatures, int NAccumulator = 1024, int NumPsqtBuckets = 8, int NumLsBuckets = 8, int L2 = 32, int L3 = 32>
 class NnueModel
 {
     static_assert(NAccumulator % 2 == 0, "NAccumulator must be even (split in half for the L0 pairwise square)");
+    static_assert(L2 >= 2, "L1 stacked-linear output must have at least 2 columns for the skip term");
 
-    // Quantization scales, matching nnue-pytorch's NNUEModel (nnue2score=600,
-    // weight_scale_hidden=64, weight_scale_out=16, quantized_one=127).
-    static constexpr int WeightScaleBits = 6; // 2^6 = weight_scale_hidden
-    // Rescales the L1 skip output (hidden bias scale = 64*127 = 8128) to the
-    // output-layer bias scale (weight_scale_out*nnue2score = 16*600 = 9600).
-    // 9600/8128 reduces exactly to 150/127.
-    static constexpr int SkipRescaleNum = 150;
-    static constexpr int SkipRescaleDen = 127;
-    // Final centipawn conversion combines the /16 output scale with the 0.5
-    // perspective-averaging factor on the PSQT term: see get_result() below.
+    static constexpr int WeightScaleBitsL1 = 7; // weight_scale_l1 = 128 = 2^7
+    static constexpr int WeightScaleBitsL2 = 6; // weight_scale_l2 = 64 = 2^6
+    // Final centipawn conversion: see get_result() below. Both networks share
+    // weight_scale_out=16, so FinalScale = 2 * weight_scale_out = 32.
     static constexpr int FinalScale = 32;
+    // Rescales the combined (output + skip) raw value, at scale
+    // weight_scale_l1 * hidden_quantized_one = 128 * 128 = 16384, down to the
+    // PSQT scale nnue2score * weight_scale_out = 600 * 16 = 9600.
+    // 9600 / 16384 reduces exactly to 75 / 128.
+    static constexpr int OutputRescaleNum = 75;
+    static constexpr int OutputRescaleDen = 128;
 
 public:
-    using L1Layer = DenseLayer<NAccumulator, L2 + 1, WeightScaleBits>;
-    using L2Layer = DenseLayer<2 * L2, L3, WeightScaleBits>;
-    using OutputLayer = DenseLayer<L3, 1>;
+    using L1Layer = DenseLayer<NAccumulator, L2, WeightScaleBitsL1>;
+    using L2Layer = DenseLayer<2 * L2, L3, WeightScaleBitsL2>;
+    using OutputLayer = DenseLayer<2 * L2 + 2 * L3, 1>;
 
     struct LayerStackBucket
     {
@@ -67,10 +79,9 @@ private:
         return std::clamp(bucket, 0, NumLsBuckets - 1);
     }
 
-    // Feeds each perspective's clamped accumulator through the "pairwise
-    // square" activation: split the L1-wide accumulator in half and multiply
-    // the two halves together (elementwise), separately for us/them, then
-    // concatenate. This replaces the classic single ClippedReLU input layer.
+    // Same "pairwise square" FT activation as v1 (double_feature_transform):
+    // split each perspective's clamped accumulator in half and multiply the
+    // halves together elementwise.
     static void compute_l0(
         const std::array<std::int16_t, NAccumulator> &acc_us,
         const std::array<std::int16_t, NAccumulator> &acc_them,
@@ -78,19 +89,41 @@ private:
     {
         constexpr int Half = NAccumulator / 2;
 
+        // Matches nnue-pytorch's double_feature_transform + ComposedFeatureTransformer.forward:
+        // accumulator halves are clamped to [0, ft_quantized_max=255] (not 127 -- the FT
+        // accumulator is quantized at ft_quantized_one=256, twice the hidden-layer scale of
+        // 128), multiplied, and the raw product is divided by inference_l0_division_factor=512
+        // (== ft_quantized_one^2 / hidden_quantized_one, since l0_correction_factor == 1 here),
+        // not by 128 (2^7). No extra *127 factor is applied.
         auto pairwise_square_half = [](const std::array<std::int16_t, NAccumulator> &acc, std::int8_t *out)
         {
             for (int i = 0; i < Half; ++i)
             {
-                std::int32_t a = std::clamp<std::int32_t>(acc[i], 0, 127);
-                std::int32_t b = std::clamp<std::int32_t>(acc[i + Half], 0, 127);
-                std::int32_t prod = (a * b * 127) >> 7;
+                std::int32_t a = std::clamp<std::int32_t>(acc[i], 0, 255);
+                std::int32_t b = std::clamp<std::int32_t>(acc[i + Half], 0, 255);
+                std::int32_t prod = (a * b) / 512;
                 out[i] = static_cast<std::int8_t>(std::clamp(prod, 0, 127));
             }
         };
 
         pairwise_square_half(acc_us, l0.data());
         pairwise_square_half(acc_them, l0.data() + Half);
+    }
+
+    // Squared-CReLU: given raw (unshifted) dense-layer output at scale
+    // 2^WeightScaleBits * hidden_quantized_one(128), produces the
+    // [squared-half | raw-half] activation pair used both as the next layer's
+    // input and (reused) as part of the output layer's wider input.
+    template <int N, int WeightScaleBits>
+    static void squared_crelu(const std::array<std::int32_t, N> &raw, std::array<std::int8_t, 2 * N> &out)
+    {
+        for (int i = 0; i < N; ++i)
+        {
+            const std::int32_t x = raw[i] >> WeightScaleBits;
+            const std::int32_t sqr = (x * x) >> 7;
+            out[i] = static_cast<std::int8_t>(std::clamp(sqr, 0, 127));
+            out[N + i] = static_cast<std::int8_t>(std::clamp(x, 0, 127));
+        }
     }
 
 public:
@@ -102,55 +135,21 @@ public:
     {
     }
 
-    void initialize(const std::array<U64, constants::NumPieceVariants> &occupancies)
+    void reset()
     {
-        this->accumulator.reset();
-        this->psqt_accumulator.reset();
+        accumulator.reset();
+        psqt_accumulator.reset();
+    }
 
-        int white_king_sq, black_king_sq;
-        {
-            U64 white_king_occ = occupancies[KING];
-            assert(white_king_occ);
-            white_king_sq = cpu::pop_lsb(white_king_occ);
-        }
-        {
-            U64 black_king_occ = occupancies[KING + constants::PieceTypeCount];
-            assert(black_king_occ);
-            black_king_sq = cpu::pop_lsb(black_king_occ);
-        }
-        for (int piece_color = WHITE; piece_color <= BLACK; ++piece_color)
-        {
-            for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
-            {
-                U64 occupancy = occupancies[piece_type + piece_color * constants::PieceTypeCount];
-                while (occupancy != 0ULL)
-                {
-                    int sq = cpu::pop_lsb(occupancy);
-                    int feature = feature_encoder::get_feature_index<WHITE>(white_king_sq, static_cast<Color>(piece_color), static_cast<Piece>(piece_type), sq);
-                    accumulator.template update_feature<true, WHITE>(feature);
-                    psqt_accumulator.template update_feature<true, WHITE>(feature);
-                }
-            }
-        }
-        for (int piece_color = WHITE; piece_color <= BLACK; ++piece_color)
-        {
-            for (int piece_type = PAWN; piece_type <= KING; ++piece_type)
-            {
-                U64 occupancy = occupancies[piece_type + piece_color * constants::PieceTypeCount];
-                while (occupancy != 0ULL)
-                {
-                    int sq = cpu::pop_lsb(occupancy);
-                    int feature = feature_encoder::get_feature_index<BLACK>(black_king_sq, static_cast<Color>(piece_color), static_cast<Piece>(piece_type), sq);
-                    accumulator.template update_feature<true, BLACK>(feature);
-                    psqt_accumulator.template update_feature<true, BLACK>(feature);
-                }
-            }
-        }
+    template <bool activate, Color perspective>
+    void update_feature(int feature)
+    {
+        accumulator.template update_feature<activate, perspective>(feature);
+        psqt_accumulator.template update_feature<activate, perspective>(feature);
     }
 
     // piece_count: total number of pieces on the board (both colors, kings
-    // included) — selects both the PSQT bucket and the layer-stack bucket
-    // (they always share the same index: (piece_count - 1) / (32 / buckets)).
+    // included) -- selects both the PSQT bucket and the layer-stack bucket.
     template <Color perspective>
     std::int32_t get_result(int piece_count) const
     {
@@ -167,24 +166,24 @@ public:
         const auto &ls = layer_stacks[bucket];
 
         const auto raw_l1 = ls.l1.get_raw(l0);
+        const std::int32_t skip_raw = raw_l1[L2 - 2] - raw_l1[L2 - 1];
 
         std::array<std::int8_t, 2 * L2> l1_out{};
-        for (int i = 0; i < L2; ++i)
-        {
-            std::int32_t x = raw_l1[i] >> WeightScaleBits;
-            std::int32_t sqr = (x * x) >> 7;
-            l1_out[i] = static_cast<std::int8_t>(std::clamp(sqr, 0, 127));
-            l1_out[L2 + i] = static_cast<std::int8_t>(std::clamp(x, 0, 127));
-        }
-        const std::int32_t skip_raw = raw_l1[L2];
+        squared_crelu<L2, WeightScaleBitsL1>(raw_l1, l1_out);
 
-        std::array<std::int8_t, L3> l2_out{};
-        ls.l2.process(l1_out, l2_out);
+        const auto raw_l2 = ls.l2.get_raw(l1_out);
+        std::array<std::int8_t, 2 * L3> l2_out{};
+        squared_crelu<L3, WeightScaleBitsL2>(raw_l2, l2_out);
 
-        const std::int32_t output_raw = ls.output.get_result(l2_out);
+        std::array<std::int8_t, 2 * L2 + 2 * L3> l3_input{};
+        std::copy(l1_out.begin(), l1_out.end(), l3_input.begin());
+        std::copy(l2_out.begin(), l2_out.end(), l3_input.begin() + 2 * L2);
 
-        const std::int64_t skip_rescaled = (static_cast<std::int64_t>(skip_raw) * SkipRescaleNum) / SkipRescaleDen;
-        const std::int64_t layerstack_final = static_cast<std::int64_t>(output_raw) + skip_rescaled;
+        const std::int32_t output_raw = ls.output.get_result(l3_input);
+
+        const std::int64_t combined_raw = static_cast<std::int64_t>(output_raw) + static_cast<std::int64_t>(skip_raw);
+        const std::int64_t layerstack_final =
+            (combined_raw * OutputRescaleNum) / OutputRescaleDen; // truncating division, matches quantize.py's trunc mode
 
         const auto &psqt_us = psqt_accumulator.template get_accumulator<us>();
         const auto &psqt_them = psqt_accumulator.template get_accumulator<them>();
@@ -194,12 +193,6 @@ public:
         return static_cast<std::int32_t>(combined / FinalScale);
     }
 
-    template <bool activate, Color perspective>
-    void update_feature(int feature)
-    {
-        accumulator.template update_feature<activate, perspective>(feature);
-        psqt_accumulator.template update_feature<activate, perspective>(feature);
-    }
 #ifdef CHESS26_UNIT_TESTING
     const auto &get_accumulator() const
     {

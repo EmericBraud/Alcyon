@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "engine/eval/nnue/v2/full_threats_encoder.hpp"
+#include "engine/eval/nnue/full_threats_encoder.hpp"
 #include "core/board/board.hpp"
 #include "common/constants.hpp"
 #include <vector>
@@ -11,7 +11,7 @@
 
 TEST(FullThreatsEncoderTest, OffsetTableTotalsExactly60720)
 {
-    const auto &table = nnue_v2::threats::offset_table();
+    const auto &table = nnue::threats::offset_table();
     EXPECT_EQ(table.total_features, 60720);
 }
 
@@ -22,8 +22,8 @@ TEST(FullThreatsEncoderTest, StartingPositionProducesInRangeIndices)
 
     std::vector<int> white_features;
     std::vector<int> black_features;
-    nnue_v2::threats::fill_features<WHITE>(board, white_features);
-    nnue_v2::threats::fill_features<BLACK>(board, black_features);
+    nnue::threats::fill_features<WHITE>(board, white_features);
+    nnue::threats::fill_features<BLACK>(board, black_features);
 
     // The starting position has pawn-defends-pawn and knight/bishop attacks on
     // pawns (b1/g1 knights and c1/f1 bishops attack nothing beyond their own
@@ -31,17 +31,17 @@ TEST(FullThreatsEncoderTest, StartingPositionProducesInRangeIndices)
     // attack their own side's pawns), so this should be non-empty.
     EXPECT_GT(white_features.size(), 0u);
     EXPECT_GT(black_features.size(), 0u);
-    EXPECT_LE(white_features.size(), static_cast<std::size_t>(nnue_v2::threats::NUM_INPUTS));
+    EXPECT_LE(white_features.size(), static_cast<std::size_t>(nnue::threats::NUM_INPUTS));
 
     for (int idx : white_features)
     {
         EXPECT_GE(idx, 0);
-        EXPECT_LT(idx, nnue_v2::threats::NUM_INPUTS);
+        EXPECT_LT(idx, nnue::threats::NUM_INPUTS);
     }
     for (int idx : black_features)
     {
         EXPECT_GE(idx, 0);
-        EXPECT_LT(idx, nnue_v2::threats::NUM_INPUTS);
+        EXPECT_LT(idx, nnue::threats::NUM_INPUTS);
     }
 }
 
@@ -55,8 +55,8 @@ TEST(FullThreatsEncoderTest, KingsNeverProduceFeaturesAsAttacker)
 
     std::vector<int> white_features;
     std::vector<int> black_features;
-    nnue_v2::threats::fill_features<WHITE>(board, white_features);
-    nnue_v2::threats::fill_features<BLACK>(board, black_features);
+    nnue::threats::fill_features<WHITE>(board, white_features);
+    nnue::threats::fill_features<BLACK>(board, black_features);
 
     EXPECT_TRUE(white_features.empty());
     EXPECT_TRUE(black_features.empty());
@@ -73,8 +73,8 @@ TEST(FullThreatsEncoderTest, KnightAttackingPawnProducesOneFeaturePerPerspective
 
     std::vector<int> white_features;
     std::vector<int> black_features;
-    nnue_v2::threats::fill_features<WHITE>(board, white_features);
-    nnue_v2::threats::fill_features<BLACK>(board, black_features);
+    nnue::threats::fill_features<WHITE>(board, white_features);
+    nnue::threats::fill_features<BLACK>(board, black_features);
 
     EXPECT_GT(white_features.size(), 0u);
     EXPECT_GT(black_features.size(), 0u);

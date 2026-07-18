@@ -36,7 +36,7 @@
 #include "core/piece/color.hpp"
 #include "core/piece/piece.hpp"
 
-namespace nnue_v2::halfka
+namespace nnue::halfka
 {
     constexpr int NUM_SQ = 64;
     constexpr int NUM_REAL_PLANES = 704; // 11 piece "slots" * 64 squares

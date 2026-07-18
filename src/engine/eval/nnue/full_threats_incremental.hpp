@@ -24,9 +24,9 @@
 #include "core/piece/piece.hpp"
 #include "core/board/board.hpp"
 #include "core/move/generator/move_generator.hpp"
-#include "engine/eval/nnue/v2/full_threats_encoder.hpp"
+#include "engine/eval/nnue/full_threats_encoder.hpp"
 
-namespace nnue_v2::threats
+namespace nnue::threats
 {
     // Attack bitboard (intersected with real occupancy, i.e. only squares that
     // hold a piece) for a single piece -- mirrors fill_features's per-piece

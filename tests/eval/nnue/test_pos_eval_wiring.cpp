@@ -7,13 +7,13 @@
 #include "engine/eval/virtual_board.hpp"
 
 // Exercises Eval::eval()'s eval-command call site (mirrors what
-// UCI::run_eval() does via Eval::eval_relative<Us>) with the NNUE_EVAL_V2
-// compile-time feature flag. When the flag is off (default), this simply
-// confirms the existing v1 path keeps working unchanged. When the flag is on
-// (ENABLE_NNUE_EVAL_V2=ON at configure time), it confirms the from-scratch
-// NnueEvalV2 path (full_threats_encoder + halfka_v2_hm_encoder feature
-// recompute on every call, no incremental reuse) produces sane, deterministic,
-// WHITE-relative scores on a few standard positions without crashing.
+// UCI::run_eval() does via Eval::eval_relative<Us>) with the NNUE_EVAL
+// compile-time feature flag. When the flag is off, this confirms the HCE
+// (hand-crafted eval) path keeps working unchanged. When the flag is on
+// (ENABLE_NNUE_EVAL=ON at configure time, the default), it confirms
+// VBoard's incrementally-maintained NnueEval accumulator (Full_Threats +
+// HalfKAv2_hm^ features) produces sane, deterministic, WHITE-relative
+// scores on a few standard positions without crashing.
 namespace
 {
     struct EvalCase
@@ -31,11 +31,11 @@ namespace
     };
 }
 
-class PosEvalV2WiringTest : public ::testing::TestWithParam<EvalCase>
+class PosEvalWiringTest : public ::testing::TestWithParam<EvalCase>
 {
 };
 
-TEST_P(PosEvalV2WiringTest, EvalDoesNotCrashAndIsDeterministic)
+TEST_P(PosEvalWiringTest, EvalDoesNotCrashAndIsDeterministic)
 {
     const EvalCase &c = GetParam();
 
@@ -46,8 +46,7 @@ TEST_P(PosEvalV2WiringTest, EvalDoesNotCrashAndIsDeterministic)
     const int score_b = Eval::eval(board, -engine_constants::eval::Inf, engine_constants::eval::Inf);
 
     // Deterministic: re-evaluating the same (unchanged) position must give
-    // the exact same score, whether that's the v1 incremental accumulator or
-    // v2's from-scratch recompute.
+    // the exact same score.
     EXPECT_EQ(score_a, score_b);
 
     // Sane bound: none of these positions should produce a wild/out-of-range
@@ -58,17 +57,16 @@ TEST_P(PosEvalV2WiringTest, EvalDoesNotCrashAndIsDeterministic)
 
 INSTANTIATE_TEST_SUITE_P(
     StandardPositions,
-    PosEvalV2WiringTest,
+    PosEvalWiringTest,
     ::testing::ValuesIn(kCases),
     [](const ::testing::TestParamInfo<EvalCase> &info)
     { return info.param.name; });
 
-TEST(PosEvalV2WiringTest, WhiteBlackSignConventionMatches)
+TEST(PosEvalWiringTest, WhiteBlackSignConventionMatches)
 {
     // Same position, side to move flipped by a null-ish setup: use two FENs
     // that are mirror images of each other (colors swapped, side to move
-    // swapped) to confirm the WHITE-relative absolute score contract holds
-    // regardless of which NNUE version (v1 or v2) is wired in.
+    // swapped) to confirm the WHITE-relative absolute score contract holds.
     VBoard white_to_move;
     ASSERT_TRUE(white_to_move.load_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"));
     VBoard black_to_move;

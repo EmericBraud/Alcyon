@@ -3,10 +3,15 @@
 #include <bit>
 #include <string>
 #include <vector>
-#include <iostream>
 
 #include "engine/eval/virtual_board.hpp"
 
+// Mirrors tests/eval/nnue/test_vboard_nnue_incremental.cpp (v1's incremental-
+// consistency test), but for the v2 (Full_Threats + HalfKAv2_hm^) accumulator
+// wired into VBoard's play/unplay hooks (see virtual_board.hpp). Confirms the
+// incrementally-updated accumulator matches a from-scratch initialize() at
+// every step of a move sequence, for quiet moves, captures, king moves,
+// castling, en passant and promotions.
 #ifndef NNUE_EVAL
 TEST(VBoardNnueIncrementalTest, RequiresNnueBuild)
 {
@@ -46,8 +51,9 @@ namespace
             played.push_back(move);
 
             VBoard refreshed(static_cast<const Board &>(board));
-            EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board)), refreshed.get_nnue_eval().evaluate_abs(refreshed.get_side_to_move(), piece_count(refreshed)))
-                << "Incremental NNUE mismatch after move " << uci;
+            EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board)),
+                      refreshed.get_nnue_eval().evaluate_abs(refreshed.get_side_to_move(), piece_count(refreshed)))
+                << "Incremental NNUE v2 mismatch after move " << uci;
         }
 
         for (int i = static_cast<int>(played.size()) - 1; i >= 0; --i)
@@ -55,13 +61,21 @@ namespace
             board.unplay(played[i]);
 
             VBoard refreshed(static_cast<const Board &>(board));
-            EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board)), refreshed.get_nnue_eval().evaluate_abs(refreshed.get_side_to_move(), piece_count(refreshed)))
-                << "Incremental NNUE mismatch after unplay index " << i;
+            EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board)),
+                      refreshed.get_nnue_eval().evaluate_abs(refreshed.get_side_to_move(), piece_count(refreshed)))
+                << "Incremental NNUE v2 mismatch after unplay index " << i;
         }
 
         EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board)), baseline_raw)
-            << "NNUE raw score did not return to baseline after full unplay";
+            << "NNUE v2 raw score did not return to baseline after full unplay";
     }
+}
+
+TEST(VBoardNnueIncrementalTest, QuietMoveSequence)
+{
+    expect_incremental_matches_refresh(
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        {"g1f3", "g8f6", "b1c3", "b8c6"});
 }
 
 TEST(VBoardNnueIncrementalTest, CaptureSequence)
@@ -69,6 +83,15 @@ TEST(VBoardNnueIncrementalTest, CaptureSequence)
     expect_incremental_matches_refresh(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         {"e2e4", "d7d5", "e4d5"});
+}
+
+TEST(VBoardNnueIncrementalTest, TacticalCaptureSequence)
+{
+    // Position with several sliders on shared lines, to exercise the
+    // scoped-recompute path's "recompute every slider" behavior.
+    expect_incremental_matches_refresh(
+        "r1q1r1k1/3b1p1p/3p4/2p3p1/1p1Pn3/1P1PPQ2/P2PK1PP/R2RBB2 w - - 0 1",
+        {"d4c5", "d6c5", "f3e4", "d7e6"});
 }
 
 TEST(VBoardNnueIncrementalTest, EnPassantSequence)
@@ -83,6 +106,13 @@ TEST(VBoardNnueIncrementalTest, PromotionSequence)
     expect_incremental_matches_refresh(
         "4k3/P7/8/8/8/8/8/4K3 w - - 0 1",
         {"a7a8q"});
+}
+
+TEST(VBoardNnueIncrementalTest, PromotionWithCaptureSequence)
+{
+    expect_incremental_matches_refresh(
+        "1r2k3/P7/8/8/8/8/8/4K3 w - - 0 1",
+        {"a7b8q"});
 }
 
 TEST(VBoardNnueIncrementalTest, CastlingAndKingMovesSequence)
@@ -111,18 +141,10 @@ TEST(VBoardNnueIncrementalTest, RawNnueOutputChangesAndRestores)
         played.push_back(move);
     }
 
-    const int raw_after_capture = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
-
     for (int i = static_cast<int>(played.size()) - 1; i >= 0; --i)
         board.unplay(played[i]);
 
     const int raw_restored = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
-
-    std::cout
-        << "NNUE raw start=" << raw_before
-        << " after_e4xd5=" << raw_after_capture
-        << " restored=" << raw_restored
-        << std::endl;
 
     EXPECT_EQ(raw_before, raw_restored);
 }

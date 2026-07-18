@@ -24,7 +24,7 @@
 #include "core/board/board.hpp"
 #include "core/move/generator/move_generator.hpp"
 
-namespace nnue_v2::threats
+namespace nnue::threats
 {
     // numvalidtargets[piece] = 2 * (number of attacked-piece-types this attacker
     // type can threaten), piece indexed as 2*type + color (White=0, Black=1).

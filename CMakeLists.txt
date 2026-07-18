@@ -64,7 +64,6 @@ target_compile_options(chess_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${COMMON_FLA
 option(ENABLE_TEXEL_TUNING "Enable Texel tuning mode" OFF)
 option(ENABLE_SPSA_TUNING "Enable SPSA tuning mode" OFF)
 option(ENABLE_NNUE_EVAL "Enable NNUE evaluation" ON)
-option(ENABLE_NNUE_EVAL_V2 "Enable NNUE v2 evaluation (full recompute, no incremental updates)" OFF)
 
 target_compile_definitions(chess_core PUBLIC NDEBUG)
 
@@ -98,11 +97,6 @@ endif()
 if(ENABLE_NNUE_EVAL)
     target_compile_definitions(chess_core PUBLIC NNUE_EVAL)
     target_compile_definitions(chess26 PRIVATE NNUE_EVAL)
-endif()
-
-if(ENABLE_NNUE_EVAL_V2)
-    target_compile_definitions(chess_core PUBLIC NNUE_EVAL_V2)
-    target_compile_definitions(chess26 PRIVATE NNUE_EVAL_V2)
 endif()
 
 if(ENABLE_GUI)
@@ -178,14 +172,6 @@ include(CTest)
 
     if(ENABLE_SPSA_TUNING)
         target_compile_definitions(chess26_tests PRIVATE SPSA_TUNING)
-    endif()
-
-    if(ENABLE_NNUE_EVAL)
-        target_compile_definitions(chess26_tests PRIVATE NNUE_EVAL)
-    endif()
-
-    if(ENABLE_NNUE_EVAL_V2)
-        target_compile_definitions(chess26_tests PRIVATE NNUE_EVAL_V2)
     endif()
 
     if(ENABLE_GUI)
