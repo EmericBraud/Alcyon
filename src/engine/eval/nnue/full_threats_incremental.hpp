@@ -17,7 +17,6 @@
 // that *can* change is covered by one of the two scans below.
 
 #include <array>
-#include <vector>
 
 #include "common/cpu.hpp"
 #include "core/piece/color.hpp"
@@ -25,6 +24,7 @@
 #include "core/board/board.hpp"
 #include "core/move/generator/move_generator.hpp"
 #include "engine/eval/nnue/full_threats_encoder.hpp"
+#include "engine/eval/nnue/fixed_int_list.hpp"
 
 namespace nnue::threats
 {
@@ -71,7 +71,7 @@ namespace nnue::threats
 
     // Appends every threat feature where `sq` is the attacker's square.
     template <Color perspective>
-    inline void collect_attacker_features_from(const Board &board, int ksq, int sq, std::vector<int> &out)
+    inline void collect_attacker_features_from(const Board &board, int ksq, int sq, FixedIntList<MAX_THREAT_FEATURES> &out)
     {
         const Piece pt = board.get_p(sq);
         if (pt == NO_PIECE || pt == KING)
@@ -97,7 +97,7 @@ namespace nnue::threats
     // scans every non-king piece on the board and checks whether it attacks `sq`.
     // Only called for the handful of squares whose occupant changed this move.
     template <Color perspective>
-    inline void collect_defender_features_at(const Board &board, int ksq, int sq, std::vector<int> &out)
+    inline void collect_defender_features_at(const Board &board, int ksq, int sq, FixedIntList<MAX_THREAT_FEATURES> &out)
     {
         const Piece defender_type = board.get_p(sq);
         if (defender_type == NO_PIECE)
@@ -142,7 +142,7 @@ namespace nnue::threats
     // for T has some other blocker strictly between it and T, so T's
     // occupancy change cannot affect what that slider currently attacks.
     template <Color perspective>
-    inline void collect_move_scoped_features(const Board &board, const std::vector<int> &touched_squares, std::vector<int> &out)
+    inline void collect_move_scoped_features(const Board &board, const FixedIntList<MAX_TOUCHED_SQUARES> &touched_squares, FixedIntList<MAX_THREAT_FEATURES> &out)
     {
         const int ksq = board.king_sq[perspective];
         const U64 occ = board.occupancies[NO_COLOR];

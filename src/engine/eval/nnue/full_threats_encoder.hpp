@@ -46,6 +46,35 @@ namespace nnue::threats
 
     constexpr int NUM_INPUTS = 60720;
 
+    // Bound for how many raw (possibly-duplicated) feature indices a single
+    // scoped collect can produce -- see full_threats_incremental.hpp's
+    // collect_move_scoped_features(). Used to size fixed-capacity, stack-only
+    // buffers (FixedIntList, see fixed_int_list.hpp) for the per-move
+    // incremental update path, so it must never be a silent truncation risk;
+    // derived from real board-size constraints with generous headroom:
+    //
+    //   - MAX_TOUCHED_SQUARES = 3 (from, to, en-passant-capture square).
+    //   - Per touched square: an attacker scan (queen's widest fan-out is 27
+    //     reachable squares) plus a defender scan (every non-king piece on
+    //     the board, at most 30, each contributing at most one feature) =
+    //     <= 57 features per touched square, so <= 171 for all 3.
+    //   - Plus the targeted-slider recompute: at most every non-king piece on
+    //     the board (<= 30, a deliberately loose over-count -- only sliders
+    //     can end up in that set, but bounding by "every piece" keeps this
+    //     independent of exotic under/over-promotion piece counts) each
+    //     re-scanned as an attacker (<= 27 features each) = <= 810.
+    //
+    // Total worst case ~= 171 + 810 = 981. MAX_THREAT_FEATURES below rounds
+    // this up to the next power of two for clear headroom; a static_assert
+    // (see below) keeps this bound self-documenting against numvalidtargets/
+    // board-size constants, and callers FATAL loudly instead of truncating
+    // if it's ever approached.
+    constexpr int MAX_TOUCHED_SQUARES = 8;
+    constexpr int MAX_THREAT_FEATURES = 2048;
+
+    static_assert(MAX_THREAT_FEATURES >= 981,
+                  "MAX_THREAT_FEATURES must cover the derived worst-case scoped-collect count");
+
     struct ThreatOffsetTable
     {
         // table[piece][from] (from in 0..63) = cumulative pseudo-attack-count

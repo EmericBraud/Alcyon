@@ -8,8 +8,8 @@
 #include "engine/eval/hce/move_eval_increment.hpp"
 #include "common/file.hpp"
 #ifdef NNUE_EVAL
-#include <vector>
 #include "engine/eval/nnue/nnue_eval.hpp"
+#include "engine/eval/nnue/fixed_int_list.hpp"
 #endif
 
 class VBoard : public Board
@@ -137,8 +137,8 @@ public:
 #ifdef NNUE_EVAL
         constexpr Color Them = static_cast<Color>(!Us);
         const Piece from_piece = move.get_from_piece();
-        std::vector<int> touched_squares;
-        std::vector<int> old_white_threats, old_black_threats;
+        nnue::threats::FixedIntList<nnue::threats::MAX_TOUCHED_SQUARES> touched_squares;
+        nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> old_white_threats, old_black_threats;
         bool do_threats = false;
 
         if (from_piece != KING)
@@ -158,7 +158,8 @@ public:
             else
                 update_nnue_halfka_both_perspectives<true>(white_king_sq, black_king_sq, Us, from_piece, to_sq);
 
-            touched_squares = {from_sq, to_sq};
+            touched_squares.push_back(from_sq);
+            touched_squares.push_back(to_sq);
 
             if (flags == Move::Flags::EN_PASSANT_CAP)
             {
@@ -189,11 +190,11 @@ public:
             nnue_eval.initialize(*this);
         else if (do_threats)
         {
-            std::vector<int> new_white_threats, new_black_threats;
+            nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> new_white_threats, new_black_threats;
             nnue_eval.template collect_threats_scoped<WHITE>(*this, touched_squares, new_white_threats);
             nnue_eval.template collect_threats_scoped<BLACK>(*this, touched_squares, new_black_threats);
-            nnue_eval.template apply_threats_diff<WHITE>(std::move(old_white_threats), std::move(new_white_threats));
-            nnue_eval.template apply_threats_diff<BLACK>(std::move(old_black_threats), std::move(new_black_threats));
+            nnue_eval.template apply_threats_diff<WHITE>(old_white_threats, new_white_threats);
+            nnue_eval.template apply_threats_diff<BLACK>(old_black_threats, new_black_threats);
         }
 #endif
     }
@@ -203,8 +204,8 @@ public:
 #ifdef NNUE_EVAL
         constexpr Color Them = static_cast<Color>(!Us);
         const Piece from_piece = move.get_from_piece();
-        std::vector<int> touched_squares;
-        std::vector<int> post_white_threats, post_black_threats;
+        nnue::threats::FixedIntList<nnue::threats::MAX_TOUCHED_SQUARES> touched_squares;
+        nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> post_white_threats, post_black_threats;
         bool do_threats = false;
 
         if (from_piece != KING)
@@ -221,7 +222,8 @@ public:
             update_nnue_halfka_both_perspectives<false>(white_king_sq, black_king_sq, Us, moved_piece, to_sq);
             update_nnue_halfka_both_perspectives<true>(white_king_sq, black_king_sq, Us, from_piece, from_sq);
 
-            touched_squares = {from_sq, to_sq};
+            touched_squares.push_back(from_sq);
+            touched_squares.push_back(to_sq);
 
             if (flags == Move::Flags::EN_PASSANT_CAP)
             {
@@ -255,11 +257,11 @@ public:
             // argument and adds features unique to its second, so passing
             // (post-move, pre-move) here correctly reverses the play()-time
             // update.
-            std::vector<int> pre_white_threats, pre_black_threats;
+            nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> pre_white_threats, pre_black_threats;
             nnue_eval.template collect_threats_scoped<WHITE>(*this, touched_squares, pre_white_threats);
             nnue_eval.template collect_threats_scoped<BLACK>(*this, touched_squares, pre_black_threats);
-            nnue_eval.template apply_threats_diff<WHITE>(std::move(post_white_threats), std::move(pre_white_threats));
-            nnue_eval.template apply_threats_diff<BLACK>(std::move(post_black_threats), std::move(pre_black_threats));
+            nnue_eval.template apply_threats_diff<WHITE>(post_white_threats, pre_white_threats);
+            nnue_eval.template apply_threats_diff<BLACK>(post_black_threats, pre_black_threats);
         }
 #endif
     }

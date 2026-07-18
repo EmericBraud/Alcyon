@@ -68,6 +68,19 @@ namespace nnue
     private:
         Model model;
 
+        // Reusable, allocated-once membership-stamp buffers for
+        // apply_threats_diff()'s dedup/diff (see below): sized to
+        // Full_Threats' NUM_INPUTS so every raw feature index collected by
+        // the scoped-recompute path (full_threats_incremental.hpp) can be
+        // used directly as an index into them. Zero-initialized once here
+        // (construction/load time, not per search node); apply_threats_diff
+        // never clears them, it just bumps diff_generation so every stamp
+        // from prior calls compares unequal to the current one.
+        std::array<std::uint32_t, threats::NUM_INPUTS> old_mark{};
+        std::array<std::uint32_t, threats::NUM_INPUTS> new_mark{};
+        std::array<std::uint32_t, threats::NUM_INPUTS> emitted_mark{};
+        std::uint32_t diff_generation = 0;
+
     public:
         NnueEval(Model &&_model) : model(std::move(_model)) {}
 
@@ -150,43 +163,51 @@ namespace nnue
         // scoped-recompute design/tradeoff, and VBoard::play/unplay for the
         // call sites.
         template <Color perspective>
-        void collect_threats_scoped(const Board &board, const std::vector<int> &touched_squares, std::vector<int> &out) const
+        void collect_threats_scoped(const Board &board, const threats::FixedIntList<threats::MAX_TOUCHED_SQUARES> &touched_squares, threats::FixedIntList<threats::MAX_THREAT_FEATURES> &out) const
         {
             threats::collect_move_scoped_features<perspective>(board, touched_squares, out);
         }
 
-        // Diffs two (unsorted, possibly-duplicated) feature-index vectors
+        // Diffs two (unsorted, possibly-duplicated) feature-index lists
         // collected via collect_threats_scoped() -- one from "before" the
         // move, one from "after" -- and applies the resulting add/remove set
-        // to the accumulator. Whichever vector is passed as `old_idx` is
+        // to the accumulator. Whichever list is passed as `old_idx` is
         // removed and whichever is passed as `new_idx` is added; VBoard::
         // unplay() relies on this to reverse play()'s update by swapping the
         // two (post-move state first, pre-move state second).
+        //
+        // Zero heap allocation, zero std::sort/std::unique: membership in
+        // each list is recorded via a per-call "generation" stamp in reusable
+        // NUM_INPUTS-sized member arrays (allocated once, at construction --
+        // not a per-call/per-search-node allocation), so both dedup and the
+        // add/remove diff are done in O(old_idx.size() + new_idx.size())
+        // without ever clearing the arrays themselves.
         template <Color perspective>
-        void apply_threats_diff(std::vector<int> old_idx, std::vector<int> new_idx)
+        void apply_threats_diff(const threats::FixedIntList<threats::MAX_THREAT_FEATURES> &old_idx, const threats::FixedIntList<threats::MAX_THREAT_FEATURES> &new_idx)
         {
-            std::sort(old_idx.begin(), old_idx.end());
-            old_idx.erase(std::unique(old_idx.begin(), old_idx.end()), old_idx.end());
-            std::sort(new_idx.begin(), new_idx.end());
-            new_idx.erase(std::unique(new_idx.begin(), new_idx.end()), new_idx.end());
+            const std::uint32_t gen = ++diff_generation;
 
-            std::size_t i = 0, j = 0;
-            while (i < old_idx.size() && j < new_idx.size())
+            for (int idx : old_idx)
+                old_mark[idx] = gen;
+            for (int idx : new_idx)
+                new_mark[idx] = gen;
+
+            for (int idx : old_idx)
             {
-                if (old_idx[i] < new_idx[j])
-                    model.template update_feature<false, perspective>(old_idx[i++]);
-                else if (new_idx[j] < old_idx[i])
-                    model.template update_feature<true, perspective>(new_idx[j++]);
-                else
+                if (new_mark[idx] != gen && emitted_mark[idx] != gen)
                 {
-                    ++i;
-                    ++j;
-                } // unchanged feature, skip
+                    emitted_mark[idx] = gen;
+                    model.template update_feature<false, perspective>(idx);
+                }
             }
-            while (i < old_idx.size())
-                model.template update_feature<false, perspective>(old_idx[i++]);
-            while (j < new_idx.size())
-                model.template update_feature<true, perspective>(new_idx[j++]);
+            for (int idx : new_idx)
+            {
+                if (old_mark[idx] != gen && emitted_mark[idx] != gen)
+                {
+                    emitted_mark[idx] = gen;
+                    model.template update_feature<true, perspective>(idx);
+                }
+            }
         }
 
 #ifdef CHESS26_UNIT_TESTING
