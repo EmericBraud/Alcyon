@@ -94,6 +94,18 @@ TEST(VBoardNnueIncrementalTest, TacticalCaptureSequence)
         {"d4c5", "d6c5", "f3e4", "d7e6"});
 }
 
+TEST(VBoardNnueIncrementalTest, DenseMiddlegameSliderSequence)
+{
+    // "Kiwipete" perft-reference position: densely populated middlegame with
+    // many sliders on both sides (2 rooks + queen + 2 bishops per side, all
+    // still on the board), sharing several open files/diagonals. Exercises
+    // the scoped-recompute path's targeted-slider lookup meaningfully (many
+    // candidate sliders whose outgoing threats could change per move).
+    expect_incremental_matches_refresh(
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        {"f3f6", "g7f6", "e5g6", "f7g6", "e1g1", "e8g8"});
+}
+
 TEST(VBoardNnueIncrementalTest, EnPassantSequence)
 {
     expect_incremental_matches_refresh(
