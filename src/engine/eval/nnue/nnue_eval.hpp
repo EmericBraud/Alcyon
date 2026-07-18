@@ -95,8 +95,8 @@ namespace nnue
         {
             model.reset();
 
-            std::vector<int> white_threats;
-            std::vector<int> black_threats;
+            threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> white_threats;
+            threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> black_threats;
             threats::fill_features<WHITE>(board, white_threats);
             threats::fill_features<BLACK>(board, black_threats);
 
