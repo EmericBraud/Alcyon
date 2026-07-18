@@ -5,7 +5,8 @@
 class DenseLayerTest : public ::testing::Test
 {
 protected:
-    DenseLayer<2, 1> dense_layer;
+    // WeightScaleBits=0: hand-crafted small weights here aren't real quantized weights.
+    DenseLayer<2, 1, 0> dense_layer;
     DenseLayerTest() : dense_layer(std::array<std::array<std::int8_t, 2>, 1>{{{{1, -1}}}}, std::array<std::int32_t, 1>{{1}})
     {
     }

@@ -12,7 +12,7 @@ protected:
     AccumulatorLayerTest()
         : acc(
               std::array<std::int16_t, 2>{{2, -2}},
-              std::array<std::array<std::int8_t, 2>, 4>{{{{5, -5}},
+              std::array<std::array<std::int16_t, 2>, 4>{{{{5, -5}},
                                                          {{2, -2}},
                                                          {{0, 0}},
                                                          {{0, 0}}}})

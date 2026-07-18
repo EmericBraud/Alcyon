@@ -1,6 +1,16 @@
+#include <bit>
+
 #include "engine/engine_manager.hpp"
 #include "gtest/gtest.h"
 #include "engine/eval/virtual_board.hpp"
+
+namespace
+{
+    int piece_count(const VBoard &board)
+    {
+        return std::popcount(board.get_occupancy<NO_COLOR>());
+    }
+}
 
 class EngineTest : public ::testing::Test
 {
@@ -37,13 +47,13 @@ TEST_F(EngineTest, FixedDepthScoreChangesWithMaterial)
 {
     VBoard equalish;
     ASSERT_TRUE(equalish.load_fen("4k3/pppppppp/8/8/8/8/PPPPPPPP/4K3 w - - 0 1"));
-    const int equal_raw = equalish.get_nnue_eval().evaluate_abs();
+    const int equal_raw = equalish.get_nnue_eval().evaluate_abs(equalish.get_side_to_move(), piece_count(equalish));
     EngineManager equal_manager{equalish};
     const auto equal_result = equal_manager.run_benchmark_fixed_depth(equalish, 1);
 
     VBoard queen_up;
     ASSERT_TRUE(queen_up.load_fen("4k3/pppppppp/8/8/8/8/PPPPPPPP/4K2Q w - - 0 1"));
-    const int queen_raw = queen_up.get_nnue_eval().evaluate_abs();
+    const int queen_raw = queen_up.get_nnue_eval().evaluate_abs(queen_up.get_side_to_move(), piece_count(queen_up));
     EngineManager queen_manager{queen_up};
     const auto queen_result = queen_manager.run_benchmark_fixed_depth(queen_up, 1);
 
@@ -56,14 +66,14 @@ TEST_F(EngineTest, QueenMoveChangesRawNnue)
     VBoard board;
     ASSERT_TRUE(board.load_fen("4k3/pppppppp/8/8/8/8/PPPPPPPP/4K2Q w - - 0 1"));
 
-    const int before = board.get_nnue_eval().evaluate_abs();
+    const int before = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
     auto parsed = Board::parse_move_uci("h1h2", board);
     ASSERT_TRUE(parsed.has_value());
     ASSERT_TRUE(board.is_move_pseudo_legal(*parsed));
     ASSERT_TRUE(board.is_move_legal(*parsed));
 
     board.play(*parsed);
-    const int after = board.get_nnue_eval().evaluate_abs();
+    const int after = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
 
     EXPECT_NE(before, after);
 }

@@ -13,7 +13,8 @@ class AccumulatorLayer
     // On utilise des alias pour rendre le code lisible
     using AccTable = std::array<std::array<std::int16_t, NNeurons>, 2>;
     using BiasTable = std::array<std::int16_t, NNeurons>;
-    using WeightTable = std::array<std::array<std::int8_t, NNeurons>, NFeatures>;
+    // Feature transformer weights are quantized as int16 (scale = 127), not int8.
+    using WeightTable = std::array<std::array<std::int16_t, NNeurons>, NFeatures>;
 
     std::unique_ptr<AccTable> accumulators;
     std::unique_ptr<BiasTable> biases;
