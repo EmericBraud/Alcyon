@@ -24,8 +24,9 @@
 // initialize() performs a full accumulator recompute from a board position;
 // VBoard uses it only on load and on king moves. Non-king moves are handled
 // incrementally via update_halfka_piece() (single feature per moved/captured
-// piece) and update_threats_scoped() (see full_threats_incremental.hpp for
-// the Full_Threats scoped-recompute design) -- see virtual_board.hpp.
+// piece) and collect_threats_scoped()/apply_threats_diff() (see
+// full_threats_incremental.hpp for the Full_Threats scoped-recompute
+// design) -- see virtual_board.hpp.
 
 #include <algorithm>
 #include <array>
@@ -137,20 +138,33 @@ namespace nnue
             model.template update_feature<activate, perspective>(idx);
         }
 
-        // Incremental Full_Threats update for a non-king move: `board_before`/
-        // `board_after` must be the exact board snapshots immediately before
-        // and after Board::play() (or unplay()) applied the move, and
-        // `touched_squares` the squares whose occupant changed (from/to/
-        // en-passant-capture square). See full_threats_incremental.hpp for the
-        // scoped-recompute design/tradeoff.
+        // Incremental Full_Threats update for a non-king move, zero-copy
+        // variant: instead of requiring two full Board snapshots (which
+        // costs a full struct copy plus a heap-allocated History deep-copy
+        // per call), callers collect the scoped feature set directly from
+        // the *live* board twice -- once just before Board::play()/unplay()
+        // mutates it, once just after. `touched_squares` (from/to/en-passant-
+        // capture square) only depends on the Move itself, not on the
+        // board's current state, so both calls can safely target the same
+        // live board object. See full_threats_incremental.hpp for the
+        // scoped-recompute design/tradeoff, and VBoard::play/unplay for the
+        // call sites.
         template <Color perspective>
-        void update_threats_scoped(const Board &board_before, const Board &board_after, const std::vector<int> &touched_squares)
+        void collect_threats_scoped(const Board &board, const std::vector<int> &touched_squares, std::vector<int> &out) const
         {
-            std::vector<int> old_idx;
-            std::vector<int> new_idx;
-            threats::collect_move_scoped_features<perspective>(board_before, touched_squares, old_idx);
-            threats::collect_move_scoped_features<perspective>(board_after, touched_squares, new_idx);
+            threats::collect_move_scoped_features<perspective>(board, touched_squares, out);
+        }
 
+        // Diffs two (unsorted, possibly-duplicated) feature-index vectors
+        // collected via collect_threats_scoped() -- one from "before" the
+        // move, one from "after" -- and applies the resulting add/remove set
+        // to the accumulator. Whichever vector is passed as `old_idx` is
+        // removed and whichever is passed as `new_idx` is added; VBoard::
+        // unplay() relies on this to reverse play()'s update by swapping the
+        // two (post-move state first, pre-move state second).
+        template <Color perspective>
+        void apply_threats_diff(std::vector<int> old_idx, std::vector<int> new_idx)
+        {
             std::sort(old_idx.begin(), old_idx.end());
             old_idx.erase(std::unique(old_idx.begin(), old_idx.end()), old_idx.end());
             std::sort(new_idx.begin(), new_idx.end());

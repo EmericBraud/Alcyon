@@ -137,8 +137,8 @@ public:
 #ifdef NNUE_EVAL
         constexpr Color Them = static_cast<Color>(!Us);
         const Piece from_piece = move.get_from_piece();
-        Board board_before;
         std::vector<int> touched_squares;
+        std::vector<int> old_white_threats, old_black_threats;
         bool do_threats = false;
 
         if (from_piece != KING)
@@ -171,7 +171,12 @@ public:
                 update_nnue_halfka_both_perspectives<false>(white_king_sq, black_king_sq, Them, to_piece, to_sq);
             }
 
-            board_before = *this;
+            // Zero-copy: collect the pre-move Full_Threats scoped feature set
+            // directly from the live (still pre-move) board -- no full Board
+            // snapshot needed, since touched_squares only depends on `move`
+            // itself. See NnueEval::collect_threats_scoped.
+            nnue_eval.template collect_threats_scoped<WHITE>(*this, touched_squares, old_white_threats);
+            nnue_eval.template collect_threats_scoped<BLACK>(*this, touched_squares, old_black_threats);
             do_threats = true;
         }
 #endif
@@ -184,8 +189,11 @@ public:
             nnue_eval.initialize(*this);
         else if (do_threats)
         {
-            nnue_eval.template update_threats_scoped<WHITE>(board_before, *this, touched_squares);
-            nnue_eval.template update_threats_scoped<BLACK>(board_before, *this, touched_squares);
+            std::vector<int> new_white_threats, new_black_threats;
+            nnue_eval.template collect_threats_scoped<WHITE>(*this, touched_squares, new_white_threats);
+            nnue_eval.template collect_threats_scoped<BLACK>(*this, touched_squares, new_black_threats);
+            nnue_eval.template apply_threats_diff<WHITE>(std::move(old_white_threats), std::move(new_white_threats));
+            nnue_eval.template apply_threats_diff<BLACK>(std::move(old_black_threats), std::move(new_black_threats));
         }
 #endif
     }
@@ -195,8 +203,8 @@ public:
 #ifdef NNUE_EVAL
         constexpr Color Them = static_cast<Color>(!Us);
         const Piece from_piece = move.get_from_piece();
-        Board board_before;
         std::vector<int> touched_squares;
+        std::vector<int> post_white_threats, post_black_threats;
         bool do_threats = false;
 
         if (from_piece != KING)
@@ -226,7 +234,11 @@ public:
                 update_nnue_halfka_both_perspectives<true>(white_king_sq, black_king_sq, Them, to_piece, to_sq);
             }
 
-            board_before = *this; // snapshot of the post-move (pre-unplay) board
+            // Zero-copy: collect the Full_Threats scoped feature set directly
+            // from the live board while it still holds the post-move
+            // (pre-unplay) state -- no full Board snapshot needed.
+            nnue_eval.template collect_threats_scoped<WHITE>(*this, touched_squares, post_white_threats);
+            nnue_eval.template collect_threats_scoped<BLACK>(*this, touched_squares, post_black_threats);
             do_threats = true;
         }
 #endif
@@ -239,11 +251,15 @@ public:
             nnue_eval.initialize(*this);
         else if (do_threats)
         {
-            // update_threats_scoped diffs feature sets between two board snapshots
-            // regardless of direction, so passing (post-move, pre-move) here
-            // correctly reverses the play()-time update.
-            nnue_eval.template update_threats_scoped<WHITE>(board_before, *this, touched_squares);
-            nnue_eval.template update_threats_scoped<BLACK>(board_before, *this, touched_squares);
+            // apply_threats_diff removes features unique to its first
+            // argument and adds features unique to its second, so passing
+            // (post-move, pre-move) here correctly reverses the play()-time
+            // update.
+            std::vector<int> pre_white_threats, pre_black_threats;
+            nnue_eval.template collect_threats_scoped<WHITE>(*this, touched_squares, pre_white_threats);
+            nnue_eval.template collect_threats_scoped<BLACK>(*this, touched_squares, pre_black_threats);
+            nnue_eval.template apply_threats_diff<WHITE>(std::move(post_white_threats), std::move(pre_white_threats));
+            nnue_eval.template apply_threats_diff<BLACK>(std::move(post_black_threats), std::move(pre_black_threats));
         }
 #endif
     }
