@@ -4,6 +4,7 @@
 #include "gtest/gtest.h"
 #include "engine/eval/virtual_board.hpp"
 
+#ifdef NNUE_EVAL
 namespace
 {
     int piece_count(const VBoard &board)
@@ -11,6 +12,7 @@ namespace
         return std::popcount(board.get_occupancy<NO_COLOR>());
     }
 }
+#endif
 
 class EngineTest : public ::testing::Test
 {
@@ -43,6 +45,7 @@ TEST_F(EngineTest, PinTest)
     ASSERT_EQ(last_move, Move(Square::h2, Square::h3, PAWN));
 }
 
+#ifdef NNUE_EVAL
 TEST_F(EngineTest, FixedDepthScoreChangesWithMaterial)
 {
     VBoard equalish;
@@ -77,3 +80,4 @@ TEST_F(EngineTest, QueenMoveChangesRawNnue)
 
     EXPECT_NE(before, after);
 }
+#endif

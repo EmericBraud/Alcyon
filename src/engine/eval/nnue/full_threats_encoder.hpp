@@ -13,10 +13,8 @@
 
 #include <array>
 #include <bit>
-#include <cstdint>
 #include <vector>
 
-#include "common/constants.hpp"
 #include "common/mask.hpp"
 #include "common/cpu.hpp"
 #include "core/piece/color.hpp"
