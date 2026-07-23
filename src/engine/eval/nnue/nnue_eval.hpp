@@ -68,17 +68,31 @@ namespace nnue
     private:
         Model model;
 
-        // Reusable, allocated-once membership-stamp buffers for
+        // Reusable, allocated-once membership-stamp buffer for
         // apply_threats_diff()'s dedup/diff (see below): sized to
         // Full_Threats' NUM_INPUTS so every raw feature index collected by
         // the scoped-recompute path (full_threats_incremental.hpp) can be
-        // used directly as an index into them. Zero-initialized once here
+        // used directly as an index into it. Zero-initialized once here
         // (construction/load time, not per search node); apply_threats_diff
-        // never clears them, it just bumps diff_generation so every stamp
+        // never clears it, it just bumps diff_generation so every stamp
         // from prior calls compares unequal to the current one.
-        std::array<std::uint32_t, threats::NUM_INPUTS> old_mark{};
-        std::array<std::uint32_t, threats::NUM_INPUTS> new_mark{};
-        std::array<std::uint32_t, threats::NUM_INPUTS> emitted_mark{};
+        //
+        // The three stamps for a given idx (old/new/emitted) are packed into
+        // one struct (array-of-structs) rather than three separate
+        // NUM_INPUTS-sized arrays (structure-of-arrays): apply_threats_diff
+        // touches all three stamps for the same idx together, and idx values
+        // are scattered across the full 60,720-entry range with no spatial
+        // correlation, so the SoA layout meant each of those three per-idx
+        // accesses could land on a different, likely-cold cache line. Packing
+        // them together means one cache-line fetch serves all three reads/
+        // writes for a given idx instead of up to three.
+        struct ThreatMark
+        {
+            std::uint32_t old_gen = 0;
+            std::uint32_t new_gen = 0;
+            std::uint32_t emitted_gen = 0;
+        };
+        std::array<ThreatMark, threats::NUM_INPUTS> threat_marks{};
         std::uint32_t diff_generation = 0;
 
     public:
@@ -89,25 +103,24 @@ namespace nnue
         {
         }
 
-        // Full recompute (see scope note above): rebuilds both perspectives'
-        // accumulators from scratch by scanning the whole board.
-        void initialize(const Board &board)
+        // Full recompute of a single perspective's accumulator contribution
+        // (Full_Threats + HalfKA), scanning the whole board -- used by
+        // initialize() below (both perspectives) and, on a king move, for
+        // just the mover's own perspective (see VBoard::play/unplay): only
+        // that perspective's HalfKA indices and Full_Threats orientation
+        // depend on that perspective's own king square, so the other
+        // perspective never needs this full rescan on a king move.
+        template <Color perspective>
+        void initialize_perspective(const Board &board)
         {
-            model.reset();
+            model.template reset_perspective<perspective>();
 
-            threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> white_threats;
-            threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> black_threats;
-            threats::fill_features<WHITE>(board, white_threats);
-            threats::fill_features<BLACK>(board, black_threats);
+            threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> perspective_threats;
+            threats::fill_features<perspective>(board, perspective_threats);
+            for (int idx : perspective_threats)
+                model.template update_feature<true, perspective>(idx);
 
-            for (int idx : white_threats)
-                model.template update_feature<true, WHITE>(idx);
-            for (int idx : black_threats)
-                model.template update_feature<true, BLACK>(idx);
-
-            const int white_ksq = board.king_sq[WHITE];
-            const int black_ksq = board.king_sq[BLACK];
-
+            const int ksq = board.king_sq[perspective];
             for (int c = 0; c < 2; ++c)
             {
                 const Color color = static_cast<Color>(c);
@@ -118,15 +131,19 @@ namespace nnue
                     while (bb)
                     {
                         const int sq = cpu::pop_lsb(bb);
-
-                        const int w_idx = NumFullThreatsFeatures + halfka::feature_index<WHITE>(white_ksq, color, piece_type, sq);
-                        model.template update_feature<true, WHITE>(w_idx);
-
-                        const int b_idx = NumFullThreatsFeatures + halfka::feature_index<BLACK>(black_ksq, color, piece_type, sq);
-                        model.template update_feature<true, BLACK>(b_idx);
+                        const int idx = NumFullThreatsFeatures + halfka::feature_index<perspective>(ksq, color, piece_type, sq);
+                        model.template update_feature<true, perspective>(idx);
                     }
                 }
             }
+        }
+
+        // Full recompute (see scope note above): rebuilds both perspectives'
+        // accumulators from scratch by scanning the whole board.
+        void initialize(const Board &board)
+        {
+            initialize_perspective<WHITE>(board);
+            initialize_perspective<BLACK>(board);
         }
 
         std::int32_t evaluate_abs(Color side_to_move, int piece_count) const
@@ -168,6 +185,14 @@ namespace nnue
             threats::collect_move_scoped_features<perspective>(board, touched_squares, out);
         }
 
+        // Combined-perspective variant: shares the magic-bitboard attacker/
+        // defender scan between both perspectives instead of repeating it
+        // once per perspective. See full_threats_incremental.hpp.
+        void collect_threats_scoped_both(const Board &board, const threats::FixedIntList<threats::MAX_TOUCHED_SQUARES> &touched_squares, threats::FixedIntList<threats::MAX_THREAT_FEATURES> &out_white, threats::FixedIntList<threats::MAX_THREAT_FEATURES> &out_black) const
+        {
+            threats::collect_move_scoped_features_both(board, touched_squares, out_white, out_black);
+        }
+
         // Diffs two (unsorted, possibly-duplicated) feature-index lists
         // collected via collect_threats_scoped() -- one from "before" the
         // move, one from "after" -- and applies the resulting add/remove set
@@ -188,23 +213,25 @@ namespace nnue
             const std::uint32_t gen = ++diff_generation;
 
             for (int idx : old_idx)
-                old_mark[idx] = gen;
+                threat_marks[idx].old_gen = gen;
             for (int idx : new_idx)
-                new_mark[idx] = gen;
+                threat_marks[idx].new_gen = gen;
 
             for (int idx : old_idx)
             {
-                if (new_mark[idx] != gen && emitted_mark[idx] != gen)
+                ThreatMark &mark = threat_marks[idx];
+                if (mark.new_gen != gen && mark.emitted_gen != gen)
                 {
-                    emitted_mark[idx] = gen;
+                    mark.emitted_gen = gen;
                     model.template update_feature<false, perspective>(idx);
                 }
             }
             for (int idx : new_idx)
             {
-                if (old_mark[idx] != gen && emitted_mark[idx] != gen)
+                ThreatMark &mark = threat_marks[idx];
+                if (mark.old_gen != gen && mark.emitted_gen != gen)
                 {
-                    emitted_mark[idx] = gen;
+                    mark.emitted_gen = gen;
                     model.template update_feature<true, perspective>(idx);
                 }
             }

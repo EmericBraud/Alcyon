@@ -55,6 +55,16 @@ public:
         (*accumulators)[BLACK] = *biases;
     }
 
+    // Resets only one perspective's accumulator -- used when a king move
+    // only invalidates that perspective's features (see
+    // NnueEval::initialize_perspective()), leaving the other perspective's
+    // accumulator untouched.
+    template <Color perspective>
+    void reset_perspective()
+    {
+        (*accumulators)[perspective] = *biases;
+    }
+
     template <bool activate, Color perspective>
     void update_feature(int feature)
     {

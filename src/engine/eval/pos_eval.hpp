@@ -102,9 +102,15 @@ namespace Eval
     void print_pawn_stats();
 #endif
 
+    // Cheap material/PST-only approximation used by razoring/futility/RFP
+    // margins (see negamax.cpp) -- reads EvalState fields that are already
+    // maintained incrementally on every play()/unplay() regardless of
+    // NNUE_EVAL (see virtual_board.hpp), so this costs nothing extra even
+    // in NNUE builds. Deliberately not the full eval(): these pruning
+    // heuristics only need a fast, rough estimate, with margins sized to
+    // absorb its imprecision.
     template <Color Us>
     int lazy_eval_relative(const VBoard &board)
-#ifndef NNUE_EVAL
     {
         const EvalState &state = board.get_eval_state();
         const int mg_score = (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -
@@ -114,10 +120,4 @@ namespace Eval
         const int base_score = (mg_score * state.phase + eg_score * (engine_constants::eval::totalPhase - state.phase)) / engine_constants::eval::totalPhase;
         return Us == WHITE ? base_score : -base_score;
     }
-#else
-    {
-        const int score = eval(board, 0, 0);
-        return (Us == WHITE) ? score : -score;
-    }
-#endif
 }

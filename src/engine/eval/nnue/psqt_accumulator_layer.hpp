@@ -59,6 +59,12 @@ public:
         (*accumulators)[BLACK].fill(0);
     }
 
+    template <Color perspective>
+    void reset_perspective()
+    {
+        (*accumulators)[perspective].fill(0);
+    }
+
     template <bool activate, Color perspective>
     void update_feature(int feature)
     {

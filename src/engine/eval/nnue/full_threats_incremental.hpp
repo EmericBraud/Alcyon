@@ -126,6 +126,134 @@ namespace nnue::threats
         }
     }
 
+    // Combined-perspective variants of the two collectors above: the attacker/
+    // defender scan itself (piece_attack_targets, the magic-bitboard lookups)
+    // does not depend on `perspective` at all -- only the final threat_index
+    // lookup does (via ksq and the White/Black color flip). Calling the
+    // templated per-perspective collectors once for WHITE and once for BLACK
+    // therefore redoes the same attack-generation work twice; these variants
+    // do it once and derive both perspectives' indices from the same scan.
+    inline void collect_attacker_features_from_both(
+        const Board &board, int wksq, int bksq, int sq,
+        FixedIntList<MAX_THREAT_FEATURES> &out_white, FixedIntList<MAX_THREAT_FEATURES> &out_black)
+    {
+        const Piece pt = board.get_p(sq);
+        if (pt == NO_PIECE || pt == KING)
+            return;
+
+        const Color color = board.get_c(sq);
+        U64 targets = piece_attack_targets(board, pt, color, sq);
+        while (targets)
+        {
+            const int to = cpu::pop_lsb(targets);
+            const Piece attkd_type = board.get_p(to);
+            const Color attkd_color = board.get_c(to);
+            if (attkd_type == NO_PIECE)
+                continue;
+
+            const int idx_w = threat_index<WHITE>(pt, color, sq, to, attkd_type, attkd_color, wksq);
+            if (idx_w >= 0)
+                out_white.push_back(idx_w);
+
+            const int idx_b = threat_index<BLACK>(pt, color, sq, to, attkd_type, attkd_color, bksq);
+            if (idx_b >= 0)
+                out_black.push_back(idx_b);
+        }
+    }
+
+    // Emits both perspectives' threat_index for one (attacker at `from`,
+    // defender at `sq`) pair -- shared by the two call sites below.
+    inline void emit_defender_pair(
+        Piece attkr_type, Color attkr_color, int from, int sq, Piece defender_type, Color defender_color,
+        int wksq, int bksq, FixedIntList<MAX_THREAT_FEATURES> &out_white, FixedIntList<MAX_THREAT_FEATURES> &out_black)
+    {
+        const int idx_w = threat_index<WHITE>(attkr_type, attkr_color, from, sq, defender_type, defender_color, wksq);
+        if (idx_w >= 0)
+            out_white.push_back(idx_w);
+
+        const int idx_b = threat_index<BLACK>(attkr_type, attkr_color, from, sq, defender_type, defender_color, bksq);
+        if (idx_b >= 0)
+            out_black.push_back(idx_b);
+    }
+
+    // Same result as scanning every non-king piece on the board and checking
+    // whether it attacks `sq` (see the piece-by-piece version this replaced),
+    // but derived in O(1) via MoveGen::attackers_to() -- the same reverse
+    // magic-bitboard lookup SEE uses (see.cpp) -- instead of generating each
+    // of the <= 30 pieces' full attack set to test membership. The one case
+    // attackers_to() doesn't cover is Full_Threats' pawn "push" pseudo-attack
+    // (a pawn "attacks" the empty-in-real-chess-terms square directly ahead
+    // of it, per double_feature_transform's convention): handled separately
+    // below via two O(1) reverse-push checks.
+    inline void collect_defender_features_at_both(
+        const Board &board, int wksq, int bksq, int sq,
+        FixedIntList<MAX_THREAT_FEATURES> &out_white, FixedIntList<MAX_THREAT_FEATURES> &out_black)
+    {
+        const Piece defender_type = board.get_p(sq);
+        if (defender_type == NO_PIECE)
+            return;
+        const Color defender_color = board.get_c(sq);
+        const U64 occ = board.occupancies[NO_COLOR];
+
+        U64 attackers = MoveGen::attackers_to(sq, occ, board);
+        while (attackers)
+        {
+            const int from = cpu::pop_lsb(attackers);
+            const Piece attkr_type = board.get_p(from);
+            const Color attkr_color = board.get_c(from);
+            emit_defender_pair(attkr_type, attkr_color, from, sq, defender_type, defender_color, wksq, bksq, out_white, out_black);
+        }
+
+        // Reverse-push case: a WHITE pawn at sq-8 (or BLACK pawn at sq+8)
+        // "attacks" sq via its forward push, which attackers_to() doesn't
+        // model (real chess attacks never include the push square).
+        if (sq >= 8)
+        {
+            const int from = sq - 8;
+            if (board.get_p(from) == PAWN && board.get_c(from) == WHITE)
+                emit_defender_pair(PAWN, WHITE, from, sq, defender_type, defender_color, wksq, bksq, out_white, out_black);
+        }
+        if (sq < 56)
+        {
+            const int from = sq + 8;
+            if (board.get_p(from) == PAWN && board.get_c(from) == BLACK)
+                emit_defender_pair(PAWN, BLACK, from, sq, defender_type, defender_color, wksq, bksq, out_white, out_black);
+        }
+    }
+
+    // Combined-perspective entry point: same scoped-recompute scheme as
+    // collect_move_scoped_features() below, but shares the magic-bitboard
+    // attacker/defender scan between both perspectives instead of repeating
+    // it once per perspective (see the *_both() helpers above).
+    inline void collect_move_scoped_features_both(
+        const Board &board, const FixedIntList<MAX_TOUCHED_SQUARES> &touched_squares,
+        FixedIntList<MAX_THREAT_FEATURES> &out_white, FixedIntList<MAX_THREAT_FEATURES> &out_black)
+    {
+        const int wksq = board.king_sq[WHITE];
+        const int bksq = board.king_sq[BLACK];
+        const U64 occ = board.occupancies[NO_COLOR];
+        const U64 rooks_queens = board.pieces_occ[get_piece_index(ROOK, WHITE)] | board.pieces_occ[get_piece_index(ROOK, BLACK)] |
+                                 board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
+        const U64 bishops_queens = board.pieces_occ[get_piece_index(BISHOP, WHITE)] | board.pieces_occ[get_piece_index(BISHOP, BLACK)] |
+                                    board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
+
+        U64 slider_candidates = 0ULL;
+        for (int sq : touched_squares)
+        {
+            collect_attacker_features_from_both(board, wksq, bksq, sq, out_white, out_black);
+            collect_defender_features_at_both(board, wksq, bksq, sq, out_white, out_black);
+
+            slider_candidates |= MoveGen::generate_rook_moves(sq, occ) & rooks_queens;
+            slider_candidates |= MoveGen::generate_bishop_moves(sq, occ) & bishops_queens;
+        }
+
+        while (slider_candidates)
+        {
+            const int sq = cpu::pop_lsb(slider_candidates);
+            collect_attacker_features_from_both(board, wksq, bksq, sq, out_white, out_black);
+        }
+    }
+
     // Full scoped-recompute entry point for one board snapshot (either strictly
     // before or strictly after a non-king move): `touched_squares` are the
     // squares whose occupant changed (from/to/en-passant-capture square).

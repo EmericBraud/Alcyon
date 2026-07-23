@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <utility>
 
+#include "common/simd.hpp"
 #include "core/piece/color.hpp"
 #include "engine/eval/nnue/accumulator_layer.hpp"
 #include "engine/eval/nnue/psqt_accumulator_layer.hpp"
@@ -94,20 +95,46 @@ private:
         // accumulator is quantized at ft_quantized_one=256, twice the hidden-layer scale of
         // 128), multiplied, and the raw product is divided by inference_l0_division_factor=512
         // (== ft_quantized_one^2 / hidden_quantized_one, since l0_correction_factor == 1 here),
-        // not by 128 (2^7). No extra *127 factor is applied.
-        auto pairwise_square_half = [](const std::array<std::int16_t, NAccumulator> &acc, std::int8_t *out)
+        // not by 128 (2^7). No extra *1:27 factor is applied.
+        // int32 lane-matched to int16_v's width (native_simd<int32_t> may have a
+        // narrower native width than native_simd<int16_t>, e.g. 4 vs 8 lanes on
+        // 128-bit NEON/SSE), so the widening simd_cast below needs equal lane counts.
+        using int32_wide_v = stdx::fixed_size_simd<std::int32_t, simd::SimdSize16>;
+        using int8_wide_v = stdx::fixed_size_simd<std::int8_t, simd::SimdSize16>;
+
+        auto pairwise_square_half = [](const std::int16_t *acc_ptr, std::int8_t *out)
         {
-            for (int i = 0; i < Half; ++i)
+            std::size_t i = 0;
+            for (; i + simd::SimdSize16 <= static_cast<std::size_t>(Half); i += simd::SimdSize16)
             {
-                std::int32_t a = std::clamp<std::int32_t>(acc[i], 0, 255);
-                std::int32_t b = std::clamp<std::int32_t>(acc[i + Half], 0, 255);
+                simd::int16_v acc_a_16, acc_b_16;
+
+                acc_a_16.copy_from(acc_ptr + i, stdx::element_aligned);
+                acc_b_16.copy_from(acc_ptr + i + Half, stdx::element_aligned);
+
+                acc_a_16 = stdx::clamp(acc_a_16, simd::int16_v(0), simd::int16_v(255));
+                acc_b_16 = stdx::clamp(acc_b_16, simd::int16_v(0), simd::int16_v(255));
+
+                int32_wide_v acc_a_32 = stdx::simd_cast<int32_wide_v>(acc_a_16);
+                int32_wide_v acc_b_32 = stdx::simd_cast<int32_wide_v>(acc_b_16);
+
+                int32_wide_v prod = (acc_a_32 * acc_b_32) >> 9;
+                prod = stdx::clamp(prod, int32_wide_v(0), int32_wide_v(127));
+
+                const int8_wide_v prod_8 = stdx::static_simd_cast<int8_wide_v>(prod);
+                prod_8.copy_to(out + i, stdx::element_aligned);
+            }
+            for (; i < static_cast<std::size_t>(Half); ++i)
+            {
+                std::int32_t a = std::clamp<std::int32_t>(acc_ptr[i], 0, 255);
+                std::int32_t b = std::clamp<std::int32_t>(acc_ptr[i + Half], 0, 255);
                 std::int32_t prod = (a * b) / 512;
                 out[i] = static_cast<std::int8_t>(std::clamp(prod, 0, 127));
             }
         };
 
-        pairwise_square_half(acc_us, l0.data());
-        pairwise_square_half(acc_them, l0.data() + Half);
+        pairwise_square_half(acc_us.data(), l0.data());
+        pairwise_square_half(acc_them.data(), l0.data() + Half);
     }
 
     // Squared-CReLU: given raw (unshifted) dense-layer output at scale
@@ -139,6 +166,13 @@ public:
     {
         accumulator.reset();
         psqt_accumulator.reset();
+    }
+
+    template <Color perspective>
+    void reset_perspective()
+    {
+        accumulator.template reset_perspective<perspective>();
+        psqt_accumulator.template reset_perspective<perspective>();
     }
 
     template <bool activate, Color perspective>
