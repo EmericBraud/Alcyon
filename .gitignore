@@ -2,7 +2,10 @@ chess26
 
 build-hce/
 build-nnue/
+build-**/
 build/
+
+*.prof
 
 data/syzygy
 
