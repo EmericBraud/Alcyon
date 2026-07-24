@@ -19,3 +19,5 @@ data/tuning_output
 py_scripts/
 
 compile_commands.json
+profile.txt
+src/.DS_Store
