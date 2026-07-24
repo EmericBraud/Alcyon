@@ -193,7 +193,7 @@ public:
         const auto &acc_us = accumulator.template get_accumulator<us>();
         const auto &acc_them = accumulator.template get_accumulator<them>();
 
-        std::array<std::int8_t, NAccumulator> l0{};
+        std::array<std::int8_t, NAccumulator> l0;
         compute_l0(acc_us, acc_them, l0);
 
         const int bucket = bucket_for_piece_count(piece_count);
@@ -202,11 +202,11 @@ public:
         const auto raw_l1 = ls.l1.get_raw(l0);
         const std::int32_t skip_raw = raw_l1[L2 - 2] - raw_l1[L2 - 1];
 
-        std::array<std::int8_t, 2 * L2> l1_out{};
+        std::array<std::int8_t, 2 * L2> l1_out;
         squared_crelu<L2, WeightScaleBitsL1>(raw_l1, l1_out);
 
         const auto raw_l2 = ls.l2.get_raw(l1_out);
-        std::array<std::int8_t, 2 * L3> l2_out{};
+        std::array<std::int8_t, 2 * L3> l2_out;
         squared_crelu<L3, WeightScaleBitsL2>(raw_l2, l2_out);
 
         const std::int32_t output_raw = ls.output.get_result_split(l1_out, l2_out);
