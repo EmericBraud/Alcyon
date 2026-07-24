@@ -30,6 +30,20 @@ public:
     std::int32_t get_result(const std::array<std::int8_t, NInputs_> &inputs) const
         requires(NNeurons_ == 1);
 
+    template <std::size_t NInputsA, std::size_t NInputsB>
+    std::int32_t get_result_split(
+        const std::array<std::int8_t, NInputsA> &inputs_a,
+        const std::array<std::int8_t, NInputsB> &inputs_b) const
+        requires(NNeurons_ == 1 && NInputsA + NInputsB == static_cast<std::size_t>(NInputs_))
+    {
+        std::int32_t acc = biases[0];
+        for (std::size_t i = 0; i < NInputsA; ++i)
+            acc += static_cast<std::int32_t>(inputs_a[i]) * weights[0][i];
+        for (std::size_t i = 0; i < NInputsB; ++i)
+            acc += static_cast<std::int32_t>(inputs_b[i]) * weights[0][NInputsA + i];
+        return acc;
+    }
+
     // Raw (unshifted, unclamped) bias + dot-product per neuron. Used by layers
     // whose activation isn't a plain ClippedReLU (e.g. the layer-stack L1,
     // which feeds a squared-CReLU and has an extra skip-connection output).

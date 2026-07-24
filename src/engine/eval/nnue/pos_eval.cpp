@@ -19,7 +19,7 @@ namespace Eval
         // pos_eval.hpp) is to return a WHITE-relative absolute score, so flip
         // the sign back for black to move.
         const int score = board.get_nnue_eval().evaluate_abs(side_to_move, piece_count);
-        return side_to_move == WHITE ? score : -score;
+        return side_to_move == WHITE ? score : -score; // @TODO create a templated version of it OR delete this statement (sign is flipped twice)
     }
 }
 

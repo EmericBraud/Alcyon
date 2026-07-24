@@ -209,11 +209,7 @@ public:
         std::array<std::int8_t, 2 * L3> l2_out{};
         squared_crelu<L3, WeightScaleBitsL2>(raw_l2, l2_out);
 
-        std::array<std::int8_t, 2 * L2 + 2 * L3> l3_input{};
-        std::copy(l1_out.begin(), l1_out.end(), l3_input.begin());
-        std::copy(l2_out.begin(), l2_out.end(), l3_input.begin() + 2 * L2);
-
-        const std::int32_t output_raw = ls.output.get_result(l3_input);
+        const std::int32_t output_raw = ls.output.get_result_split(l1_out, l2_out);
 
         const std::int64_t combined_raw = static_cast<std::int64_t>(output_raw) + static_cast<std::int64_t>(skip_raw);
         const std::int64_t layerstack_final =
