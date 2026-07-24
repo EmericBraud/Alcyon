@@ -84,7 +84,9 @@ namespace Eval
     inline int eval_relative(const VBoard &board, int alpha, int beta)
     {
         int score = eval(board, alpha, beta);
-        return (Us == WHITE) ? score : -score;
+        if constexpr (Us == WHITE)
+            return score;
+        return -score;
     }
 
     inline int get_piece_score(int piece)
