@@ -93,9 +93,10 @@ namespace nnue::threats
         }
     }
 
-    // Appends every threat feature where `sq` is the defender's (attacked) square:
-    // scans every non-king piece on the board and checks whether it attacks `sq`.
+    // Appends every threat feature where `sq` is the defender's (attacked) square.
     // Only called for the handful of squares whose occupant changed this move.
+    // Derived in O(1) via MoveGen::attackers_to() -- see collect_defender_features_at_both,
+    // whose reverse-push handling for Full_Threats' pawn pseudo-attack this mirrors.
     template <Color perspective>
     inline void collect_defender_features_at(const Board &board, int ksq, int sq, FixedIntList<MAX_THREAT_FEATURES> &out)
     {
@@ -103,25 +104,37 @@ namespace nnue::threats
         if (defender_type == NO_PIECE)
             return;
         const Color defender_color = board.get_c(sq);
-        const U64 sq_mask = 1ULL << sq;
+        const U64 occ = board.occupancies[NO_COLOR];
 
-        for (int c = 0; c < 2; ++c)
+        U64 attackers = MoveGen::attackers_to(sq, occ, board);
+        while (attackers)
         {
-            const Color color = static_cast<Color>(c);
-            for (int pt = PAWN; pt < KING; ++pt)
-            {
-                const Piece piece_type = static_cast<Piece>(pt);
-                U64 bb = board.pieces_occ[get_piece_index(piece_type, color)];
-                while (bb)
-                {
-                    const int from = cpu::pop_lsb(bb);
-                    if (!(piece_attack_targets(board, piece_type, color, from) & sq_mask))
-                        continue;
+            const int from = cpu::pop_lsb(attackers);
+            const Piece attkr_type = board.get_p(from);
+            const Color attkr_color = board.get_c(from);
+            const int idx = threat_index<perspective>(attkr_type, attkr_color, from, sq, defender_type, defender_color, ksq);
+            if (idx >= 0)
+                out.push_back(idx);
+        }
 
-                    const int idx = threat_index<perspective>(piece_type, color, from, sq, defender_type, defender_color, ksq);
-                    if (idx >= 0)
-                        out.push_back(idx);
-                }
+        if (sq >= 8)
+        {
+            const int from = sq - 8;
+            if (board.get_p(from) == PAWN && board.get_c(from) == WHITE)
+            {
+                const int idx = threat_index<perspective>(PAWN, WHITE, from, sq, defender_type, defender_color, ksq);
+                if (idx >= 0)
+                    out.push_back(idx);
+            }
+        }
+        if (sq < 56)
+        {
+            const int from = sq + 8;
+            if (board.get_p(from) == PAWN && board.get_c(from) == BLACK)
+            {
+                const int idx = threat_index<perspective>(PAWN, BLACK, from, sq, defender_type, defender_color, ksq);
+                if (idx >= 0)
+                    out.push_back(idx);
             }
         }
     }
@@ -235,7 +248,7 @@ namespace nnue::threats
         const U64 rooks_queens = board.pieces_occ[get_piece_index(ROOK, WHITE)] | board.pieces_occ[get_piece_index(ROOK, BLACK)] |
                                  board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
         const U64 bishops_queens = board.pieces_occ[get_piece_index(BISHOP, WHITE)] | board.pieces_occ[get_piece_index(BISHOP, BLACK)] |
-                                    board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
+                                   board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
 
         U64 slider_candidates = 0ULL;
         for (int sq : touched_squares)
@@ -277,7 +290,7 @@ namespace nnue::threats
         const U64 rooks_queens = board.pieces_occ[get_piece_index(ROOK, WHITE)] | board.pieces_occ[get_piece_index(ROOK, BLACK)] |
                                  board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
         const U64 bishops_queens = board.pieces_occ[get_piece_index(BISHOP, WHITE)] | board.pieces_occ[get_piece_index(BISHOP, BLACK)] |
-                                    board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
+                                   board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
 
         U64 slider_candidates = 0ULL;
         for (int sq : touched_squares)
