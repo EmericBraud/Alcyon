@@ -1,25 +1,23 @@
 #pragma once
 
-// This file aims at creating a board that also implements automatic increment / decrement
-// of an Eval State to make the lazy evaluation almost free
+// A Board that also maintains evaluation state incrementally across
+// play/unplay, so the (lazy and full) evals are almost free to request:
+// the NNUE accumulator diffs in NNUE builds, the HCE EvalState (PST/material/
+// phase/pawn-key increments) in legacy builds. Each build mode carries only
+// its own state -- EvalState does not exist at all under NNUE_EVAL.
 
 #include "core/piece/color.hpp"
 #include "core/board/board.hpp"
-#include "engine/eval/hce/move_eval_increment.hpp"
 #include "common/file.hpp"
 #ifdef NNUE_EVAL
 #include "engine/eval/nnue/nnue_eval.hpp"
 #include "engine/eval/nnue/fixed_int_list.hpp"
+#else
+#include "engine/eval/hce/move_eval_increment.hpp"
 #endif
 
 class VBoard : public Board
 {
-    // In NNUE builds the EvalState is only (re)built on load/assign, never
-    // maintained per move: the HCE fast eval it fed is replaced by the
-    // network's own PSQT head (see Eval::lazy_eval_relative), so its
-    // contents go stale as moves are played. Legacy (non-NNUE) builds still
-    // increment/decrement it on every play/unplay.
-    EvalState eval_state;
 #ifdef NNUE_EVAL
 #define NNUE_FULL_MODEL_PATH file::get_data_path("nnue/v2.nnue")
     nnue::NnueEval nnue_eval{NNUE_FULL_MODEL_PATH};
@@ -30,6 +28,12 @@ class VBoard : public Board
         nnue_eval.template push_halfka_piece<activate, WHITE>(pd, white_king_sq, piece_color, piece_type, piece_sq);
         nnue_eval.template push_halfka_piece<activate, BLACK>(pd, black_king_sq, piece_color, piece_type, piece_sq);
     }
+#else
+    // Legacy HCE fast-eval state, incremented/decremented on every
+    // play/unplay and read by Eval::lazy_eval_relative. NNUE builds don't
+    // carry it at all -- the network's PSQT head plays that role there (see
+    // NnueEval::evaluate_psqt_abs).
+    EvalState eval_state;
 #endif
 public:
     VBoard &operator=(const VBoard &other)
@@ -38,9 +42,10 @@ public:
         {
             Board::operator=(other);
 
-            eval_state = other.eval_state;
 #ifdef NNUE_EVAL
             nnue_eval = other.nnue_eval;
+#else
+            eval_state = other.eval_state;
 #endif
         };
 
@@ -52,33 +57,38 @@ public:
         {
             Board::operator=(other);
 
-            eval_state = EvalState(pieces_occ);
 #ifdef NNUE_EVAL
             // Reuse the member's already-loaded model: initialize() rebuilds
             // the accumulator from `other`'s position and drops all
             // lazy/snapshot state, which is everything a fresh NnueEval
             // would have provided.
             nnue_eval.initialize(other);
+#else
+            eval_state = EvalState(pieces_occ);
 #endif
         };
 
         return *this;
     }
     VBoard(const VBoard &other)
-        : Board(other),
-          eval_state(other.eval_state)
+        : Board(other)
 #ifdef NNUE_EVAL
           ,
           nnue_eval(other.nnue_eval)
+#else
+          ,
+          eval_state(other.eval_state)
 #endif
     {
     }
     VBoard(const Board &other)
-        : Board(other),
-          eval_state(other.get_all_bitboards())
+        : Board(other)
 #ifdef NNUE_EVAL
           ,
           nnue_eval{NNUE_FULL_MODEL_PATH}
+#else
+          ,
+          eval_state(other.get_all_bitboards())
 #endif
     {
 #ifdef NNUE_EVAL
@@ -87,11 +97,13 @@ public:
     }
 
     VBoard(VBoard &&other) noexcept
-        : Board(std::move(other)),
-          eval_state(std::move(other.eval_state))
+        : Board(std::move(other))
 #ifdef NNUE_EVAL
           ,
           nnue_eval(std::move(other.nnue_eval))
+#else
+          ,
+          eval_state(std::move(other.eval_state))
 #endif
     {
     }
@@ -101,9 +113,10 @@ public:
         if (this != &other)
         {
             Board::operator=(std::move(other));
-            eval_state = std::move(other.eval_state);
 #ifdef NNUE_EVAL
             nnue_eval = std::move(other.nnue_eval);
+#else
+            eval_state = std::move(other.eval_state);
 #endif
         }
         return *this;
@@ -116,9 +129,10 @@ public:
     bool load_fen(const std::string_view fen_string)
     {
         bool r = Board::load_fen(fen_string);
-        eval_state = EvalState(get_all_bitboards());
 #ifdef NNUE_EVAL
         nnue_eval.initialize(*this);
+#else
+        eval_state = EvalState(get_all_bitboards());
 #endif
 
         return r;
@@ -303,6 +317,7 @@ public:
 #endif
     }
 
+#ifndef NNUE_EVAL
     inline EvalState &get_eval_state()
     {
         return eval_state;
@@ -312,6 +327,7 @@ public:
     {
         return eval_state;
     }
+#endif
 #ifdef NNUE_EVAL
     inline auto &get_nnue_eval()
     {
