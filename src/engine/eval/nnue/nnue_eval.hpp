@@ -157,16 +157,29 @@ namespace nnue
             threats::fill_features<perspective>(board, perspective_threats);
 
             const int n_threats = perspective_threats.size();
+            const int n_pieces = piece_features.size();
             for (int i = 0; i < n_threats; ++i)
             {
-                if (i + PrefetchDistance < n_threats)
-                    model.prefetch_feature(perspective_threats[i + PrefetchDistance]);
+                // Once the lookahead window runs past the end of
+                // perspective_threats, spill it into piece_features instead of
+                // just stopping: those entries are already known (collected
+                // above) so there's no reason to leave the last few threat
+                // iterations uncovered when piece prefetches can fill the gap.
+                const int lookahead = i + PrefetchDistance;
+                if (lookahead < n_threats)
+                    model.prefetch_feature(perspective_threats[lookahead]);
+                else if (const int piece_idx = lookahead - n_threats; piece_idx < n_pieces)
+                    model.prefetch_feature(piece_features[piece_idx]);
                 model.template update_feature<true, perspective>(perspective_threats[i]);
             }
 
-            const int n_pieces = piece_features.size();
             for (int i = 0; i < n_pieces; ++i)
             {
+                // Same spill idea in reverse doesn't apply here (nothing comes
+                // after piece_features), but the threats loop above already
+                // primed the first PrefetchDistance piece entries by the time
+                // we get here, so this loop's own cold-start is the piece
+                // count it spilled into, not PrefetchDistance from zero.
                 if (i + PrefetchDistance < n_pieces)
                     model.prefetch_feature(piece_features[i + PrefetchDistance]);
                 model.template update_feature<true, perspective>(piece_features[i]);

@@ -224,7 +224,7 @@ namespace nnue::threats
     // symmetric duplicate that's pruned to avoid double counting).
     template <Color perspective>
     inline int threat_index(Piece attkr_type, Color attkr_color, int from,
-                             int to, Piece attkd_type, Color attkd_color, int ksq)
+                            int to, Piece attkd_type, Color attkd_color, int ksq)
     {
         const bool enemy = (attkr_color != attkd_color);
 
@@ -263,10 +263,7 @@ namespace nnue::threats
         const U64 below_to_mask = (to == 0) ? 0ULL : ((to >= 64) ? ~0ULL : ((1ULL << to) - 1));
         const int position_in_attacks = std::popcount(attacks & below_to_mask);
 
-        return t.table[attkr_piece][65]
-               + (static_cast<int>(attkd_color) * (nvt / 2) + group) * t.table[attkr_piece][64]
-               + t.table[attkr_piece][from]
-               + position_in_attacks;
+        return t.table[attkr_piece][65] + (static_cast<int>(attkd_color) * (nvt / 2) + group) * t.table[attkr_piece][64] + t.table[attkr_piece][from] + position_in_attacks;
     }
 
     // Appends all active Full_Threats feature indices (from `perspective`'s
@@ -349,10 +346,10 @@ namespace nnue::threats
                         {
                             const int to = cpu::pop_lsb(targets);
                             const Piece attkd_type = board.get_p(to);
-                            const Color attkd_color = board.get_c(to);
                             if (attkd_type == NO_PIECE)
                                 continue;
 
+                            const Color attkd_color = board.get_c(to);
                             const int idx = threat_index<perspective>(
                                 piece_type, color, from, to, attkd_type, attkd_color, ksq);
                             if (idx >= 0)
