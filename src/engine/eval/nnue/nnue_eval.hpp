@@ -125,15 +125,15 @@ namespace nnue
         {
             model.template reset_perspective<perspective>();
 
-            threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> perspective_threats;
-            threats::fill_features<perspective>(board, perspective_threats);
-
-            // HalfKA indices are cheap to compute (a few arithmetic ops on
-            // bitboard-derived squares) but each one needs its row prefetched
-            // several update_feature()s ahead of use -- so they're collected
-            // into a flat list first instead of being interleaved with the
-            // update_feature() calls, letting both loops below share the same
-            // prefetch-N-ahead pattern as the Full_Threats loop.
+            // Piece (HalfKA) indices are collected *before* fill_features()
+            // below, deliberately -- each one is prefetched right as it's
+            // discovered, so fill_features()'s own (non-trivial) scan time
+            // covers that prefetch's latency for free, instead of the
+            // piece-consumption loop having to wait PrefetchDistance
+            // iterations with no lookahead at its start the way
+            // perspective_threats necessarily does (its indices aren't known
+            // until fill_features returns, so nothing can prefetch them
+            // ahead of that).
             threats::FixedIntList<64> piece_features;
             const int ksq = board.king_sq[perspective];
             for (int c = 0; c < 2; ++c)
@@ -146,10 +146,15 @@ namespace nnue
                     while (bb)
                     {
                         const int sq = cpu::pop_lsb(bb);
-                        piece_features.push_back(NumFullThreatsFeatures + halfka::feature_index<perspective>(ksq, color, piece_type, sq));
+                        const int idx = NumFullThreatsFeatures + halfka::feature_index<perspective>(ksq, color, piece_type, sq);
+                        model.prefetch_feature(idx);
+                        piece_features.push_back(idx);
                     }
                 }
             }
+
+            threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> perspective_threats;
+            threats::fill_features<perspective>(board, perspective_threats);
 
             const int n_threats = perspective_threats.size();
             for (int i = 0; i < n_threats; ++i)
