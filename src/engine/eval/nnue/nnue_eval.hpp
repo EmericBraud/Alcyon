@@ -47,7 +47,6 @@
 #include "common/fatal.hpp"
 #include "common/cpu.hpp"
 #include "core/board/board.hpp"
-#include "engine/config/nnue.hpp"
 #include "core/piece/color.hpp"
 #include "core/piece/piece.hpp"
 #include "engine/eval/nnue/nnue_model.hpp"
@@ -154,21 +153,6 @@ namespace nnue
         mutable int applied_depth = 0;
         mutable int psqt_applied_depth = 0;
 
-        // Depth tag for each L1 snapshot on the model's stack: the value
-        // applied_depth must return to when that snapshot is popped. The
-        // per-ply replay path pushes one snapshot per ply (tag ==
-        // applied_depth just before the ply is applied, so popping is the
-        // old `--applied_depth`), but the from-scratch rebuild path (see
-        // materialize(board)) jumps several plies with a SINGLE snapshot
-        // whose tag is the pre-jump applied_depth: popping it lands back
-        // below every skipped ply, whose pending diffs are still buffered
-        // and can re-materialize later if needed. Stays in lockstep with the
-        // model's acc snapshot stack (same pushes/pops). The PSQT stack
-        // keeps the strict one-snapshot-per-ply discipline and needs no
-        // tags.
-        std::unique_ptr<int[]> acc_snapshot_base = std::make_unique_for_overwrite<int[]>(constants::MaxHistorySize);
-        mutable int acc_snapshot_count = 0;
-
         // Reusable, allocated-once membership-stamp buffer for
         // filter_threats_diff()'s dedup/diff (see below): sized to
         // Full_Threats' NUM_INPUTS so every raw feature index collected by
@@ -234,11 +218,9 @@ namespace nnue
               lazy_depth(other.lazy_depth),
               applied_depth(other.lazy_depth),
               psqt_applied_depth(other.lazy_depth),
-              acc_snapshot_count(other.acc_snapshot_count),
               threat_marks(other.threat_marks),
               diff_generation(other.diff_generation)
         {
-            std::copy_n(other.acc_snapshot_base.get(), acc_snapshot_count, acc_snapshot_base.get());
         }
 
         NnueEval &operator=(const NnueEval &other)
@@ -251,8 +233,6 @@ namespace nnue
                 lazy_depth = other.lazy_depth;
                 applied_depth = other.lazy_depth;
                 psqt_applied_depth = other.lazy_depth;
-                acc_snapshot_count = other.acc_snapshot_count;
-                std::copy_n(other.acc_snapshot_base.get(), acc_snapshot_count, acc_snapshot_base.get());
             }
             return *this;
         }
@@ -260,43 +240,27 @@ namespace nnue
         NnueEval(NnueEval &&) noexcept = default;
         NnueEval &operator=(NnueEval &&) noexcept = default;
 
-        // Which accumulator halves a full perspective rescan rebuilds: Both
-        // for initialize() (fresh baseline for everything), AccOnly for the
-        // lazy from-scratch catch-up in materialize(board) -- there the PSQT
-        // half has its own independent counter/snapshot stack and MUST NOT
-        // be touched out of band.
-        enum class RebuildScope
-        {
-            Both,
-            AccOnly
-        };
-
         // Full recompute of a single perspective's accumulator contribution
         // (Full_Threats + HalfKA), scanning the whole board -- used by
-        // initialize() below (both perspectives), and by materialize(board)
-        // as the from-scratch alternative to replaying a long backlog of
-        // buffered per-ply diffs.
-        template <Color perspective, RebuildScope scope = RebuildScope::Both>
-        void initialize_perspective(const Board &board) const
+        // initialize() below (both perspectives). NOTE: a from-scratch (or
+        // batched) catch-up of long lazy backlogs based on this scan was
+        // tried and measured a net NPS loss at every threshold (commit
+        // 56a1bc0, reverted right after): jumping several plies under one
+        // snapshot forfeits the per-ply snapshots that make sibling evals
+        // nearly free, and 97.5% of materializations have backlog <= 2
+        // anyway.
+        template <Color perspective>
+        void initialize_perspective(const Board &board)
         {
-            if constexpr (scope == RebuildScope::Both)
-                model.template reset_perspective<perspective>();
-            else
-                model.template reset_acc_perspective<perspective>();
+            model.template reset_perspective<perspective>();
 
             const auto prefetch = [this](int idx)
             {
-                if constexpr (scope == RebuildScope::Both)
-                    model.prefetch_feature(idx);
-                else
-                    model.prefetch_acc_feature(idx);
+                model.prefetch_feature(idx);
             };
             const auto activate = [this](int idx)
             {
-                if constexpr (scope == RebuildScope::Both)
-                    model.template update_feature<true, perspective>(idx);
-                else
-                    model.template update_acc_feature<true, perspective>(idx);
+                model.template update_feature<true, perspective>(idx);
             };
 
             // Piece (HalfKA) indices are collected *before* fill_features()
@@ -369,22 +333,18 @@ namespace nnue
             lazy_depth = 0;
             applied_depth = 0;
             psqt_applied_depth = 0;
-            acc_snapshot_count = 0;
             model.reset_snapshot_stack();
             initialize_perspective<WHITE>(board);
             initialize_perspective<BLACK>(board);
         }
 
-        // `board` must be the position at the current ply (lazy_depth) --
-        // it's both the eval target and, when the buffered backlog is long
-        // enough, the source for a from-scratch accumulator rebuild (see
-        // materialize(board)).
+        // `board` must be the position at the current ply (lazy_depth).
         std::int32_t evaluate_abs(const Board &board) const
         {
             const int piece_count = std::popcount(board.get_occupancy<NO_COLOR>());
             // get_result() reads both the L1 accumulator and the PSQT
             // buckets, so both halves must be caught up.
-            materialize(board);
+            materialize();
             materialize_psqt();
             return board.get_side_to_move() == WHITE
                        ? model.template get_result<WHITE>(piece_count)
@@ -551,11 +511,7 @@ namespace nnue
             if (applied_depth == lazy_depth)
             {
                 model.pop_acc_state();
-                // Not necessarily lazy_depth - 1: a from-scratch rebuild
-                // (materialize(board)) covers several plies with one
-                // snapshot, so popping it rewinds applied_depth below every
-                // ply that snapshot skipped (their diffs are still buffered).
-                applied_depth = acc_snapshot_base[--acc_snapshot_count];
+                --applied_depth;
             }
             if (psqt_applied_depth == lazy_depth)
             {
@@ -574,53 +530,11 @@ namespace nnue
             while (applied_depth < lazy_depth)
             {
                 model.push_acc_state();
-                acc_snapshot_base[acc_snapshot_count++] = applied_depth;
                 const PendingDiff &pd = pending[applied_depth];
                 apply_pending_acc<WHITE>(pd);
                 apply_pending_acc<BLACK>(pd);
                 ++applied_depth;
             }
-        }
-
-        // Board-aware variant used by evaluate_abs: when the backlog is long
-        // enough that replaying it ply by ply costs more than a full
-        // two-perspective rescan of the current position (threshold measured
-        // empirically, lower when a buffered king move already forces a
-        // one-perspective reset+full replay -- see engine_constants::nnue),
-        // rebuild the L1 accumulator from scratch off `board` under a single
-        // depth-tagged snapshot instead. Skipped plies stay buffered: after
-        // unwinding back through the jump, they can still re-materialize.
-        void materialize([[maybe_unused]] const Board &board) const
-        {
-            const int backlog = lazy_depth - applied_depth;
-            if (backlog < engine_constants::nnue::AccRebuildKingMinPlies)
-            {
-                materialize();
-                return;
-            }
-
-            if (backlog < engine_constants::nnue::AccRebuildMinPlies)
-            {
-                bool has_refresh = false;
-                for (int d = applied_depth; d < lazy_depth && !has_refresh; ++d)
-                    has_refresh = pending[d].refresh[WHITE] || pending[d].refresh[BLACK];
-                if (!has_refresh)
-                {
-                    materialize();
-                    return;
-                }
-            }
-
-            model.push_acc_state();
-            acc_snapshot_base[acc_snapshot_count++] = applied_depth;
-#ifdef NNUE_REBUILD_RESCAN // full-board rescan variant (measured slower, kept for A/B)
-            initialize_perspective<WHITE, RebuildScope::AccOnly>(board);
-            initialize_perspective<BLACK, RebuildScope::AccOnly>(board);
-#else
-            apply_backlog_batched<WHITE>();
-            apply_backlog_batched<BLACK>();
-#endif
-            applied_depth = lazy_depth;
         }
 
         // Same catch-up for the PSQT half alone: 32B rows instead of 2KB,
@@ -678,27 +592,6 @@ namespace nnue
                     model.prefetch_psqt_feature(list[i + PrefetchDistance]);
                 model.template update_psqt_feature<activate, perspective>(list[i]);
             }
-        }
-
-        // Batched replay of the whole [applied_depth, lazy_depth) backlog
-        // for one perspective, without intermediate snapshots: a king move
-        // by `perspective` anywhere in the range makes every earlier ply's
-        // work for that perspective dead (its refresh resets the perspective
-        // and its add list already holds the full post-move activation set,
-        // collected at play time -- no board rescan needed), so replay
-        // starts at the LAST refresh ply and skips everything before it.
-        template <Color perspective>
-        void apply_backlog_batched() const
-        {
-            int start = applied_depth;
-            for (int d = lazy_depth - 1; d >= applied_depth; --d)
-                if (pending[d].refresh[perspective])
-                {
-                    start = d;
-                    break;
-                }
-            for (int d = start; d < lazy_depth; ++d)
-                apply_pending_acc<perspective>(pending[d]);
         }
 
         template <Color perspective>

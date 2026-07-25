@@ -6,21 +6,19 @@
 #include <vector>
 
 #include "common/constants.hpp"
-#include "engine/config/nnue.hpp"
 #include "engine/eval/virtual_board.hpp"
 #include "core/move/generator/move_generator.hpp"
 #include "core/move/move_list.hpp"
 
-// Coverage for the from-scratch accumulator rebuild path (see
-// NnueEval::materialize(board)): when a full eval has to catch up a long
-// backlog of buffered plies (>= engine_constants::nnue::AccRebuildMinPlies,
-// or the lower AccRebuildKingMinPlies when the backlog holds a king move),
-// the L1 accumulator is rebuilt from the current board under a single
-// depth-tagged snapshot instead of replaying every per-ply diff. These tests
-// pin the behavior contract around that jump: the eval must be identical to
-// a fresh recompute, unwinding back *through* a jump must land on a state
-// from which skipped plies can still re-materialize, and the independently
-// materializing PSQT half must never be disturbed by an L1 jump.
+// Coverage for LONG un-evaluated backlogs (10+ plies) of the lazy-apply
+// machinery, written for -- and kept from -- the from-scratch rebuild
+// experiment (commit 56a1bc0, reverted: every rebuild threshold measured a
+// net NPS loss). Whatever strategy materialize() uses to catch up a long
+// backlog, these tests pin its contract: the eval must be identical to a
+// fresh recompute, unwinding back through a materialization must land on a
+// state from which the remaining buffered plies can still re-materialize,
+// and the independently materializing PSQT half must never be disturbed by
+// an L1 catch-up.
 #ifndef NNUE_EVAL
 TEST(VBoardNnueRebuildTest, RequiresNnueBuild)
 {
@@ -80,16 +78,14 @@ namespace
     }
 
     // 16 plies from the starting position with NO king move anywhere
-    // (Najdorf/English-attack line): long enough to exceed
-    // AccRebuildMinPlies while keeping every buffered diff purely
+    // (Najdorf/English-attack line): every buffered diff is purely
     // incremental (no pd.refresh in the backlog).
     const std::vector<std::string> long_quiet_line = {
         "e2e4", "c7c5", "g1f3", "d7d6", "d2d4", "c5d4", "f3d4", "g8f6",
         "b1c3", "a7a6", "f2f3", "e7e5", "d4b3", "c8e6", "c1e3", "b8d7"};
 
-    // 7 plies ending with a castle: above AccRebuildKingMinPlies but below
-    // AccRebuildMinPlies, so this backlog only crosses the rebuild cutover
-    // through the king-move rule.
+    // 7 plies ending with a castle: a short backlog whose last ply carries
+    // a pd.refresh for the castling side.
     const std::vector<std::string> short_castle_line = {
         "e2e4", "e7e5", "g1f3", "g8f6", "f1c4", "f8c5", "e1g1"};
 
@@ -98,15 +94,10 @@ namespace
     const std::vector<std::string> berlin_line = {
         "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "g8f6", "e1g1", "f6e4",
         "f1e1", "e4d6", "f3e5", "f8e7", "b5f1", "c6e5", "e1e5", "e8g8"};
-
-    static_assert(engine_constants::nnue::AccRebuildMinPlies <= 16,
-                  "the scripted 16-ply lines must exceed the rebuild threshold");
-    static_assert(engine_constants::nnue::AccRebuildKingMinPlies <= 7,
-                  "the scripted 7-ply castle line must reach the king-move threshold");
 }
 
-// A single eval after a backlog longer than AccRebuildMinPlies: the rebuild
-// jump must produce exactly the same eval as a fresh recompute.
+// A single eval after a 16-ply backlog must produce exactly the same eval
+// as a fresh recompute.
 TEST(VBoardNnueRebuildTest, LongQuietBacklogThenEval)
 {
     VBoard board;
@@ -118,7 +109,6 @@ TEST(VBoardNnueRebuildTest, LongQuietBacklogThenEval)
     EXPECT_EQ(eval_of(board), reference_eval(board)) << "Eval after a 16-ply un-evaluated quiet backlog";
 }
 
-// King-move backlogs cross the cutover earlier (AccRebuildKingMinPlies).
 TEST(VBoardNnueRebuildTest, ShortBacklogWithCastle)
 {
     VBoard board;
@@ -143,9 +133,8 @@ TEST(VBoardNnueRebuildTest, LongBacklogWithMultipleKingMoves)
     EXPECT_EQ(eval_of(board), reference_eval(board)) << "Eval after the 16-ply Berlin backlog";
 }
 
-// Unwinding back through a rebuild jump: the single tagged snapshot must
-// restore the pre-backlog state, and every skipped ply's still-buffered diff
-// must be able to re-materialize when an eval is requested mid-unwind.
+// Unwinding back through a long materialized backlog, re-evaluating at
+// intermediate plies on the way down.
 TEST(VBoardNnueRebuildTest, UnwindThroughJumpThenReEval)
 {
     VBoard board;
@@ -158,9 +147,7 @@ TEST(VBoardNnueRebuildTest, UnwindThroughJumpThenReEval)
 
     ASSERT_EQ(eval_of(board), reference_eval(board));
 
-    // Unplay half the line, then re-eval: the plies below the jump were
-    // never individually materialized, so this forces a second catch-up
-    // (replay or a fresh jump, depending on the remaining backlog).
+    // Unplay half the line, then re-eval.
     for (int i = 0; i < 8; ++i)
     {
         board.unplay(played.back());
@@ -267,9 +254,8 @@ TEST(VBoardNnueRebuildTest, CopyAcrossPendingBacklog)
 }
 
 // Randomized cross-check: long random games with *sparse* full evals (so
-// backlogs of every length around both thresholds occur), sparse psqt
-// evals, and random partial unwinds -- every eval compared against a fresh
-// from-scratch recompute.
+// backlogs of every length occur), sparse psqt evals, and random partial
+// unwinds -- every eval compared against a fresh from-scratch recompute.
 TEST(VBoardNnueRebuildTest, RandomWalkSparseEvals)
 {
     const std::vector<std::string> fens = {
