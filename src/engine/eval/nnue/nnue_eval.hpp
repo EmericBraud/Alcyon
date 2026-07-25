@@ -34,6 +34,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "common/logger.hpp"
@@ -321,21 +322,37 @@ namespace nnue
             return out;
         }
 
-        // Reads `count` flat scalar values of type T (int8/int16/int32) into
-        // `out` (of type U, possibly wider -- e.g. widening int8 into int16
-        // storage), transparently handling the "COMPRESSED_LEB128" marker.
+        // Reads `count` flat scalar values of type T (int8/int16/int32)
+        // directly into `dst` (of type U, possibly wider -- e.g. widening
+        // int8 into int16 storage), transparently handling the
+        // "COMPRESSED_LEB128" marker. `dst` must have room for `count`
+        // elements; the caller owns its storage (array, vector, etc.).
+        //
+        // When T == U, this reads straight into `dst` with no intermediate
+        // buffer at all. When widening is needed, the temporary raw-T buffer
+        // is allocated for-overwrite (no zero-init) since every element is
+        // immediately overwritten by either file.read() or the cast loop
+        // below -- a prior version used std::vector for both `dst`'s backing
+        // storage and this temporary, paying for a zero-init memset on both
+        // that was wholly wasted (profiled to ~20% of NNUE-loading CPU time).
         template <typename T, typename U>
-        static void read_tensor_flat(std::ifstream &file, std::vector<U> &out, std::size_t count, const std::string &label)
+        static void read_tensor_flat_into(std::ifstream &file, U *dst, std::size_t count, const std::string &label)
         {
-            out.resize(count);
-
             if (!next_is_leb128_marker(file))
             {
-                std::vector<T> raw(count);
-                file.read(reinterpret_cast<char *>(raw.data()), static_cast<std::streamsize>(count * sizeof(T)));
-                check(file, label);
-                for (std::size_t i = 0; i < count; ++i)
-                    out[i] = static_cast<U>(raw[i]);
+                if constexpr (std::is_same_v<T, U>)
+                {
+                    file.read(reinterpret_cast<char *>(dst), static_cast<std::streamsize>(count * sizeof(T)));
+                    check(file, label);
+                }
+                else
+                {
+                    auto raw = std::make_unique_for_overwrite<T[]>(count);
+                    file.read(reinterpret_cast<char *>(raw.get()), static_cast<std::streamsize>(count * sizeof(T)));
+                    check(file, label);
+                    for (std::size_t i = 0; i < count; ++i)
+                        dst[i] = static_cast<U>(raw[i]);
+                }
                 return;
             }
 
@@ -355,24 +372,22 @@ namespace nnue
 
             const auto decoded = decode_leb128_signed(bytes, count);
             for (std::size_t i = 0; i < count; ++i)
-                out[i] = static_cast<U>(decoded[i]);
+                dst[i] = static_cast<U>(decoded[i]);
         }
 
         template <typename Layer, int In, int Out>
         static Layer read_dense_layer(std::ifstream &file, const std::string &name)
         {
-            std::array<std::int32_t, Out> biases{};
-            std::array<std::array<std::int8_t, In>, Out> weights{};
+            // Uninitialized: read_tensor_flat_into() below immediately fills
+            // every element, so value-initializing here would just be a
+            // wasted memset (weights[0].data() is contiguous over the full
+            // In*Out range since std::array packs its elements with no
+            // padding, matching the file's flat row-major layout).
+            std::array<std::int32_t, Out> biases;
+            std::array<std::array<std::int8_t, In>, Out> weights;
 
-            std::vector<std::int32_t> bias_flat;
-            read_tensor_flat<std::int32_t>(file, bias_flat, Out, name + " biases");
-            std::copy(bias_flat.begin(), bias_flat.end(), biases.begin());
-
-            std::vector<std::int8_t> weight_flat;
-            read_tensor_flat<std::int8_t>(file, weight_flat, static_cast<std::size_t>(In) * Out, name + " weights");
-            for (int o = 0; o < Out; ++o)
-                for (int i = 0; i < In; ++i)
-                    weights[o][i] = weight_flat[static_cast<std::size_t>(o) * In + i];
+            read_tensor_flat_into<std::int32_t>(file, biases.data(), Out, name + " biases");
+            read_tensor_flat_into<std::int8_t>(file, weights.data()->data(), static_cast<std::size_t>(In) * Out, name + " weights");
 
             return Layer(std::move(weights), std::move(biases));
         }
@@ -412,40 +427,37 @@ namespace nnue
             check(file, "feature transformer hash");
 
             // Accumulator (feature transformer) bias: L1 int16 values.
-            auto accumulator_biases_ptr = std::make_unique<std::array<std::int16_t, L1>>();
-            {
-                std::vector<std::int16_t> flat;
-                read_tensor_flat<std::int16_t>(file, flat, L1, "accumulator biases");
-                std::copy(flat.begin(), flat.end(), accumulator_biases_ptr->begin());
-            }
+            auto accumulator_biases_ptr = std::make_unique_for_overwrite<std::array<std::int16_t, L1>>();
+            read_tensor_flat_into<std::int16_t>(file, accumulator_biases_ptr->data(), L1, "accumulator biases");
 
             // Feature transformer weights, written as two independent segments
             // (Full_Threats then HalfKAv2_hm^, matching the "Full_Threats+HalfKAv2_hm^"
             // feature-name split order): each segment has its own weight tensor
             // (int8 for Full_Threats, int16 for HalfKAv2_hm^) and its own
             // int32 PSQT tensor.
-            auto accumulator_weights_ptr = std::make_unique<std::array<std::array<std::int16_t, L1>, NumFeatures>>();
-            auto psqt_weights_ptr = std::make_unique<std::array<std::array<std::int32_t, NumPsqtBuckets>, NumFeatures>>();
+            // for-overwrite: both arrays (~170MB + ~2.7MB) are fully
+            // populated row-by-row by read_segment() right below: an initial
+            // value-init here would zero all of it for nothing.
+            auto accumulator_weights_ptr = std::make_unique_for_overwrite<std::array<std::array<std::int16_t, L1>, NumFeatures>>();
+            auto psqt_weights_ptr = std::make_unique_for_overwrite<std::array<std::array<std::int32_t, NumPsqtBuckets>, NumFeatures>>();
             auto &accumulator_weights = *accumulator_weights_ptr;
             auto &psqt_weights = *psqt_weights_ptr;
 
+            // Reads straight into accumulator_weights[row_offset..]/
+            // psqt_weights[row_offset..]: rows within a segment are
+            // contiguous (std::array packs elements with no padding), and
+            // the file stores each segment in matching row-major order, so
+            // no intermediate flat buffer + row-copy loop is needed.
             auto read_segment = [&](int row_offset, int n_rows, bool weight_is_int8)
             {
-                std::vector<std::int16_t> weight_flat;
+                std::int16_t *weight_dst = accumulator_weights[row_offset].data();
                 if (weight_is_int8)
-                    read_tensor_flat<std::int8_t>(file, weight_flat, static_cast<std::size_t>(n_rows) * L1, "ft weight (int8 segment)");
+                    read_tensor_flat_into<std::int8_t>(file, weight_dst, static_cast<std::size_t>(n_rows) * L1, "ft weight (int8 segment)");
                 else
-                    read_tensor_flat<std::int16_t>(file, weight_flat, static_cast<std::size_t>(n_rows) * L1, "ft weight (int16 segment)");
+                    read_tensor_flat_into<std::int16_t>(file, weight_dst, static_cast<std::size_t>(n_rows) * L1, "ft weight (int16 segment)");
 
-                for (int r = 0; r < n_rows; ++r)
-                    for (int c = 0; c < L1; ++c)
-                        accumulator_weights[row_offset + r][c] = weight_flat[static_cast<std::size_t>(r) * L1 + c];
-
-                std::vector<std::int32_t> psqt_flat;
-                read_tensor_flat<std::int32_t>(file, psqt_flat, static_cast<std::size_t>(n_rows) * NumPsqtBuckets, "ft psqt weight");
-                for (int r = 0; r < n_rows; ++r)
-                    for (int c = 0; c < NumPsqtBuckets; ++c)
-                        psqt_weights[row_offset + r][c] = psqt_flat[static_cast<std::size_t>(r) * NumPsqtBuckets + c];
+                std::int32_t *psqt_dst = psqt_weights[row_offset].data();
+                read_tensor_flat_into<std::int32_t>(file, psqt_dst, static_cast<std::size_t>(n_rows) * NumPsqtBuckets, "ft psqt weight");
             };
 
             read_segment(0, NumFullThreatsFeatures, /*weight_is_int8=*/true);
