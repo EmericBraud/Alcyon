@@ -49,6 +49,16 @@ public:
         return *this;
     }
 
+    // Declared explicitly: a user-declared copy-ctor/assignment suppresses
+    // the implicitly-generated move-ctor/assignment, which would otherwise
+    // make std::move(AccumulatorLayer) silently fall back to the copy-ctor
+    // above (an rvalue still binds to a const& parameter) instead of a real
+    // move -- harmless now that copying is cheap (shared_ptr + a small
+    // per-instance accumulator), but declaring these keeps that true even if
+    // a future member is added that isn't cheap to copy.
+    AccumulatorLayer(AccumulatorLayer &&) noexcept = default;
+    AccumulatorLayer &operator=(AccumulatorLayer &&) noexcept = default;
+
     void reset()
     {
         // On copie les biais dans les deux accumulateurs (perspective Blanche et Noire)
