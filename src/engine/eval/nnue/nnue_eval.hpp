@@ -22,11 +22,14 @@
 //     defaults (8/8), consistent with everything else about this file.
 //
 // initialize() performs a full accumulator recompute from a board position;
-// VBoard uses it only on load and on king moves. Non-king moves are handled
-// incrementally via update_halfka_piece() (single feature per moved/captured
-// piece) and collect_threats_scoped()/apply_threats_diff() (see
-// full_threats_incremental.hpp for the Full_Threats scoped-recompute
-// design) -- see virtual_board.hpp.
+// VBoard uses it only on load. Moves are handled incrementally and *lazily*:
+// VBoard::play buffers each ply's feature changes into a PendingDiff
+// (push_halfka_piece() per moved/captured piece, collect_threats_scoped()/
+// filter_threats_diff() for the Full_Threats scoped recompute -- see
+// full_threats_incremental.hpp -- and collect_full_perspective() for the
+// mover's perspective on king moves), and the accumulator is only updated
+// by materialize() when an eval is actually requested. See the design note
+// on NnueEval::model and virtual_board.hpp.
 
 #include <algorithm>
 #include <array>
@@ -62,15 +65,48 @@ namespace nnue
     constexpr std::uint32_t VERSION = 0x6A448AFA;
 
     // Software-prefetch lookahead for the feature-update loops below
-    // (initialize_perspective/apply_threats_diff): a single iteration of
+    // (initialize_perspective/apply_list): a single iteration of
     // lookahead doesn't give the ~500-cycle DRAM round trip (measured on
     // this machine) enough time to complete before update_feature() actually
     // reads that row, since one update_feature() call only takes ~100-120
     // cycles with warm data. Tuned empirically via perf record self-time on
-    // apply_threats_diff (bench 12, single core): 4=31.65%, 6=28.11%,
+    // the eager apply pass (bench 12, single core): 4=31.65%, 6=28.11%,
     // 8=28.26%, 12=28.23% -- 6 captures essentially all of the available
     // gain, higher distances don't help further.
     constexpr int PrefetchDistance = 6;
+
+    // Capacity of each per-ply pending add/remove list (see PendingDiff /
+    // NnueEval's lazy-apply design below). Bounds, per perspective per ply:
+    //   - non-king move: filtered scoped-threat diff (<= ~981 unique entries,
+    //     see MAX_THREAT_FEATURES's derivation) + <= 3 HalfKA piece toggles;
+    //   - king move (mover's perspective): full-board activation list,
+    //     <= MAX_FULL_SCAN_THREAT_FEATURES(512) threats + <= 32 pieces.
+    // FixedIntList FATALs (rather than truncating) if these bounds are ever
+    // exceeded, so this can't silently desync the accumulator.
+    constexpr int MAX_PENDING_FEATURES = 1024;
+    static_assert(MAX_PENDING_FEATURES >= 981 + 8, "must cover a filtered scoped diff plus HalfKA toggles");
+    static_assert(MAX_PENDING_FEATURES >= threats::MAX_FULL_SCAN_THREAT_FEATURES + 64, "must cover a king-move full-perspective activation list");
+
+    // One ply's worth of buffered accumulator work (see NnueEval's lazy-apply
+    // design): per perspective, the feature indices to deactivate/activate,
+    // plus a `refresh` flag for the king-move case where that perspective is
+    // instead rebuilt from scratch (reset + `add` list holds the full
+    // post-move activation set; `remove` is unused).
+    struct PendingDiff
+    {
+        threats::FixedIntList<MAX_PENDING_FEATURES> remove[2];
+        threats::FixedIntList<MAX_PENDING_FEATURES> add[2];
+        bool refresh[2];
+
+        void clear()
+        {
+            remove[WHITE].clear();
+            remove[BLACK].clear();
+            add[WHITE].clear();
+            add[BLACK].clear();
+            refresh[WHITE] = refresh[BLACK] = false;
+        }
+    };
 
     class NnueEval
     {
@@ -78,20 +114,45 @@ namespace nnue
         using Model = NnueModel<NumFeatures, NumFullThreatsFeatures, L1, NumPsqtBuckets, NumLsBuckets, L2, L3>;
 
     private:
-        Model model;
+        // Lazy apply: play() no longer touches the accumulator at all.
+        // Instead VBoard::play fills a PendingDiff (via begin_pending()/
+        // commit_pending()) with the feature indices the move changes --
+        // *collection* stays eager, since it needs the board exactly as it is
+        // around Board::play(), but the memory-bandwidth-bound part (random
+        // weight-row reads in update_feature, plus the 4.2KB push_state
+        // snapshot) is deferred to materialize(), which runs only when an
+        // eval is actually requested. Measured (bench 10): only ~268k
+        // get_result calls for ~565k plays -- nearly half of all played nodes
+        // are cut off (TT hits, etc.) without ever evaluating, so their
+        // buffered diffs get discarded by unplay_pop() for free.
+        //
+        // Invariants: applied_depth <= lazy_depth; the accumulator holds the
+        // position at ply `applied_depth`; model's snapshot stack is exactly
+        // `applied_depth` deep (one snapshot pushed per materialized ply, so
+        // unplaying a materialized ply is a pop_state() memcpy, and unplaying
+        // a never-evaluated ply is just a counter decrement).
+        //
+        // `model` and the lazy counters are mutable because materialization
+        // is triggered by evaluate_abs(), which is logically const (callers
+        // hold const VBoard&s); materializing never changes any observable
+        // eval result, it only catches the cached accumulator state up.
+        mutable Model model;
+        std::unique_ptr<PendingDiff[]> pending = std::make_unique_for_overwrite<PendingDiff[]>(constants::MaxHistorySize);
+        mutable int lazy_depth = 0;
+        mutable int applied_depth = 0;
 
         // Reusable, allocated-once membership-stamp buffer for
-        // apply_threats_diff()'s dedup/diff (see below): sized to
+        // filter_threats_diff()'s dedup/diff (see below): sized to
         // Full_Threats' NUM_INPUTS so every raw feature index collected by
         // the scoped-recompute path (full_threats_incremental.hpp) can be
         // used directly as an index into it. Zero-initialized once here
-        // (construction/load time, not per search node); apply_threats_diff
+        // (construction/load time, not per search node); filter_threats_diff
         // never clears it, it just bumps diff_generation so every stamp
         // from prior calls compares unequal to the current one.
         //
         // The three stamps for a given idx (old/new/emitted) are packed into
         // one struct (array-of-structs) rather than three separate
-        // NUM_INPUTS-sized arrays (structure-of-arrays): apply_threats_diff
+        // NUM_INPUTS-sized arrays (structure-of-arrays): filter_threats_diff
         // touches all three stamps for the same idx together, and idx values
         // are scattered across the full 60,720-entry range with no spatial
         // correlation, so the SoA layout meant each of those three per-idx
@@ -107,13 +168,15 @@ namespace nnue
         std::array<ThreatMark, threats::NUM_INPUTS> threat_marks{};
         std::uint32_t diff_generation = 0;
 
-        // Reusable scratch buffers for apply_threats_diff()'s filtered
-        // apply pass (see below): sized like old_idx/new_idx themselves
-        // since filtering can only shrink, never grow, either list.
-        // Allocated once here (not per-call) for the same reason
-        // threat_marks is: this is a per-search-node hot path.
-        threats::FixedIntList<threats::MAX_THREAT_FEATURES> filtered_remove;
-        threats::FixedIntList<threats::MAX_THREAT_FEATURES> filtered_add;
+        // materialize() helper for the copy operations below: catching the
+        // source up before copying means the copy only has to duplicate the
+        // model (whose snapshot stack then exactly matches lazy_depth) and
+        // the two counters -- never the pending buffers themselves.
+        const Model &materialized_model() const
+        {
+            materialize();
+            return model;
+        }
 
     public:
         NnueEval(Model &&_model) : model(std::move(_model)) {}
@@ -122,6 +185,38 @@ namespace nnue
             : model(load_model(path))
         {
         }
+
+        // Declared explicitly: `pending` is a unique_ptr<T[]>, which isn't
+        // copyable. Copies only happen at thread/VBoard setup (see VBoard's
+        // copy paths), so the strategy is to materialize the source first
+        // (see materialized_model()) rather than deep-copy pending buffers:
+        // afterwards applied_depth == lazy_depth and there is nothing
+        // pending to copy. The fresh `pending` array from the NSDMI is left
+        // as scratch space.
+        NnueEval(const NnueEval &other)
+            : model(other.materialized_model()),
+              lazy_depth(other.lazy_depth),
+              applied_depth(other.lazy_depth),
+              threat_marks(other.threat_marks),
+              diff_generation(other.diff_generation)
+        {
+        }
+
+        NnueEval &operator=(const NnueEval &other)
+        {
+            if (this != &other)
+            {
+                model = other.materialized_model();
+                threat_marks = other.threat_marks;
+                diff_generation = other.diff_generation;
+                lazy_depth = other.lazy_depth;
+                applied_depth = other.lazy_depth;
+            }
+            return *this;
+        }
+
+        NnueEval(NnueEval &&) noexcept = default;
+        NnueEval &operator=(NnueEval &&) noexcept = default;
 
         // Full recompute of a single perspective's accumulator contribution
         // (Full_Threats + HalfKA), scanning the whole board -- used by
@@ -197,33 +292,71 @@ namespace nnue
         }
 
         // Full recompute (see scope note above): rebuilds both perspectives'
-        // accumulators from scratch by scanning the whole board.
+        // accumulators from scratch by scanning the whole board. Also drops
+        // all lazy/snapshot state -- the rebuilt accumulator IS the new
+        // baseline, anything buffered against the old one is meaningless.
         void initialize(const Board &board)
         {
+            lazy_depth = 0;
+            applied_depth = 0;
+            model.reset_snapshot_stack();
             initialize_perspective<WHITE>(board);
             initialize_perspective<BLACK>(board);
         }
 
         std::int32_t evaluate_abs(Color side_to_move, int piece_count) const
         {
+            materialize();
             return side_to_move == WHITE
                        ? model.template get_result<WHITE>(piece_count)
                        : model.template get_result<BLACK>(piece_count);
         }
 
         // Incremental HalfKAv2_hm^ update for a single piece (add or remove),
-        // analogous to v1's per-piece feature update. Not valid for the piece
-        // whose own move is a king move -- callers must fall back to
-        // initialize() (full refresh) in that case, since a king move changes
-        // every HalfKAv2_hm^ feature for that perspective (king square/bucket
-        // is baked into every other piece's index).
+        // analogous to v1's per-piece feature update, buffered into `pd`
+        // instead of applied (see the lazy-apply design note above). Not
+        // valid for the piece whose own move is a king move -- callers must
+        // set pd.refresh for that perspective instead (see
+        // collect_full_perspective), since a king move changes every
+        // HalfKAv2_hm^ feature for that perspective (king square/bucket is
+        // baked into every other piece's index).
         template <bool activate, Color perspective>
-        void update_halfka_piece(int king_sq, Color piece_color, Piece piece_type, int piece_sq)
+        void push_halfka_piece(PendingDiff &pd, int king_sq, Color piece_color, Piece piece_type, int piece_sq) const
         {
             if (piece_type == NO_PIECE)
                 return;
             const int idx = NumFullThreatsFeatures + halfka::feature_index<perspective>(king_sq, piece_color, piece_type, piece_sq);
-            model.template update_feature<activate, perspective>(idx);
+            (activate ? pd.add : pd.remove)[perspective].push_back(idx);
+        }
+
+        // Collection-only counterpart of initialize_perspective() for the
+        // king-move lazy path: gathers the perspective's complete post-move
+        // activation set (HalfKA piece features + Full_Threats full scan)
+        // into `out` without touching the accumulator. Applied later by
+        // materialize() as reset_perspective + activate-all (pd.refresh).
+        template <Color perspective>
+        void collect_full_perspective(const Board &board, threats::FixedIntList<MAX_PENDING_FEATURES> &out) const
+        {
+            const int ksq = board.king_sq[perspective];
+            for (int c = 0; c < 2; ++c)
+            {
+                const Color color = static_cast<Color>(c);
+                for (int pt = PAWN; pt <= KING; ++pt)
+                {
+                    const Piece piece_type = static_cast<Piece>(pt);
+                    U64 bb = board.pieces_occ[get_piece_index(piece_type, color)];
+                    while (bb)
+                    {
+                        const int sq = cpu::pop_lsb(bb);
+                        out.push_back(NumFullThreatsFeatures + halfka::feature_index<perspective>(ksq, color, piece_type, sq));
+                    }
+                }
+            }
+
+            threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> perspective_threats;
+            threats::fill_features<perspective>(board, perspective_threats);
+            for (const int idx : perspective_threats)
+                out.push_back(idx);
         }
 
         // Incremental Full_Threats update for a non-king move, zero-copy
@@ -253,11 +386,11 @@ namespace nnue
 
         // Diffs two (unsorted, possibly-duplicated) feature-index lists
         // collected via collect_threats_scoped() -- one from "before" the
-        // move, one from "after" -- and applies the resulting add/remove set
-        // to the accumulator. Whichever list is passed as `old_idx` is
-        // removed and whichever is passed as `new_idx` is added; VBoard::
-        // unplay() relies on this to reverse play()'s update by swapping the
-        // two (post-move state first, pre-move state second).
+        // move, one from "after" -- and appends the resulting add/remove set
+        // to `out_remove`/`out_add` (a PendingDiff's lists, which already
+        // hold the move's HalfKA toggles). Whichever list is passed as
+        // `old_idx` ends up removed and whichever is passed as `new_idx`
+        // ends up added when the diff is materialized.
         //
         // Zero heap allocation, zero std::sort/std::unique: membership in
         // each list is recorded via a per-call "generation" stamp in reusable
@@ -266,18 +399,16 @@ namespace nnue
         // add/remove diff are done in O(old_idx.size() + new_idx.size())
         // without ever clearing the arrays themselves.
         //
-        // Marking happens first, fully, for *both* lists before any
-        // prefetch/apply -- measured (bench 10 instrumentation) at ~50% of
-        // collected entries being unchanged features present in both lists,
-        // so a prefetch-as-you-go pass (the previous design) wasted about
-        // half its prefetches on rows that turn out to be no-ops. Instead,
-        // the actually-changed indices are collected into filtered_remove/
-        // filtered_add first (cheap: just marks + array reads, no weight
-        // rows touched yet), then a single prefetch+apply pass runs over
-        // each filtered list only -- every prefetch issued now corresponds
-        // to a row that's really about to be read.
-        template <Color perspective>
-        void apply_threats_diff(const threats::FixedIntList<threats::MAX_THREAT_FEATURES> &old_idx, const threats::FixedIntList<threats::MAX_THREAT_FEATURES> &new_idx)
+        // Filtering here (at collect time) rather than at apply time keeps
+        // the pending buffers small and, more importantly, keeps the
+        // measured ~50% of collected entries that are unchanged features
+        // (present in both lists) from ever being buffered, prefetched or
+        // applied.
+        void filter_threats_diff(
+            const threats::FixedIntList<threats::MAX_THREAT_FEATURES> &old_idx,
+            const threats::FixedIntList<threats::MAX_THREAT_FEATURES> &new_idx,
+            threats::FixedIntList<MAX_PENDING_FEATURES> &out_remove,
+            threats::FixedIntList<MAX_PENDING_FEATURES> &out_add)
         {
             const std::uint32_t gen = ++diff_generation;
 
@@ -286,63 +417,110 @@ namespace nnue
             for (int idx : new_idx)
                 threat_marks[idx].new_gen = gen;
 
-            filtered_remove.clear();
             for (int idx : old_idx)
             {
                 ThreatMark &mark = threat_marks[idx];
                 if (mark.new_gen != gen && mark.emitted_gen != gen)
                 {
                     mark.emitted_gen = gen;
-                    filtered_remove.push_back(idx);
+                    out_remove.push_back(idx);
                 }
             }
-            filtered_add.clear();
             for (int idx : new_idx)
             {
                 ThreatMark &mark = threat_marks[idx];
                 if (mark.old_gen != gen && mark.emitted_gen != gen)
                 {
                     mark.emitted_gen = gen;
-                    filtered_add.push_back(idx);
+                    out_add.push_back(idx);
                 }
             }
-
-            const int n_remove = filtered_remove.size();
-            for (int i = 0; i < n_remove; ++i)
-            {
-                if (i + PrefetchDistance < n_remove)
-                    model.prefetch_feature(filtered_remove[i + PrefetchDistance]);
-                model.template update_feature<false, perspective>(filtered_remove[i]);
-            }
-            const int n_add = filtered_add.size();
-            for (int i = 0; i < n_add; ++i)
-            {
-                if (i + PrefetchDistance < n_add)
-                    model.prefetch_feature(filtered_add[i + PrefetchDistance]);
-                model.template update_feature<true, perspective>(filtered_add[i]);
-            }
         }
 
-        // See NnueModel::push_state/pop_state -- lets VBoard::play/unplay
-        // restore a full pre-move snapshot via memcpy instead of replaying
-        // the incremental threat collect+diff to undo it.
-        void push_state()
+        // ---- Lazy-apply ply bookkeeping (see the design note on `model`) --
+        // VBoard::play fills the returned PendingDiff, then commits it; the
+        // accumulator itself is only touched by materialize() below.
+        PendingDiff &begin_pending()
         {
-            model.push_state();
+            PendingDiff &pd = pending[lazy_depth];
+            pd.clear();
+            return pd;
         }
-        void pop_state()
+
+        void commit_pending()
         {
-            model.pop_state();
+            ++lazy_depth;
+        }
+
+        // Undoes one play(): if that ply was materialized (an eval happened
+        // at or below it), the accumulator must be rolled back via its
+        // snapshot; if not, its buffered diff is simply abandoned -- the
+        // whole point of deferring the apply.
+        void unplay_pop()
+        {
+            if (applied_depth == lazy_depth)
+            {
+                model.pop_state();
+                --applied_depth;
+            }
+            --lazy_depth;
+        }
+
+        // Catches the accumulator up to the current ply by applying every
+        // still-pending buffered diff, snapshotting before each one so
+        // unplay_pop() can roll back through materialized plies.
+        void materialize() const
+        {
+            while (applied_depth < lazy_depth)
+            {
+                model.push_state();
+                const PendingDiff &pd = pending[applied_depth];
+                apply_pending<WHITE>(pd);
+                apply_pending<BLACK>(pd);
+                ++applied_depth;
+            }
         }
 
 #ifdef CHESS26_UNIT_TESTING
         const auto &get_accumulator() const
         {
+            materialize();
             return model.get_accumulator();
         }
 #endif
 
     private:
+        // materialize()'s apply pass for one buffered list, with the same
+        // software-prefetch lookahead the eager path used (see
+        // PrefetchDistance): every entry here survived filtering, so every
+        // prefetch corresponds to a weight row that's really about to be
+        // read.
+        template <bool activate, Color perspective>
+        void apply_list(const threats::FixedIntList<MAX_PENDING_FEATURES> &list) const
+        {
+            const int n = list.size();
+            for (int i = 0; i < n; ++i)
+            {
+                if (i + PrefetchDistance < n)
+                    model.prefetch_feature(list[i + PrefetchDistance]);
+                model.template update_feature<activate, perspective>(list[i]);
+            }
+        }
+
+        template <Color perspective>
+        void apply_pending(const PendingDiff &pd) const
+        {
+            // refresh (king move by `perspective`): the add list holds the
+            // full post-move activation set over a reset accumulator, and
+            // the remove list is unused by construction (VBoard pushes no
+            // per-piece toggles for the refreshed perspective).
+            if (pd.refresh[perspective])
+                model.template reset_perspective<perspective>();
+            else
+                apply_list<false, perspective>(pd.remove[perspective]);
+            apply_list<true, perspective>(pd.add[perspective]);
+        }
+
         template <typename T>
         static void read_binary(std::ifstream &file, T &value)
         {

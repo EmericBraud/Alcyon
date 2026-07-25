@@ -20,10 +20,10 @@ class VBoard : public Board
     nnue::NnueEval nnue_eval{NNUE_FULL_MODEL_PATH};
 
     template <bool activate>
-    inline void update_nnue_halfka_both_perspectives(int white_king_sq, int black_king_sq, Color piece_color, Piece piece_type, int piece_sq)
+    inline void push_nnue_halfka_both_perspectives(nnue::PendingDiff &pd, int white_king_sq, int black_king_sq, Color piece_color, Piece piece_type, int piece_sq)
     {
-        nnue_eval.template update_halfka_piece<activate, WHITE>(white_king_sq, piece_color, piece_type, piece_sq);
-        nnue_eval.template update_halfka_piece<activate, BLACK>(black_king_sq, piece_color, piece_type, piece_sq);
+        nnue_eval.template push_halfka_piece<activate, WHITE>(pd, white_king_sq, piece_color, piece_type, piece_sq);
+        nnue_eval.template push_halfka_piece<activate, BLACK>(pd, black_king_sq, piece_color, piece_type, piece_sq);
     }
 #endif
 public:
@@ -143,10 +143,13 @@ public:
     template <Color Us>
     inline void play_king_move(const Move move)
     {
-        // Snapshot the pre-move accumulator state before touching anything:
-        // unplay_king_move() below restores it via pop_state() (a memcpy)
-        // instead of redoing this function's collect+diff work in reverse.
-        nnue_eval.push_state();
+        // Lazy apply (see NnueEval's design note): nothing here touches the
+        // accumulator. The mover's perspective is flagged for a full
+        // deferred refresh (reset + complete post-move activation set), and
+        // Them's incremental diff is buffered -- all of it materialized only
+        // if an eval actually happens at or below this ply.
+        nnue::PendingDiff &pd = nnue_eval.begin_pending();
+        pd.refresh[Us] = true;
 
         constexpr Color Them = static_cast<Color>(!Us);
         const int them_king_sq = king_sq[Them];
@@ -162,7 +165,7 @@ public:
         touched_squares.push_back(to_sq);
 
         if (to_piece != NO_PIECE)
-            nnue_eval.template update_halfka_piece<false, Them>(them_king_sq, Them, to_piece, to_sq);
+            nnue_eval.template push_halfka_piece<false, Them>(pd, them_king_sq, Them, to_piece, to_sq);
 
         int rook_from = -1, rook_to = -1;
         if (flags == Move::Flags::KING_CASTLE)
@@ -177,8 +180,8 @@ public:
         }
         if (rook_from >= 0)
         {
-            nnue_eval.template update_halfka_piece<false, Them>(them_king_sq, Us, ROOK, rook_from);
-            nnue_eval.template update_halfka_piece<true, Them>(them_king_sq, Us, ROOK, rook_to);
+            nnue_eval.template push_halfka_piece<false, Them>(pd, them_king_sq, Us, ROOK, rook_from);
+            nnue_eval.template push_halfka_piece<true, Them>(pd, them_king_sq, Us, ROOK, rook_to);
             touched_squares.push_back(rook_from);
             touched_squares.push_back(rook_to);
         }
@@ -188,31 +191,21 @@ public:
         // feature -- see halfka_v2_hm_encoder.hpp's header note on the
         // merged own/enemy king plane), unlike from Us's own perspective
         // where the king is the anchor and never toggled as a feature.
-        nnue_eval.template update_halfka_piece<false, Them>(them_king_sq, Us, KING, from_sq);
-        nnue_eval.template update_halfka_piece<true, Them>(them_king_sq, Us, KING, to_sq);
+        nnue_eval.template push_halfka_piece<false, Them>(pd, them_king_sq, Us, KING, from_sq);
+        nnue_eval.template push_halfka_piece<true, Them>(pd, them_king_sq, Us, KING, to_sq);
 
         nnue_eval.template collect_threats_scoped<Them>(*this, touched_squares, old_them_threats);
 
         eval_state.increment(move, Us);
         Board::play<Us>(move);
 
-        nnue_eval.template initialize_perspective<Us>(*this);
+        nnue_eval.template collect_full_perspective<Us>(*this, pd.add[Us]);
 
         nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> new_them_threats;
         nnue_eval.template collect_threats_scoped<Them>(*this, touched_squares, new_them_threats);
-        nnue_eval.template apply_threats_diff<Them>(old_them_threats, new_them_threats);
-    }
+        nnue_eval.filter_threats_diff(old_them_threats, new_them_threats, pd.remove[Them], pd.add[Them]);
 
-    // Reversal of play_king_move(): the accumulator side is now just a
-    // pop_state() (see play_king_move's push_state()) -- restores the exact
-    // pre-move state via memcpy instead of re-deriving it from a second
-    // collect+diff pass. Board/eval_state still need their own real unplay.
-    template <Color Us>
-    inline void unplay_king_move(const Move move)
-    {
-        Board::unplay<Us>(move);
-        eval_state.decrement(move, Us);
-        nnue_eval.pop_state();
+        nnue_eval.commit_pending();
     }
 #endif
 
@@ -227,9 +220,12 @@ public:
             return;
         }
 
-        // See play_king_move()'s matching note -- unplay() below just pops
-        // this snapshot instead of redoing collect+diff in reverse.
-        nnue_eval.push_state();
+        // Lazy apply (see NnueEval's design note): feature indices are
+        // *collected* here, eagerly -- they depend on the board exactly as
+        // it stands around Board::play() -- but nothing touches the
+        // accumulator; the buffered diff is only materialized if an eval
+        // actually happens at or below this ply.
+        nnue::PendingDiff &pd = nnue_eval.begin_pending();
 
         constexpr Color Them = static_cast<Color>(!Us);
         nnue::threats::FixedIntList<nnue::threats::MAX_TOUCHED_SQUARES> touched_squares;
@@ -243,12 +239,12 @@ public:
         const uint32_t flags = move.get_flags();
         const Piece to_piece = move.get_to_piece();
 
-        update_nnue_halfka_both_perspectives<false>(white_king_sq, black_king_sq, Us, from_piece, from_sq);
+        push_nnue_halfka_both_perspectives<false>(pd, white_king_sq, black_king_sq, Us, from_piece, from_sq);
 
         if (flags == Move::Flags::PROMOTION_MASK)
-            update_nnue_halfka_both_perspectives<true>(white_king_sq, black_king_sq, Us, move.get_promo_piece(), to_sq);
+            push_nnue_halfka_both_perspectives<true>(pd, white_king_sq, black_king_sq, Us, move.get_promo_piece(), to_sq);
         else
-            update_nnue_halfka_both_perspectives<true>(white_king_sq, black_king_sq, Us, from_piece, to_sq);
+            push_nnue_halfka_both_perspectives<true>(pd, white_king_sq, black_king_sq, Us, from_piece, to_sq);
 
         touched_squares.push_back(from_sq);
         touched_squares.push_back(to_sq);
@@ -256,12 +252,12 @@ public:
         if (flags == Move::Flags::EN_PASSANT_CAP)
         {
             const int cap_sq = (Us == WHITE) ? to_sq - 8 : to_sq + 8;
-            update_nnue_halfka_both_perspectives<false>(white_king_sq, black_king_sq, Them, PAWN, cap_sq);
+            push_nnue_halfka_both_perspectives<false>(pd, white_king_sq, black_king_sq, Them, PAWN, cap_sq);
             touched_squares.push_back(cap_sq);
         }
         else if (to_piece != NO_PIECE)
         {
-            update_nnue_halfka_both_perspectives<false>(white_king_sq, black_king_sq, Them, to_piece, to_sq);
+            push_nnue_halfka_both_perspectives<false>(pd, white_king_sq, black_king_sq, Them, to_piece, to_sq);
         }
 
         // Zero-copy: collect the pre-move Full_Threats scoped feature set
@@ -275,8 +271,10 @@ public:
 
         nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> new_white_threats, new_black_threats;
         nnue_eval.collect_threats_scoped_both(*this, touched_squares, new_white_threats, new_black_threats);
-        nnue_eval.template apply_threats_diff<WHITE>(old_white_threats, new_white_threats);
-        nnue_eval.template apply_threats_diff<BLACK>(old_black_threats, new_black_threats);
+        nnue_eval.filter_threats_diff(old_white_threats, new_white_threats, pd.remove[WHITE], pd.add[WHITE]);
+        nnue_eval.filter_threats_diff(old_black_threats, new_black_threats, pd.remove[BLACK], pd.add[BLACK]);
+
+        nnue_eval.commit_pending();
 #else
         eval_state.increment(move, Us);
         Board::play<Us>(move);
@@ -286,18 +284,14 @@ public:
     inline void unplay(const Move move)
     {
 #ifdef NNUE_EVAL
-        const Piece from_piece = move.get_from_piece();
-        if (from_piece == KING)
-        {
-            unplay_king_move<Us>(move);
-            return;
-        }
-
-        // See play()'s matching note -- pop the snapshot it pushed instead
-        // of re-deriving the pre-move accumulator via a second collect+diff.
+        // Lazy apply makes king and non-king moves symmetric to undo: if
+        // this ply's buffered diff was never materialized (no eval happened
+        // at or below it), unplay_pop() just abandons it; if it was, the
+        // pre-move accumulator comes back via a snapshot memcpy. Either way
+        // no collect/diff work is redone here.
         Board::unplay<Us>(move);
         eval_state.decrement(move, Us);
-        nnue_eval.pop_state();
+        nnue_eval.unplay_pop();
 #else
         Board::unplay<Us>(move);
         eval_state.decrement(move, Us);

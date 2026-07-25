@@ -2,7 +2,7 @@
 
 // Fixed-capacity, stack-allocated replacement for std::vector<int> in the
 // Full_Threats scoped-recompute hot path (see full_threats_incremental.hpp
-// and NnueEval::collect_threats_scoped/apply_threats_diff). Every search node
+// and NnueEval::collect_threats_scoped/filter_threats_diff). Every search node
 // that plays/unplays a non-king move drives several of these; std::vector's
 // heap allocation/reallocation (and the memmove that comes with it) showed up
 // heavily in profiling. All calls in that path bound the number of entries

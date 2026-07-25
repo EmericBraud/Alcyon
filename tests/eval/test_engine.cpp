@@ -70,7 +70,9 @@ TEST_F(EngineTest, QueenMoveChangesRawNnue)
     ASSERT_TRUE(board.load_fen("4k3/pppppppp/8/8/8/8/PPPPPPPP/4K2Q w - - 0 1"));
 
     const int before = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
-    auto parsed = Board::parse_move_uci("h1h2", board);
+    // g1 is the queen's only free destination in this FEN (h2/g2 are blocked
+    // by white's own pawns).
+    auto parsed = Board::parse_move_uci("h1g1", board);
     ASSERT_TRUE(parsed.has_value());
     ASSERT_TRUE(board.is_move_pseudo_legal(*parsed));
     ASSERT_TRUE(board.is_move_legal(*parsed));

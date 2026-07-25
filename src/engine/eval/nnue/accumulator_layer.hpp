@@ -15,8 +15,8 @@
 // segment of the combined feature set, see nnue_eval.hpp) instead of int16 --
 // those rows are ~half the file's weight bytes (170MB -> ~108MB: 60,720 rows
 // at 1024 * 1 byte instead of 1024 * 2 bytes) and, per profiling, are nearly
-// all of apply_threats_diff's DRAM traffic (the halfka segment updates via a
-// different, much colder path -- update_halfka_piece, one/two features per
+// all of the threat-diff apply pass's DRAM traffic (the halfka segment updates via a
+// different, much colder path -- HalfKA piece toggles, one/two features per
 // non-king move). Widening int8 -> int16 on the fly (sign-extend, like
 // vpmovsxbw) costs a few cycles of ALU work that's fully hidden behind the
 // cache-miss latency the load itself already pays, so this halves bytes
@@ -71,7 +71,7 @@ private:
     // int16 lanes before adding/subtracting -- the widen is pure ALU work
     // that overlaps with the load's cache-miss latency, so it costs nothing
     // extra versus a native int16 row on the memory-bound hot path this
-    // serves (apply_threats_diff/initialize_perspective).
+    // serves (NnueEval::apply_list/initialize_perspective).
     template <bool activate>
     static void apply_row(std::array<std::int16_t, NNeurons> &acc, const std::array<std::int8_t, NNeurons> &w_row)
     {
@@ -162,7 +162,7 @@ public:
     // Hints the weight row for `feature` into cache before it's actually
     // needed. Meant to be called several iterations ahead of the matching
     // update_feature() call in a caller's loop -- see initialize_perspective/
-    // apply_threats_diff in nnue_eval.hpp for why "several" (a single
+    // NnueEval::apply_list in nnue_eval.hpp for why "several" (a single
     // iteration of lookahead doesn't give the memory subsystem enough time
     // to complete the fetch before the row is actually read).
     void prefetch(int feature) const

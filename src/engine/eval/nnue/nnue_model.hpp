@@ -263,6 +263,14 @@ public:
         psqt_accumulator.restore_raw_state(psqt_snapshots[snapshot_depth]);
     }
 
+    // Drops every outstanding snapshot without restoring anything -- for
+    // callers that are about to rebuild the accumulator from scratch (see
+    // NnueEval::initialize) and therefore invalidate the whole stack.
+    void reset_snapshot_stack()
+    {
+        snapshot_depth = 0;
+    }
+
     // piece_count: total number of pieces on the board (both colors, kings
     // included) -- selects both the PSQT bucket and the layer-stack bucket.
     template <Color perspective>
