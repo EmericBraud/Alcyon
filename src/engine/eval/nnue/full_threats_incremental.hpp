@@ -97,8 +97,14 @@ namespace nnue::threats
     // Only called for the handful of squares whose occupant changed this move.
     // Derived in O(1) via MoveGen::attackers_to() -- see collect_defender_features_at_both,
     // whose reverse-push handling for Full_Threats' pawn pseudo-attack this mirrors.
+    //
+    // `touched_mask` excludes attackers that are themselves touched squares:
+    // those already get their outgoing (attacker-role) features emitted by
+    // collect_attacker_features_from() in the same touched_squares loop, which
+    // for an attacker A also touched would independently discover the exact
+    // same (A -> sq) pair -- skipping it here avoids emitting that idx twice.
     template <Color perspective>
-    inline void collect_defender_features_at(const Board &board, int ksq, int sq, FixedIntList<MAX_THREAT_FEATURES> &out)
+    inline void collect_defender_features_at(const Board &board, int ksq, int sq, U64 touched_mask, FixedIntList<MAX_THREAT_FEATURES> &out)
     {
         const Piece defender_type = board.get_p(sq);
         if (defender_type == NO_PIECE)
@@ -106,7 +112,7 @@ namespace nnue::threats
         const Color defender_color = board.get_c(sq);
         const U64 occ = board.occupancies[NO_COLOR];
 
-        U64 attackers = MoveGen::attackers_to(sq, occ, board);
+        U64 attackers = MoveGen::attackers_to(sq, occ, board) & ~touched_mask;
         while (attackers)
         {
             const int from = cpu::pop_lsb(attackers);
@@ -198,8 +204,10 @@ namespace nnue::threats
     // (a pawn "attacks" the empty-in-real-chess-terms square directly ahead
     // of it, per double_feature_transform's convention): handled separately
     // below via two O(1) reverse-push checks.
+    // `touched_mask` excludes attackers that are themselves touched squares --
+    // see collect_defender_features_at()'s comment for why.
     inline void collect_defender_features_at_both(
-        const Board &board, int wksq, int bksq, int sq,
+        const Board &board, int wksq, int bksq, int sq, U64 touched_mask,
         FixedIntList<MAX_THREAT_FEATURES> &out_white, FixedIntList<MAX_THREAT_FEATURES> &out_black)
     {
         const Piece defender_type = board.get_p(sq);
@@ -208,7 +216,7 @@ namespace nnue::threats
         const Color defender_color = board.get_c(sq);
         const U64 occ = board.occupancies[NO_COLOR];
 
-        U64 attackers = MoveGen::attackers_to(sq, occ, board);
+        U64 attackers = MoveGen::attackers_to(sq, occ, board) & ~touched_mask;
         while (attackers)
         {
             const int from = cpu::pop_lsb(attackers);
@@ -250,15 +258,31 @@ namespace nnue::threats
         const U64 bishops_queens = board.pieces_occ[get_piece_index(BISHOP, WHITE)] | board.pieces_occ[get_piece_index(BISHOP, BLACK)] |
                                    board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
 
+        // A touched square that is itself a slider is already covered by the
+        // touched_squares loop below (collect_attacker_features_from_both) --
+        // masked out of slider_candidates so the final while() loop doesn't
+        // re-emit the same square's features a second time. Measured ~26.6%
+        // of slider_candidates entries overlapped touched_squares before this.
+        //
+        // touched_mask is computed upfront (not incrementally inside the loop
+        // below) because collect_defender_features_at_both() needs the full
+        // set of touched squares regardless of iteration order: an attacker A
+        // touched later in the loop still needs to be excluded when scanning
+        // an earlier touched square's defenders.
+        U64 touched_mask = 0ULL;
+        for (int sq : touched_squares)
+            touched_mask |= (1ULL << sq);
+
         U64 slider_candidates = 0ULL;
         for (int sq : touched_squares)
         {
             collect_attacker_features_from_both(board, wksq, bksq, sq, out_white, out_black);
-            collect_defender_features_at_both(board, wksq, bksq, sq, out_white, out_black);
+            collect_defender_features_at_both(board, wksq, bksq, sq, touched_mask, out_white, out_black);
 
             slider_candidates |= MoveGen::generate_rook_moves(sq, occ) & rooks_queens;
             slider_candidates |= MoveGen::generate_bishop_moves(sq, occ) & bishops_queens;
         }
+        slider_candidates &= ~touched_mask;
 
         while (slider_candidates)
         {
@@ -292,15 +316,26 @@ namespace nnue::threats
         const U64 bishops_queens = board.pieces_occ[get_piece_index(BISHOP, WHITE)] | board.pieces_occ[get_piece_index(BISHOP, BLACK)] |
                                    board.pieces_occ[get_piece_index(QUEEN, WHITE)] | board.pieces_occ[get_piece_index(QUEEN, BLACK)];
 
+        // See collect_move_scoped_features_both's touched_mask note: a touched
+        // square that is itself a slider is already covered by the loop
+        // above, so it's masked out of slider_candidates before the final
+        // pass to avoid re-emitting its features a second time.
+        // touched_mask is computed upfront -- see collect_move_scoped_features_both's
+        // note on why the full set must be known before any defender scan.
+        U64 touched_mask = 0ULL;
+        for (int sq : touched_squares)
+            touched_mask |= (1ULL << sq);
+
         U64 slider_candidates = 0ULL;
         for (int sq : touched_squares)
         {
             collect_attacker_features_from<perspective>(board, ksq, sq, out);
-            collect_defender_features_at<perspective>(board, ksq, sq, out);
+            collect_defender_features_at<perspective>(board, ksq, sq, touched_mask, out);
 
             slider_candidates |= MoveGen::generate_rook_moves(sq, occ) & rooks_queens;
             slider_candidates |= MoveGen::generate_bishop_moves(sq, occ) & bishops_queens;
         }
+        slider_candidates &= ~touched_mask;
 
         while (slider_candidates)
         {
@@ -308,4 +343,5 @@ namespace nnue::threats
             collect_attacker_features_from<perspective>(board, ksq, sq, out);
         }
     }
+
 }
