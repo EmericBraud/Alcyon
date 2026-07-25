@@ -66,9 +66,11 @@ namespace nnue
     // lookahead doesn't give the ~500-cycle DRAM round trip (measured on
     // this machine) enough time to complete before update_feature() actually
     // reads that row, since one update_feature() call only takes ~100-120
-    // cycles with warm data. Tune empirically -- see the A/B methodology used
-    // for the other NNUE fixes this session.
-    constexpr int PrefetchDistance = 4;
+    // cycles with warm data. Tuned empirically via perf record self-time on
+    // apply_threats_diff (bench 12, single core): 4=31.65%, 6=28.11%,
+    // 8=28.26%, 12=28.23% -- 6 captures essentially all of the available
+    // gain, higher distances don't help further.
+    constexpr int PrefetchDistance = 6;
 
     class NnueEval
     {
