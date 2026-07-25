@@ -7,6 +7,7 @@
 
 #include "core/piece/color.hpp"
 #include "common/aligned_array.hpp"
+#include "common/cpu.hpp"
 
 template <int NFeatures, int NNeurons>
 class AccumulatorLayer
@@ -74,6 +75,17 @@ public:
     void reset_perspective()
     {
         (*accumulators)[perspective] = *biases;
+    }
+
+    // Hints the weight row for `feature` into cache before it's actually
+    // needed. Meant to be called several iterations ahead of the matching
+    // update_feature() call in a caller's loop -- see initialize_perspective/
+    // apply_threats_diff in nnue_eval.hpp for why "several" (a single
+    // iteration of lookahead doesn't give the memory subsystem enough time
+    // to complete the fetch before the row is actually read).
+    void prefetch(int feature) const
+    {
+        cpu::prefetch<std::array<std::int16_t, NNeurons>, false, 0>(&(*weights)[feature]);
     }
 
     template <bool activate, Color perspective>

@@ -7,6 +7,7 @@
 
 #include "core/piece/color.hpp"
 #include "common/aligned_array.hpp"
+#include "common/cpu.hpp"
 
 // Tracks the PSQT (piece-square-table) output buckets that live alongside the
 // main feature transformer accumulator. Quantized as int32 (scale =
@@ -66,6 +67,15 @@ public:
     void reset_perspective()
     {
         (*accumulators)[perspective].fill(0);
+    }
+
+    // See AccumulatorLayer::prefetch (accumulator_layer.hpp) -- same
+    // rationale, called from the same call sites, kept for symmetry even
+    // though this row is tiny (NBuckets * int32) compared to the main
+    // feature-transformer row.
+    void prefetch(int feature) const
+    {
+        cpu::prefetch<std::array<std::int32_t, NBuckets>, false, 0>(&(*weights)[feature]);
     }
 
     template <bool activate, Color perspective>

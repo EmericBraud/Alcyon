@@ -182,6 +182,14 @@ public:
         psqt_accumulator.template update_feature<activate, perspective>(feature);
     }
 
+    // See AccumulatorLayer::prefetch -- call several iterations ahead of the
+    // matching update_feature() for `feature` in a caller's loop.
+    void prefetch_feature(int feature) const
+    {
+        accumulator.prefetch(feature);
+        psqt_accumulator.prefetch(feature);
+    }
+
     // piece_count: total number of pieces on the board (both colors, kings
     // included) -- selects both the PSQT bucket and the layer-stack bucket.
     template <Color perspective>

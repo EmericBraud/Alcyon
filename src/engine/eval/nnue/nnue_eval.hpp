@@ -61,6 +61,15 @@ namespace nnue
 
     constexpr std::uint32_t VERSION = 0x6A448AFA;
 
+    // Software-prefetch lookahead for the feature-update loops below
+    // (initialize_perspective/apply_threats_diff): a single iteration of
+    // lookahead doesn't give the ~500-cycle DRAM round trip (measured on
+    // this machine) enough time to complete before update_feature() actually
+    // reads that row, since one update_feature() call only takes ~100-120
+    // cycles with warm data. Tune empirically -- see the A/B methodology used
+    // for the other NNUE fixes this session.
+    constexpr int PrefetchDistance = 4;
+
     class NnueEval
     {
     public:
@@ -118,9 +127,14 @@ namespace nnue
 
             threats::FixedIntList<threats::MAX_FULL_SCAN_THREAT_FEATURES> perspective_threats;
             threats::fill_features<perspective>(board, perspective_threats);
-            for (int idx : perspective_threats)
-                model.template update_feature<true, perspective>(idx);
 
+            // HalfKA indices are cheap to compute (a few arithmetic ops on
+            // bitboard-derived squares) but each one needs its row prefetched
+            // several update_feature()s ahead of use -- so they're collected
+            // into a flat list first instead of being interleaved with the
+            // update_feature() calls, letting both loops below share the same
+            // prefetch-N-ahead pattern as the Full_Threats loop.
+            threats::FixedIntList<64> piece_features;
             const int ksq = board.king_sq[perspective];
             for (int c = 0; c < 2; ++c)
             {
@@ -132,10 +146,25 @@ namespace nnue
                     while (bb)
                     {
                         const int sq = cpu::pop_lsb(bb);
-                        const int idx = NumFullThreatsFeatures + halfka::feature_index<perspective>(ksq, color, piece_type, sq);
-                        model.template update_feature<true, perspective>(idx);
+                        piece_features.push_back(NumFullThreatsFeatures + halfka::feature_index<perspective>(ksq, color, piece_type, sq));
                     }
                 }
+            }
+
+            const int n_threats = perspective_threats.size();
+            for (int i = 0; i < n_threats; ++i)
+            {
+                if (i + PrefetchDistance < n_threats)
+                    model.prefetch_feature(perspective_threats[i + PrefetchDistance]);
+                model.template update_feature<true, perspective>(perspective_threats[i]);
+            }
+
+            const int n_pieces = piece_features.size();
+            for (int i = 0; i < n_pieces; ++i)
+            {
+                if (i + PrefetchDistance < n_pieces)
+                    model.prefetch_feature(piece_features[i + PrefetchDistance]);
+                model.template update_feature<true, perspective>(piece_features[i]);
             }
         }
 
@@ -218,8 +247,18 @@ namespace nnue
             for (int idx : new_idx)
                 threat_marks[idx].new_gen = gen;
 
-            for (int idx : old_idx)
+            // Prefetch-N-ahead (see PrefetchDistance above): the row for
+            // idx[i + PrefetchDistance] is hinted regardless of whether that
+            // entry turns out to be a duplicate skipped by the mark check
+            // below -- a wasted prefetch is harmless, and most entries in
+            // these lists do end up applied, so it isn't wasted often.
+            const int n_old = old_idx.size();
+            for (int i = 0; i < n_old; ++i)
             {
+                if (i + PrefetchDistance < n_old)
+                    model.prefetch_feature(old_idx[i + PrefetchDistance]);
+
+                const int idx = old_idx[i];
                 ThreatMark &mark = threat_marks[idx];
                 if (mark.new_gen != gen && mark.emitted_gen != gen)
                 {
@@ -227,8 +266,13 @@ namespace nnue
                     model.template update_feature<false, perspective>(idx);
                 }
             }
-            for (int idx : new_idx)
+            const int n_new = new_idx.size();
+            for (int i = 0; i < n_new; ++i)
             {
+                if (i + PrefetchDistance < n_new)
+                    model.prefetch_feature(new_idx[i + PrefetchDistance]);
+
+                const int idx = new_idx[i];
                 ThreatMark &mark = threat_marks[idx];
                 if (mark.old_gen != gen && mark.emitted_gen != gen)
                 {
