@@ -4,8 +4,10 @@
 #include <array>
 #include <cstdint>
 #include <algorithm>
+#include <memory>
 #include <utility>
-#include <new>
+
+#include "common/aligned_array.hpp"
 
 // WeightScaleBits_: hidden-layer weights are quantized with scale 2^WeightScaleBits_
 // (64 by default, matching nnue-pytorch/Stockfish quantization). Set to 0 for
@@ -18,8 +20,16 @@ public:
     static constexpr int NNeurons = NNeurons_;
 
 private:
-    alignas(std::hardware_destructive_interference_size) std::array<std::array<std::int8_t, NInputs_>, NNeurons_> weights;
-    alignas(std::hardware_destructive_interference_size) std::array<std::int32_t, NNeurons_> biases;
+    // weights/biases are read-only after construction and identical across
+    // every thread's copy of this layer (one per layer-stack bucket, shared
+    // by every VBoard/SearchWorker) -- shared_ptr<const T> means copying a
+    // DenseLayer (e.g. via VBoard's copy ctor, done once per search thread)
+    // just bumps a refcount instead of duplicating the underlying arrays.
+    using WeightTable = AlignedArray<std::array<std::int8_t, NInputs_>, NNeurons_>;
+    using BiasTable = AlignedArray<std::int32_t, NNeurons_>;
+
+    std::shared_ptr<const WeightTable> weights;
+    std::shared_ptr<const BiasTable> biases;
 
     std::int8_t relu(std::int32_t acc) const;
 
@@ -37,11 +47,11 @@ public:
         const std::array<std::int8_t, NInputsB> &inputs_b) const
         requires(NNeurons_ == 1 && NInputsA + NInputsB == static_cast<std::size_t>(NInputs_))
     {
-        std::int32_t acc = biases[0];
+        std::int32_t acc = (*biases)[0];
         for (std::size_t i = 0; i < NInputsA; ++i)
-            acc += static_cast<std::int32_t>(inputs_a[i]) * weights[0][i];
+            acc += static_cast<std::int32_t>(inputs_a[i]) * (*weights)[0][i];
         for (std::size_t i = 0; i < NInputsB; ++i)
-            acc += static_cast<std::int32_t>(inputs_b[i]) * weights[0][NInputsA + i];
+            acc += static_cast<std::int32_t>(inputs_b[i]) * (*weights)[0][NInputsA + i];
         return acc;
     }
 
@@ -52,7 +62,9 @@ public:
         const std::array<std::int8_t, NInputs_> &inputs) const;
 
     template <typename T, typename U>
-    DenseLayer(T &&_weights, U &&_biases) : weights(std::forward<T>(_weights)), biases(std::forward<U>(_biases))
+    DenseLayer(T &&_weights, U &&_biases)
+        : weights(std::make_shared<const WeightTable>(std::forward<T>(_weights))),
+          biases(std::make_shared<const BiasTable>(std::forward<U>(_biases)))
     {
     }
 };
@@ -70,10 +82,10 @@ inline void DenseLayer<NInputs_, NNeurons_, WeightScaleBits_>::process(
 {
     for (int j = 0; j < NNeurons_; ++j)
     {
-        std::int32_t acc = biases[j];
+        std::int32_t acc = (*biases)[j];
 
         for (int i = 0; i < NInputs_; ++i)
-            acc += static_cast<std::int32_t>(inputs[i]) * weights[j][i];
+            acc += static_cast<std::int32_t>(inputs[i]) * (*weights)[j][i];
 
         output[j] = relu(acc);
     }
@@ -84,10 +96,10 @@ inline std::int32_t DenseLayer<NInputs_, NNeurons_, WeightScaleBits_>::get_resul
     const std::array<std::int8_t, NInputs_> &inputs) const
     requires(NNeurons_ == 1)
 {
-    std::int32_t acc = biases[0];
+    std::int32_t acc = (*biases)[0];
 
     for (int i = 0; i < NInputs_; ++i)
-        acc += static_cast<std::int32_t>(inputs[i]) * weights[0][i];
+        acc += static_cast<std::int32_t>(inputs[i]) * (*weights)[0][i];
 
     return acc;
 }
@@ -100,10 +112,10 @@ inline std::array<std::int32_t, NNeurons_> DenseLayer<NInputs_, NNeurons_, Weigh
 
     for (int j = 0; j < NNeurons_; ++j)
     {
-        std::int32_t acc = biases[j];
+        std::int32_t acc = (*biases)[j];
 
         for (int i = 0; i < NInputs_; ++i)
-            acc += static_cast<std::int32_t>(inputs[i]) * weights[j][i];
+            acc += static_cast<std::int32_t>(inputs[i]) * (*weights)[j][i];
 
         output[j] = acc;
     }
