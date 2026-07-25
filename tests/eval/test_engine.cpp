@@ -50,13 +50,13 @@ TEST_F(EngineTest, FixedDepthScoreChangesWithMaterial)
 {
     VBoard equalish;
     ASSERT_TRUE(equalish.load_fen("4k3/pppppppp/8/8/8/8/PPPPPPPP/4K3 w - - 0 1"));
-    const int equal_raw = equalish.get_nnue_eval().evaluate_abs(equalish.get_side_to_move(), piece_count(equalish));
+    const int equal_raw = equalish.get_nnue_eval().evaluate_abs(equalish);
     EngineManager equal_manager{equalish};
     const auto equal_result = equal_manager.run_benchmark_fixed_depth(equalish, 1);
 
     VBoard queen_up;
     ASSERT_TRUE(queen_up.load_fen("4k3/pppppppp/8/8/8/8/PPPPPPPP/4K2Q w - - 0 1"));
-    const int queen_raw = queen_up.get_nnue_eval().evaluate_abs(queen_up.get_side_to_move(), piece_count(queen_up));
+    const int queen_raw = queen_up.get_nnue_eval().evaluate_abs(queen_up);
     EngineManager queen_manager{queen_up};
     const auto queen_result = queen_manager.run_benchmark_fixed_depth(queen_up, 1);
 
@@ -69,7 +69,7 @@ TEST_F(EngineTest, QueenMoveChangesRawNnue)
     VBoard board;
     ASSERT_TRUE(board.load_fen("4k3/pppppppp/8/8/8/8/PPPPPPPP/4K2Q w - - 0 1"));
 
-    const int before = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
+    const int before = board.get_nnue_eval().evaluate_abs(board);
     // g1 is the queen's only free destination in this FEN (h2/g2 are blocked
     // by white's own pawns).
     auto parsed = Board::parse_move_uci("h1g1", board);
@@ -78,7 +78,7 @@ TEST_F(EngineTest, QueenMoveChangesRawNnue)
     ASSERT_TRUE(board.is_move_legal(*parsed));
 
     board.play(*parsed);
-    const int after = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
+    const int after = board.get_nnue_eval().evaluate_abs(board);
 
     EXPECT_NE(before, after);
 }

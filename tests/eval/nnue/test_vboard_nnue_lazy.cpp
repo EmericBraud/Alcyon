@@ -33,7 +33,7 @@ namespace
 
     int eval_of(const VBoard &board)
     {
-        return board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
+        return board.get_nnue_eval().evaluate_abs(board);
     }
 
     // Full-recompute reference: builds a fresh VBoard (fresh accumulator,

@@ -33,7 +33,7 @@ namespace
         VBoard board;
         ASSERT_TRUE(board.load_fen(fen));
 
-        const int baseline_raw = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
+        const int baseline_raw = board.get_nnue_eval().evaluate_abs(board);
 
         std::vector<Move> played;
         played.reserve(moves_uci.size());
@@ -51,8 +51,8 @@ namespace
             played.push_back(move);
 
             VBoard refreshed(static_cast<const Board &>(board));
-            EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board)),
-                      refreshed.get_nnue_eval().evaluate_abs(refreshed.get_side_to_move(), piece_count(refreshed)))
+            EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board),
+                      refreshed.get_nnue_eval().evaluate_abs(refreshed))
                 << "Incremental NNUE v2 mismatch after move " << uci;
         }
 
@@ -61,12 +61,12 @@ namespace
             board.unplay(played[i]);
 
             VBoard refreshed(static_cast<const Board &>(board));
-            EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board)),
-                      refreshed.get_nnue_eval().evaluate_abs(refreshed.get_side_to_move(), piece_count(refreshed)))
+            EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board),
+                      refreshed.get_nnue_eval().evaluate_abs(refreshed))
                 << "Incremental NNUE v2 mismatch after unplay index " << i;
         }
 
-        EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board)), baseline_raw)
+        EXPECT_EQ(board.get_nnue_eval().evaluate_abs(board), baseline_raw)
             << "NNUE v2 raw score did not return to baseline after full unplay";
     }
 }
@@ -139,7 +139,7 @@ TEST(VBoardNnueIncrementalTest, RawNnueOutputChangesAndRestores)
     VBoard board;
     ASSERT_TRUE(board.load_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"));
 
-    const int raw_before = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
+    const int raw_before = board.get_nnue_eval().evaluate_abs(board);
 
     std::vector<Move> played;
     for (const char *uci : {"e2e4", "d7d5", "e4d5"})
@@ -156,7 +156,7 @@ TEST(VBoardNnueIncrementalTest, RawNnueOutputChangesAndRestores)
     for (int i = static_cast<int>(played.size()) - 1; i >= 0; --i)
         board.unplay(played[i]);
 
-    const int raw_restored = board.get_nnue_eval().evaluate_abs(board.get_side_to_move(), piece_count(board));
+    const int raw_restored = board.get_nnue_eval().evaluate_abs(board);
 
     EXPECT_EQ(raw_before, raw_restored);
 }

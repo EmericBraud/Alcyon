@@ -30,7 +30,7 @@ TEST(NnueEvalTest, LoadsRealModelAndEvaluatesStartingPosition)
 
     EXPECT_NO_FATAL_FAILURE({
         eval.initialize(board);
-        const std::int32_t score = eval.evaluate_abs(WHITE, /*piece_count=*/32);
+        const std::int32_t score = eval.evaluate_abs(board);
         // Sanity bound: a legitimate NNUE eval of the starting position should
         // be a small number of centipawns, not something wildly out of range
         // (which would indicate a scale/format bug).
