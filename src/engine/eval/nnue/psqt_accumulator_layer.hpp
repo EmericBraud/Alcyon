@@ -19,13 +19,13 @@ class PsqtAccumulatorLayer
     using WeightTable = std::array<std::array<std::int32_t, NBuckets>, NFeatures>;
 
     std::unique_ptr<AccTable> accumulators;
-    std::unique_ptr<WeightTable> weights;
+    std::shared_ptr<const WeightTable> weights;
 
 public:
     template <typename W>
     explicit PsqtAccumulatorLayer(W &&w)
     {
-        weights = std::make_unique<WeightTable>(std::forward<W>(w));
+        weights = std::make_shared<const WeightTable>(std::forward<W>(w));
         accumulators = std::make_unique<AccTable>();
         reset();
     }
@@ -33,7 +33,7 @@ public:
     PsqtAccumulatorLayer(const PsqtAccumulatorLayer &other)
     {
         accumulators = std::make_unique<AccTable>(*other.accumulators);
-        weights = std::make_unique<WeightTable>(*other.weights);
+        weights = other.weights;
     }
 
     PsqtAccumulatorLayer &operator=(const PsqtAccumulatorLayer &other)
@@ -41,7 +41,7 @@ public:
         if (this != &other)
         {
             *accumulators = *other.accumulators;
-            *weights = *other.weights;
+            weights = other.weights;
         }
         return *this;
     }
