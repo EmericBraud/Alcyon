@@ -17,24 +17,24 @@ class AccumulatorLayer
     using WeightTable = std::array<std::array<std::int16_t, NNeurons>, NFeatures>;
 
     std::unique_ptr<AccTable> accumulators;
-    std::unique_ptr<BiasTable> biases;
-    std::unique_ptr<WeightTable> weights;
+    std::shared_ptr<const BiasTable> biases;
+    std::shared_ptr<const WeightTable> weights;
 
 public:
     template <typename B, typename W>
     AccumulatorLayer(B &&b, W &&w)
     {
         // Allocation sur le tas et copie des données initiales
-        biases = std::make_unique<BiasTable>(std::forward<B>(b));
-        weights = std::make_unique<WeightTable>(std::forward<W>(w));
+        biases = std::make_shared<const BiasTable>(std::forward<B>(b));
+        weights = std::make_shared<const WeightTable>(std::forward<W>(w));
         accumulators = std::make_unique<AccTable>();
         reset();
     }
     AccumulatorLayer(const AccumulatorLayer &other)
     {
         accumulators = std::make_unique<AccTable>(*other.accumulators);
-        biases = std::make_unique<BiasTable>(*other.biases);
-        weights = std::make_unique<WeightTable>(*other.weights);
+        biases = other.biases;
+        weights = other.weights;
     }
 
     AccumulatorLayer &operator=(const AccumulatorLayer &other)
@@ -42,8 +42,8 @@ public:
         if (this != &other)
         {
             *accumulators = *other.accumulators;
-            *biases = *other.biases;
-            *weights = *other.weights;
+            biases = other.biases;
+            weights = other.weights;
         }
         return *this;
     }
