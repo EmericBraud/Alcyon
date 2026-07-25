@@ -12,8 +12,13 @@
 template <int NFeatures, int NNeurons>
 class AccumulatorLayer
 {
-    // On utilise des alias pour rendre le code lisible
+public:
+    // Public so callers can snapshot/restore the full per-perspective state
+    // (see raw_state/restore_raw_state below) without depending on its
+    // internal layout beyond "one opaque, copyable blob".
     using AccTable = AlignedArray<std::array<std::int16_t, NNeurons>, 2>;
+
+private:
     using BiasTable = AlignedArray<std::int16_t, NNeurons>;
     // Feature transformer weights are quantized as int16 (scale = 127), not int8.
     using WeightTable = AlignedArray<std::array<std::int16_t, NNeurons>, NFeatures>;
@@ -131,5 +136,17 @@ public:
     const auto &get_accumulator() const
     {
         return (*accumulators)[perspective];
+    }
+
+    // Raw access to both perspectives' state, for saving/restoring a full
+    // snapshot (see NnueEval::push_state/pop_state) -- much cheaper than
+    // replaying the incremental feature updates when unwinding a move.
+    const AccTable &raw_state() const
+    {
+        return *accumulators;
+    }
+    void restore_raw_state(const AccTable &saved)
+    {
+        *accumulators = saved;
     }
 };

@@ -302,6 +302,18 @@ namespace nnue
             }
         }
 
+        // See NnueModel::push_state/pop_state -- lets VBoard::play/unplay
+        // restore a full pre-move snapshot via memcpy instead of replaying
+        // the incremental threat collect+diff to undo it.
+        void push_state()
+        {
+            model.push_state();
+        }
+        void pop_state()
+        {
+            model.pop_state();
+        }
+
 #ifdef CHESS26_UNIT_TESTING
         const auto &get_accumulator() const
         {

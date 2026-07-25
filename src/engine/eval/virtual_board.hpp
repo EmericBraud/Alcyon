@@ -143,6 +143,11 @@ public:
     template <Color Us>
     inline void play_king_move(const Move move)
     {
+        // Snapshot the pre-move accumulator state before touching anything:
+        // unplay_king_move() below restores it via pop_state() (a memcpy)
+        // instead of redoing this function's collect+diff work in reverse.
+        nnue_eval.push_state();
+
         constexpr Color Them = static_cast<Color>(!Us);
         const int them_king_sq = king_sq[Them];
         const int from_sq = move.get_from_sq();
@@ -198,64 +203,16 @@ public:
         nnue_eval.template apply_threats_diff<Them>(old_them_threats, new_them_threats);
     }
 
-    // Symmetric reversal of play_king_move() -- see apply_threats_diff's
-    // note on argument order for why (post, pre) is passed on the way back.
+    // Reversal of play_king_move(): the accumulator side is now just a
+    // pop_state() (see play_king_move's push_state()) -- restores the exact
+    // pre-move state via memcpy instead of re-deriving it from a second
+    // collect+diff pass. Board/eval_state still need their own real unplay.
     template <Color Us>
     inline void unplay_king_move(const Move move)
     {
-        constexpr Color Them = static_cast<Color>(!Us);
-        const int them_king_sq = king_sq[Them];
-        const int from_sq = move.get_from_sq();
-        const int to_sq = move.get_to_sq();
-        const uint32_t flags = move.get_flags();
-        const Piece to_piece = move.get_to_piece();
-
-        nnue::threats::FixedIntList<nnue::threats::MAX_TOUCHED_SQUARES> touched_squares;
-        nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> post_them_threats;
-
-        touched_squares.push_back(from_sq);
-        touched_squares.push_back(to_sq);
-
-        int rook_from = -1, rook_to = -1;
-        if (flags == Move::Flags::KING_CASTLE)
-        {
-            rook_from = (Us == WHITE) ? Square::h1 : Square::h8;
-            rook_to = (Us == WHITE) ? Square::f1 : Square::f8;
-        }
-        else if (flags == Move::Flags::QUEEN_CASTLE)
-        {
-            rook_from = (Us == WHITE) ? Square::a1 : Square::a8;
-            rook_to = (Us == WHITE) ? Square::d1 : Square::d8;
-        }
-        if (rook_from >= 0)
-        {
-            touched_squares.push_back(rook_from);
-            touched_squares.push_back(rook_to);
-        }
-
-        nnue_eval.template collect_threats_scoped<Them>(*this, touched_squares, post_them_threats);
-
         Board::unplay<Us>(move);
         eval_state.decrement(move, Us);
-
-        if (to_piece != NO_PIECE)
-            nnue_eval.template update_halfka_piece<true, Them>(them_king_sq, Them, to_piece, to_sq);
-        if (rook_from >= 0)
-        {
-            nnue_eval.template update_halfka_piece<true, Them>(them_king_sq, Us, ROOK, rook_from);
-            nnue_eval.template update_halfka_piece<false, Them>(them_king_sq, Us, ROOK, rook_to);
-        }
-
-        // Reverse the moving king's own HalfKA feature toggle from Them's
-        // perspective (see the matching note in play_king_move()).
-        nnue_eval.template update_halfka_piece<true, Them>(them_king_sq, Us, KING, from_sq);
-        nnue_eval.template update_halfka_piece<false, Them>(them_king_sq, Us, KING, to_sq);
-
-        nnue_eval.template initialize_perspective<Us>(*this);
-
-        nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> pre_them_threats;
-        nnue_eval.template collect_threats_scoped<Them>(*this, touched_squares, pre_them_threats);
-        nnue_eval.template apply_threats_diff<Them>(post_them_threats, pre_them_threats);
+        nnue_eval.pop_state();
     }
 #endif
 
@@ -269,6 +226,10 @@ public:
             play_king_move<Us>(move);
             return;
         }
+
+        // See play_king_move()'s matching note -- unplay() below just pops
+        // this snapshot instead of redoing collect+diff in reverse.
+        nnue_eval.push_state();
 
         constexpr Color Them = static_cast<Color>(!Us);
         nnue::threats::FixedIntList<nnue::threats::MAX_TOUCHED_SQUARES> touched_squares;
@@ -332,52 +293,11 @@ public:
             return;
         }
 
-        constexpr Color Them = static_cast<Color>(!Us);
-        nnue::threats::FixedIntList<nnue::threats::MAX_TOUCHED_SQUARES> touched_squares;
-        nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> post_white_threats, post_black_threats;
-
-        const int white_king_sq = king_sq[WHITE];
-        const int black_king_sq = king_sq[BLACK];
-
-        const int from_sq = move.get_from_sq();
-        const int to_sq = move.get_to_sq();
-        const uint32_t flags = move.get_flags();
-        const Piece to_piece = move.get_to_piece();
-        const Piece moved_piece = (flags == Move::Flags::PROMOTION_MASK) ? move.get_promo_piece() : from_piece;
-
-        update_nnue_halfka_both_perspectives<false>(white_king_sq, black_king_sq, Us, moved_piece, to_sq);
-        update_nnue_halfka_both_perspectives<true>(white_king_sq, black_king_sq, Us, from_piece, from_sq);
-
-        touched_squares.push_back(from_sq);
-        touched_squares.push_back(to_sq);
-
-        if (flags == Move::Flags::EN_PASSANT_CAP)
-        {
-            const int cap_sq = (Us == WHITE) ? to_sq - 8 : to_sq + 8;
-            update_nnue_halfka_both_perspectives<true>(white_king_sq, black_king_sq, Them, PAWN, cap_sq);
-            touched_squares.push_back(cap_sq);
-        }
-        else if (to_piece != NO_PIECE)
-        {
-            update_nnue_halfka_both_perspectives<true>(white_king_sq, black_king_sq, Them, to_piece, to_sq);
-        }
-
-        // Zero-copy: collect the Full_Threats scoped feature set directly
-        // from the live board while it still holds the post-move
-        // (pre-unplay) state -- no full Board snapshot needed.
-        nnue_eval.collect_threats_scoped_both(*this, touched_squares, post_white_threats, post_black_threats);
-
+        // See play()'s matching note -- pop the snapshot it pushed instead
+        // of re-deriving the pre-move accumulator via a second collect+diff.
         Board::unplay<Us>(move);
         eval_state.decrement(move, Us);
-
-        // apply_threats_diff removes features unique to its first
-        // argument and adds features unique to its second, so passing
-        // (post-move, pre-move) here correctly reverses the play()-time
-        // update.
-        nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> pre_white_threats, pre_black_threats;
-        nnue_eval.collect_threats_scoped_both(*this, touched_squares, pre_white_threats, pre_black_threats);
-        nnue_eval.template apply_threats_diff<WHITE>(post_white_threats, pre_white_threats);
-        nnue_eval.template apply_threats_diff<BLACK>(post_black_threats, pre_black_threats);
+        nnue_eval.pop_state();
 #else
         Board::unplay<Us>(move);
         eval_state.decrement(move, Us);

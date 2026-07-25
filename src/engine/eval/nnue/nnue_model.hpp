@@ -25,8 +25,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <utility>
 
+#include "common/constants.hpp"
 #include "common/simd.hpp"
 #include "core/piece/color.hpp"
 #include "engine/eval/nnue/accumulator_layer.hpp"
@@ -72,6 +74,27 @@ private:
     AccumulatorLayer<NFeatures, NAccumulator> accumulator;
     PsqtAccumulatorLayer<NFeatures, NumPsqtBuckets> psqt_accumulator;
     std::array<LayerStackBucket, NumLsBuckets> layer_stacks;
+
+    // Snapshot stack backing push_state()/pop_state() (see below): each
+    // entry is a full copy of both perspectives' accumulator + PSQT state
+    // (~4.2KB), allocated once up front (constants::MaxHistorySize deep --
+    // the same bound Board's own move-history array uses, so nesting can
+    // never exceed it) rather than per-call, keeping push/pop allocation-free
+    // on the hot path.
+    using AccSnapshot = typename AccumulatorLayer<NFeatures, NAccumulator>::AccTable;
+    using PsqtSnapshot = typename PsqtAccumulatorLayer<NFeatures, NumPsqtBuckets>::AccTable;
+    std::unique_ptr<AccSnapshot[]> acc_snapshots = std::make_unique<AccSnapshot[]>(constants::MaxHistorySize);
+    std::unique_ptr<PsqtSnapshot[]> psqt_snapshots = std::make_unique<PsqtSnapshot[]>(constants::MaxHistorySize);
+    int snapshot_depth = 0;
+
+    // Deep-copies only the live [0, snapshot_depth) prefix -- the rest is
+    // unwritten scratch space, not meaningful state to preserve.
+    void copy_snapshots_from(const NnueModel &other)
+    {
+        snapshot_depth = other.snapshot_depth;
+        std::copy_n(other.acc_snapshots.get(), snapshot_depth, acc_snapshots.get());
+        std::copy_n(other.psqt_snapshots.get(), snapshot_depth, psqt_snapshots.get());
+    }
 
     static int bucket_for_piece_count(int piece_count)
     {
@@ -162,6 +185,36 @@ public:
     {
     }
 
+    // Declared explicitly: acc_snapshots/psqt_snapshots are std::unique_ptr<T[]>,
+    // which isn't copyable, so the implicit copy-ctor/assignment would
+    // otherwise be deleted (see AccumulatorLayer's analogous note). Only the
+    // live [0, snapshot_depth) prefix is copied (copy_snapshots_from) -- a
+    // copy only ever happens at thread/VBoard setup (see VBoard's copy
+    // paths), never on the play()/unplay() hot path, so this cost is
+    // amortized to nothing.
+    NnueModel(const NnueModel &other)
+        : accumulator(other.accumulator),
+          psqt_accumulator(other.psqt_accumulator),
+          layer_stacks(other.layer_stacks)
+    {
+        copy_snapshots_from(other);
+    }
+
+    NnueModel &operator=(const NnueModel &other)
+    {
+        if (this != &other)
+        {
+            accumulator = other.accumulator;
+            psqt_accumulator = other.psqt_accumulator;
+            layer_stacks = other.layer_stacks;
+            copy_snapshots_from(other);
+        }
+        return *this;
+    }
+
+    NnueModel(NnueModel &&) noexcept = default;
+    NnueModel &operator=(NnueModel &&) noexcept = default;
+
     void reset()
     {
         accumulator.reset();
@@ -188,6 +241,26 @@ public:
     {
         accumulator.prefetch(feature);
         psqt_accumulator.prefetch(feature);
+    }
+
+    // Saves the full accumulator + PSQT state (both perspectives) onto an
+    // internal stack, then restores it on pop_state() -- a plain memcpy of
+    // ~4.2KB, versus replaying collect+diff (tens of KB of random weight-row
+    // reads) to undo a move's incremental update. Callers must pair every
+    // push with exactly one pop, in LIFO order (mirrors Board's own
+    // play/unplay nesting) -- see VBoard::play/unplay.
+    void push_state()
+    {
+        acc_snapshots[snapshot_depth] = accumulator.raw_state();
+        psqt_snapshots[snapshot_depth] = psqt_accumulator.raw_state();
+        ++snapshot_depth;
+    }
+
+    void pop_state()
+    {
+        --snapshot_depth;
+        accumulator.restore_raw_state(acc_snapshots[snapshot_depth]);
+        psqt_accumulator.restore_raw_state(psqt_snapshots[snapshot_depth]);
     }
 
     // piece_count: total number of pieces on the board (both colors, kings

@@ -17,9 +17,13 @@
 template <int NFeatures, int NBuckets>
 class PsqtAccumulatorLayer
 {
+public:
+    // Public -- see AccumulatorLayer::AccTable's note.
+    using AccTable = AlignedArray<std::array<std::int32_t, NBuckets>, 2>;
+
+private:
     // AlignedArray: see common/aligned_array.hpp -- forces cache-line
     // alignment on the actual heap-allocated table (not just the pointer to it).
-    using AccTable = AlignedArray<std::array<std::int32_t, NBuckets>, 2>;
     using WeightTable = AlignedArray<std::array<std::int32_t, NBuckets>, NFeatures>;
 
     std::unique_ptr<AccTable> accumulators;
@@ -97,5 +101,15 @@ public:
     const auto &get_accumulator() const
     {
         return (*accumulators)[perspective];
+    }
+
+    // See AccumulatorLayer::raw_state/restore_raw_state -- same rationale.
+    const AccTable &raw_state() const
+    {
+        return *accumulators;
+    }
+    void restore_raw_state(const AccTable &saved)
+    {
+        *accumulators = saved;
     }
 };
