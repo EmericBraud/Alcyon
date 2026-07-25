@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 
 #include "common/mask.hpp"
 #include "core/piece/color.hpp"
@@ -104,16 +105,24 @@ namespace Eval
     void print_pawn_stats();
 #endif
 
-    // Cheap material/PST-only approximation used by razoring/futility/RFP
-    // margins (see negamax.cpp) -- reads EvalState fields that are already
-    // maintained incrementally on every play()/unplay() regardless of
-    // NNUE_EVAL (see virtual_board.hpp), so this costs nothing extra even
-    // in NNUE builds. Deliberately not the full eval(): these pruning
-    // heuristics only need a fast, rough estimate, with margins sized to
-    // absorb its imprecision.
+    // Cheap material/PSQT-only approximation used by razoring/futility/RFP
+    // margins (see negamax.cpp). Deliberately not the full eval(): these
+    // pruning heuristics only need a fast, rough estimate, with margins
+    // sized to absorb its imprecision.
+    //
+    // NNUE builds use the network's own PSQT head (trained jointly with the
+    // full eval, so far better correlated with it than the hand-crafted HCE
+    // tables); its accumulator is materialized lazily and independently of
+    // the heavy L1 accumulator (see NnueEval::materialize_psqt). Legacy
+    // builds keep the HCE EvalState estimate.
     template <Color Us>
     int lazy_eval_relative(const VBoard &board)
     {
+#ifdef NNUE_EVAL
+        const int piece_count = std::popcount(board.get_occupancy<NO_COLOR>());
+        const int score = board.get_nnue_eval().evaluate_psqt_abs(board.get_side_to_move(), piece_count);
+        return Us == board.get_side_to_move() ? score : -score;
+#else
         const EvalState &state = board.get_eval_state();
         const int mg_score = (state.mg_pst[WHITE] + state.pieces_val[WHITE]) -
                              (state.mg_pst[BLACK] + state.pieces_val[BLACK]);
@@ -121,5 +130,6 @@ namespace Eval
                              (state.eg_pst[BLACK] + state.pieces_val[BLACK]);
         const int base_score = (mg_score * state.phase + eg_score * (engine_constants::eval::totalPhase - state.phase)) / engine_constants::eval::totalPhase;
         return Us == WHITE ? base_score : -base_score;
+#endif
     }
 }

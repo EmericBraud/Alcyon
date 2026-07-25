@@ -128,20 +128,29 @@ namespace nnue
         // are cut off (TT hits, etc.) without ever evaluating, so their
         // buffered diffs get discarded by unplay_pop() for free.
         //
-        // Invariants: applied_depth <= lazy_depth; the accumulator holds the
-        // position at ply `applied_depth`; model's snapshot stack is exactly
-        // `applied_depth` deep (one snapshot pushed per materialized ply, so
-        // unplaying a materialized ply is a pop_state() memcpy, and unplaying
-        // a never-evaluated ply is just a counter decrement).
+        // Invariants: applied_depth <= lazy_depth and psqt_applied_depth <=
+        // lazy_depth (the two are otherwise unordered relative to each
+        // other); the L1 accumulator holds the position at ply
+        // `applied_depth` and the PSQT accumulator the one at ply
+        // `psqt_applied_depth`; the model's two snapshot stacks are exactly
+        // `applied_depth` / `psqt_applied_depth` deep (one snapshot pushed
+        // per materialized ply, so unplaying a materialized ply is a
+        // pop-state memcpy, and unplaying a never-evaluated ply is just a
+        // counter decrement). The PSQT half materializes on its own (see
+        // materialize_psqt / evaluate_psqt_abs): pruning heuristics ask for
+        // the cheap PSQT estimate far more often than a full eval happens,
+        // and its rows are 32B instead of 2KB.
         //
         // `model` and the lazy counters are mutable because materialization
-        // is triggered by evaluate_abs(), which is logically const (callers
-        // hold const VBoard&s); materializing never changes any observable
-        // eval result, it only catches the cached accumulator state up.
+        // is triggered by evaluate_abs()/evaluate_psqt_abs(), which are
+        // logically const (callers hold const VBoard&s); materializing never
+        // changes any observable eval result, it only catches the cached
+        // accumulator state up.
         mutable Model model;
         std::unique_ptr<PendingDiff[]> pending = std::make_unique_for_overwrite<PendingDiff[]>(constants::MaxHistorySize);
         mutable int lazy_depth = 0;
         mutable int applied_depth = 0;
+        mutable int psqt_applied_depth = 0;
 
         // Reusable, allocated-once membership-stamp buffer for
         // filter_threats_diff()'s dedup/diff (see below): sized to
@@ -171,12 +180,14 @@ namespace nnue
         std::uint32_t diff_generation = 0;
 
         // materialize() helper for the copy operations below: catching the
-        // source up before copying means the copy only has to duplicate the
-        // model (whose snapshot stack then exactly matches lazy_depth) and
-        // the two counters -- never the pending buffers themselves.
+        // source up (both halves) before copying means the copy only has to
+        // duplicate the model (whose snapshot stacks then exactly match
+        // lazy_depth) and the counters -- never the pending buffers
+        // themselves.
         const Model &materialized_model() const
         {
             materialize();
+            materialize_psqt();
             return model;
         }
 
@@ -205,6 +216,7 @@ namespace nnue
             : model(other.materialized_model()),
               lazy_depth(other.lazy_depth),
               applied_depth(other.lazy_depth),
+              psqt_applied_depth(other.lazy_depth),
               threat_marks(other.threat_marks),
               diff_generation(other.diff_generation)
         {
@@ -219,6 +231,7 @@ namespace nnue
                 diff_generation = other.diff_generation;
                 lazy_depth = other.lazy_depth;
                 applied_depth = other.lazy_depth;
+                psqt_applied_depth = other.lazy_depth;
             }
             return *this;
         }
@@ -307,6 +320,7 @@ namespace nnue
         {
             lazy_depth = 0;
             applied_depth = 0;
+            psqt_applied_depth = 0;
             model.reset_snapshot_stack();
             initialize_perspective<WHITE>(board);
             initialize_perspective<BLACK>(board);
@@ -314,10 +328,24 @@ namespace nnue
 
         std::int32_t evaluate_abs(Color side_to_move, int piece_count) const
         {
+            // get_result() reads both the L1 accumulator and the PSQT
+            // buckets, so both halves must be caught up.
             materialize();
+            materialize_psqt();
             return side_to_move == WHITE
                        ? model.template get_result<WHITE>(piece_count)
                        : model.template get_result<BLACK>(piece_count);
+        }
+
+        // PSQT-only fast eval (see NnueModel::get_psqt_result): the trained
+        // material/PSQT estimate, used by pruning heuristics in place of the
+        // HCE EvalState estimate.
+        std::int32_t evaluate_psqt_abs(Color side_to_move, int piece_count) const
+        {
+            materialize_psqt();
+            return side_to_move == WHITE
+                       ? model.template get_psqt_result<WHITE>(piece_count)
+                       : model.template get_psqt_result<BLACK>(piece_count);
         }
 
         // Incremental HalfKAv2_hm^ update for a single piece (add or remove),
@@ -460,32 +488,54 @@ namespace nnue
             ++lazy_depth;
         }
 
-        // Undoes one play(): if that ply was materialized (an eval happened
-        // at or below it), the accumulator must be rolled back via its
-        // snapshot; if not, its buffered diff is simply abandoned -- the
-        // whole point of deferring the apply.
+        // Undoes one play(): each half that was materialized at this ply (an
+        // eval of its kind happened at or below it) must be rolled back via
+        // its snapshot; a half that never caught up simply abandons its part
+        // of the buffered diff -- the whole point of deferring the apply.
         void unplay_pop()
         {
             if (applied_depth == lazy_depth)
             {
-                model.pop_state();
+                model.pop_acc_state();
                 --applied_depth;
+            }
+            if (psqt_applied_depth == lazy_depth)
+            {
+                model.pop_psqt_state();
+                --psqt_applied_depth;
             }
             --lazy_depth;
         }
 
-        // Catches the accumulator up to the current ply by applying every
+        // Catches the L1 accumulator up to the current ply by applying every
         // still-pending buffered diff, snapshotting before each one so
-        // unplay_pop() can roll back through materialized plies.
+        // unplay_pop() can roll back through materialized plies. The PSQT
+        // half is NOT touched here -- it has its own pass below.
         void materialize() const
         {
             while (applied_depth < lazy_depth)
             {
-                model.push_state();
+                model.push_acc_state();
                 const PendingDiff &pd = pending[applied_depth];
-                apply_pending<WHITE>(pd);
-                apply_pending<BLACK>(pd);
+                apply_pending_acc<WHITE>(pd);
+                apply_pending_acc<BLACK>(pd);
                 ++applied_depth;
+            }
+        }
+
+        // Same catch-up for the PSQT half alone: 32B rows instead of 2KB,
+        // 64B snapshots instead of ~4KB, so a pruning heuristic can get the
+        // trained material/PSQT estimate at plies where no full eval ever
+        // happens without paying for the L1 half.
+        void materialize_psqt() const
+        {
+            while (psqt_applied_depth < lazy_depth)
+            {
+                model.push_psqt_state();
+                const PendingDiff &pd = pending[psqt_applied_depth];
+                apply_pending_psqt<WHITE>(pd);
+                apply_pending_psqt<BLACK>(pd);
+                ++psqt_applied_depth;
             }
         }
 
@@ -498,35 +548,60 @@ namespace nnue
 #endif
 
     private:
-        // materialize()'s apply pass for one buffered list, with the same
-        // software-prefetch lookahead the eager path used (see
+        // materialize()'s apply pass for one buffered list (L1 half), with
+        // the same software-prefetch lookahead the eager path used (see
         // PrefetchDistance): every entry here survived filtering, so every
         // prefetch corresponds to a weight row that's really about to be
         // read.
         template <bool activate, Color perspective>
-        void apply_list(const threats::FixedIntList<MAX_PENDING_FEATURES> &list) const
+        void apply_acc_list(const threats::FixedIntList<MAX_PENDING_FEATURES> &list) const
         {
             const int n = list.size();
             for (int i = 0; i < n; ++i)
             {
                 if (i + PrefetchDistance < n)
-                    model.prefetch_feature(list[i + PrefetchDistance]);
-                model.template update_feature<activate, perspective>(list[i]);
+                    model.prefetch_acc_feature(list[i + PrefetchDistance]);
+                model.template update_acc_feature<activate, perspective>(list[i]);
+            }
+        }
+
+        // PSQT-half twin of apply_acc_list. Prefetch kept even though rows
+        // are tiny (32B): the PSQT weight table is 2.7MB, so rows still miss
+        // in L1/L2 routinely.
+        template <bool activate, Color perspective>
+        void apply_psqt_list(const threats::FixedIntList<MAX_PENDING_FEATURES> &list) const
+        {
+            const int n = list.size();
+            for (int i = 0; i < n; ++i)
+            {
+                if (i + PrefetchDistance < n)
+                    model.prefetch_psqt_feature(list[i + PrefetchDistance]);
+                model.template update_psqt_feature<activate, perspective>(list[i]);
             }
         }
 
         template <Color perspective>
-        void apply_pending(const PendingDiff &pd) const
+        void apply_pending_acc(const PendingDiff &pd) const
         {
             // refresh (king move by `perspective`): the add list holds the
             // full post-move activation set over a reset accumulator, and
             // the remove list is unused by construction (VBoard pushes no
             // per-piece toggles for the refreshed perspective).
             if (pd.refresh[perspective])
-                model.template reset_perspective<perspective>();
+                model.template reset_acc_perspective<perspective>();
             else
-                apply_list<false, perspective>(pd.remove[perspective]);
-            apply_list<true, perspective>(pd.add[perspective]);
+                apply_acc_list<false, perspective>(pd.remove[perspective]);
+            apply_acc_list<true, perspective>(pd.add[perspective]);
+        }
+
+        template <Color perspective>
+        void apply_pending_psqt(const PendingDiff &pd) const
+        {
+            if (pd.refresh[perspective])
+                model.template reset_psqt_perspective<perspective>();
+            else
+                apply_psqt_list<false, perspective>(pd.remove[perspective]);
+            apply_psqt_list<true, perspective>(pd.add[perspective]);
         }
 
         template <typename T>

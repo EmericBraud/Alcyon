@@ -75,25 +75,31 @@ private:
     PsqtAccumulatorLayer<NFeatures, NumPsqtBuckets> psqt_accumulator;
     std::array<LayerStackBucket, NumLsBuckets> layer_stacks;
 
-    // Snapshot stack backing push_state()/pop_state() (see below): each
-    // entry is a full copy of both perspectives' accumulator + PSQT state
-    // (~4.2KB), allocated once up front (constants::MaxHistorySize deep --
-    // the same bound Board's own move-history array uses, so nesting can
-    // never exceed it) rather than per-call, keeping push/pop allocation-free
-    // on the hot path.
+    // Snapshot stacks backing push_acc_state()/push_psqt_state() (see
+    // below): each entry is a full copy of both perspectives' state (~4KB
+    // for the L1 accumulator, 64B for the PSQT buckets), allocated once up
+    // front (constants::MaxHistorySize deep -- the same bound Board's own
+    // move-history array uses, so nesting can never exceed it) rather than
+    // per-call, keeping push/pop allocation-free on the hot path. The two
+    // stacks have *independent* depths: the PSQT half materializes on cheap
+    // pruning evals (NnueEval::materialize_psqt) and the L1 half only on
+    // full evals, so at any moment each half may have caught up to a
+    // different ply.
     using AccSnapshot = typename AccumulatorLayer<NFeatures, NAccumulator, NThreatFeatures>::AccTable;
     using PsqtSnapshot = typename PsqtAccumulatorLayer<NFeatures, NumPsqtBuckets>::AccTable;
     std::unique_ptr<AccSnapshot[]> acc_snapshots = std::make_unique<AccSnapshot[]>(constants::MaxHistorySize);
     std::unique_ptr<PsqtSnapshot[]> psqt_snapshots = std::make_unique<PsqtSnapshot[]>(constants::MaxHistorySize);
-    int snapshot_depth = 0;
+    int acc_snapshot_depth = 0;
+    int psqt_snapshot_depth = 0;
 
-    // Deep-copies only the live [0, snapshot_depth) prefix -- the rest is
-    // unwritten scratch space, not meaningful state to preserve.
+    // Deep-copies only the live snapshot prefixes -- the rest is unwritten
+    // scratch space, not meaningful state to preserve.
     void copy_snapshots_from(const NnueModel &other)
     {
-        snapshot_depth = other.snapshot_depth;
-        std::copy_n(other.acc_snapshots.get(), snapshot_depth, acc_snapshots.get());
-        std::copy_n(other.psqt_snapshots.get(), snapshot_depth, psqt_snapshots.get());
+        acc_snapshot_depth = other.acc_snapshot_depth;
+        psqt_snapshot_depth = other.psqt_snapshot_depth;
+        std::copy_n(other.acc_snapshots.get(), acc_snapshot_depth, acc_snapshots.get());
+        std::copy_n(other.psqt_snapshots.get(), psqt_snapshot_depth, psqt_snapshots.get());
     }
 
     static int bucket_for_piece_count(int piece_count)
@@ -221,6 +227,9 @@ public:
         psqt_accumulator.reset();
     }
 
+    // Combined both-halves variants: used by the full-rebuild path
+    // (NnueEval::initialize_perspective), where the L1 accumulator and the
+    // PSQT buckets are always rebuilt together.
     template <Color perspective>
     void reset_perspective()
     {
@@ -243,32 +252,81 @@ public:
         psqt_accumulator.prefetch(feature);
     }
 
-    // Saves the full accumulator + PSQT state (both perspectives) onto an
-    // internal stack, then restores it on pop_state() -- a plain memcpy of
-    // ~4.2KB, versus replaying collect+diff (tens of KB of random weight-row
-    // reads) to undo a move's incremental update. Callers must pair every
-    // push with exactly one pop, in LIFO order (mirrors Board's own
-    // play/unplay nesting) -- see VBoard::play/unplay.
-    void push_state()
+    // Single-half variants: the lazy materialization paths catch each half
+    // up independently (PSQT on cheap pruning evals, L1 on full evals), so
+    // each applies its own half of a buffered diff -- see NnueEval::
+    // materialize / materialize_psqt.
+    template <Color perspective>
+    void reset_acc_perspective()
     {
-        acc_snapshots[snapshot_depth] = accumulator.raw_state();
-        psqt_snapshots[snapshot_depth] = psqt_accumulator.raw_state();
-        ++snapshot_depth;
+        accumulator.template reset_perspective<perspective>();
     }
 
-    void pop_state()
+    template <Color perspective>
+    void reset_psqt_perspective()
     {
-        --snapshot_depth;
-        accumulator.restore_raw_state(acc_snapshots[snapshot_depth]);
-        psqt_accumulator.restore_raw_state(psqt_snapshots[snapshot_depth]);
+        psqt_accumulator.template reset_perspective<perspective>();
+    }
+
+    template <bool activate, Color perspective>
+    void update_acc_feature(int feature)
+    {
+        accumulator.template update_feature<activate, perspective>(feature);
+    }
+
+    template <bool activate, Color perspective>
+    void update_psqt_feature(int feature)
+    {
+        psqt_accumulator.template update_feature<activate, perspective>(feature);
+    }
+
+    void prefetch_acc_feature(int feature) const
+    {
+        accumulator.prefetch(feature);
+    }
+
+    void prefetch_psqt_feature(int feature) const
+    {
+        psqt_accumulator.prefetch(feature);
+    }
+
+    // Saves one half's state (both perspectives) onto its stack, restored
+    // by the matching pop -- a plain memcpy (~4KB for the L1 accumulator,
+    // 64B for PSQT), versus replaying collect+diff to undo a move's
+    // incremental update. Callers must pair every push with exactly one
+    // pop, in LIFO order per stack (mirrors Board's own play/unplay
+    // nesting) -- see NnueEval::materialize/materialize_psqt/unplay_pop.
+    void push_acc_state()
+    {
+        acc_snapshots[acc_snapshot_depth] = accumulator.raw_state();
+        ++acc_snapshot_depth;
+    }
+
+    void pop_acc_state()
+    {
+        --acc_snapshot_depth;
+        accumulator.restore_raw_state(acc_snapshots[acc_snapshot_depth]);
+    }
+
+    void push_psqt_state()
+    {
+        psqt_snapshots[psqt_snapshot_depth] = psqt_accumulator.raw_state();
+        ++psqt_snapshot_depth;
+    }
+
+    void pop_psqt_state()
+    {
+        --psqt_snapshot_depth;
+        psqt_accumulator.restore_raw_state(psqt_snapshots[psqt_snapshot_depth]);
     }
 
     // Drops every outstanding snapshot without restoring anything -- for
     // callers that are about to rebuild the accumulator from scratch (see
-    // NnueEval::initialize) and therefore invalidate the whole stack.
+    // NnueEval::initialize) and therefore invalidate both stacks.
     void reset_snapshot_stack()
     {
-        snapshot_depth = 0;
+        acc_snapshot_depth = 0;
+        psqt_snapshot_depth = 0;
     }
 
     // piece_count: total number of pieces on the board (both colors, kings
@@ -310,6 +368,25 @@ public:
 
         const std::int64_t combined = 2 * layerstack_final + psqt_diff;
         return static_cast<std::int32_t>(combined / FinalScale);
+    }
+
+    // PSQT-only output: the material/PSQT head of the network, skipping the
+    // whole layer stack (compute_l0 + 3 dense layers). Same units and same
+    // bucket selection as get_result() -- get_result computes
+    // (2*layerstack + psqt_diff) / FinalScale, so the psqt_diff / FinalScale
+    // term alone IS the network's trained material/PSQT estimate in
+    // centipawns. Used as the cheap pruning eval (see Eval::
+    // lazy_eval_relative) in place of the HCE EvalState estimate.
+    template <Color perspective>
+    std::int32_t get_psqt_result(int piece_count) const
+    {
+        constexpr Color us = perspective;
+        constexpr Color them = !perspective;
+        const int bucket = bucket_for_piece_count(piece_count);
+        const auto &psqt_us = psqt_accumulator.template get_accumulator<us>();
+        const auto &psqt_them = psqt_accumulator.template get_accumulator<them>();
+        const std::int64_t psqt_diff = static_cast<std::int64_t>(psqt_us[bucket]) - static_cast<std::int64_t>(psqt_them[bucket]);
+        return static_cast<std::int32_t>(psqt_diff / FinalScale);
     }
 
 #ifdef CHESS26_UNIT_TESTING

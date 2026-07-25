@@ -14,6 +14,11 @@
 
 class VBoard : public Board
 {
+    // In NNUE builds the EvalState is only (re)built on load/assign, never
+    // maintained per move: the HCE fast eval it fed is replaced by the
+    // network's own PSQT head (see Eval::lazy_eval_relative), so its
+    // contents go stale as moves are played. Legacy (non-NNUE) builds still
+    // increment/decrement it on every play/unplay.
     EvalState eval_state;
 #ifdef NNUE_EVAL
 #define NNUE_FULL_MODEL_PATH file::get_data_path("nnue/v2.nnue")
@@ -199,7 +204,6 @@ public:
 
         nnue_eval.template collect_threats_scoped<Them>(*this, touched_squares, old_them_threats);
 
-        eval_state.increment(move, Us);
         Board::play<Us>(move);
 
         nnue_eval.template collect_full_perspective<Us>(*this, pd.add[Us]);
@@ -269,7 +273,6 @@ public:
         // itself. See NnueEval::collect_threats_scoped.
         nnue_eval.collect_threats_scoped_both(*this, touched_squares, old_white_threats, old_black_threats);
 
-        eval_state.increment(move, Us);
         Board::play<Us>(move);
 
         nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> new_white_threats, new_black_threats;
@@ -293,7 +296,6 @@ public:
         // pre-move accumulator comes back via a snapshot memcpy. Either way
         // no collect/diff work is redone here.
         Board::unplay<Us>(move);
-        eval_state.decrement(move, Us);
         nnue_eval.unplay_pop();
 #else
         Board::unplay<Us>(move);

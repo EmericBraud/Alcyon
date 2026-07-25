@@ -3,6 +3,10 @@
 #include "core/move/generator/move_generator.hpp"
 #include "engine/eval/virtual_board.hpp"
 
+// These tests cover the legacy HCE fast-eval path: in NNUE builds VBoard no
+// longer maintains the EvalState per move (the NNUE PSQT head replaces it as
+// the pruning fast eval -- see Eval::lazy_eval_relative), so incremental
+// consistency only holds, and is only tested, in non-NNUE builds.
 class EvalStateTest : public ::testing::Test
 {
 protected:
@@ -10,6 +14,9 @@ protected:
 
     void SetUp() override
     {
+#ifdef NNUE_EVAL
+        GTEST_SKIP() << "EvalState is not maintained per move in NNUE builds (legacy HCE path only).";
+#endif
     }
 };
 
