@@ -355,6 +355,22 @@ public:
             return is_move_legal<WHITE>(move);
         return is_move_legal<BLACK>(move);
     };
+
+    // Same "toggle bitboards, test, toggle back" shape as is_move_legal()
+    // above (no zobrist/eval_state/NNUE touched) -- tests whether playing
+    // `move` would attack the opponent's king, without a real play()/unplay()
+    // round trip. Callers must have already established the move is legal
+    // for Us (is_move_legal<Us>(move) == true): unlike is_move_legal, this
+    // does not itself re-check whether Us's own king ends up safe.
+    template <Color Us>
+    bool gives_check(const Move move);
+    inline bool gives_check(const Move move)
+    {
+        const Color us = get_side_to_move();
+        if (us == WHITE)
+            return gives_check<WHITE>(move);
+        return gives_check<BLACK>(move);
+    };
     void compute_full_hash();
     char piece_to_char(Color color, Piece type) const;
     void show() const;

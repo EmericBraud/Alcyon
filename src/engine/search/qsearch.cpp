@@ -81,12 +81,10 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
             }
         }
 
-        board.play<Us>(m);
-        if (board.is_king_attacked<Us>())
-        {
-            board.unplay<Us>(m);
+        if (!board.template is_move_legal<Us>(m))
             continue;
-        }
+
+        board.play<Us>(m);
 
         moves_searched++;
         // Appel récursif avec ply+1 pour la détection précise des mats
