@@ -35,7 +35,7 @@
 #include "engine/eval/nnue/psqt_accumulator_layer.hpp"
 #include "engine/eval/nnue/dense_layer.hpp"
 
-template <int NFeatures, int NAccumulator = 1024, int NumPsqtBuckets = 8, int NumLsBuckets = 8, int L2 = 32, int L3 = 32>
+template <int NFeatures, int NThreatFeatures, int NAccumulator = 1024, int NumPsqtBuckets = 8, int NumLsBuckets = 8, int L2 = 32, int L3 = 32>
 class NnueModel
 {
     static_assert(NAccumulator % 2 == 0, "NAccumulator must be even (split in half for the L0 pairwise square)");
@@ -71,7 +71,7 @@ public:
     };
 
 private:
-    AccumulatorLayer<NFeatures, NAccumulator> accumulator;
+    AccumulatorLayer<NFeatures, NAccumulator, NThreatFeatures> accumulator;
     PsqtAccumulatorLayer<NFeatures, NumPsqtBuckets> psqt_accumulator;
     std::array<LayerStackBucket, NumLsBuckets> layer_stacks;
 
@@ -81,7 +81,7 @@ private:
     // the same bound Board's own move-history array uses, so nesting can
     // never exceed it) rather than per-call, keeping push/pop allocation-free
     // on the hot path.
-    using AccSnapshot = typename AccumulatorLayer<NFeatures, NAccumulator>::AccTable;
+    using AccSnapshot = typename AccumulatorLayer<NFeatures, NAccumulator, NThreatFeatures>::AccTable;
     using PsqtSnapshot = typename PsqtAccumulatorLayer<NFeatures, NumPsqtBuckets>::AccTable;
     std::unique_ptr<AccSnapshot[]> acc_snapshots = std::make_unique<AccSnapshot[]>(constants::MaxHistorySize);
     std::unique_ptr<PsqtSnapshot[]> psqt_snapshots = std::make_unique<PsqtSnapshot[]>(constants::MaxHistorySize);
@@ -177,9 +177,9 @@ private:
     }
 
 public:
-    template <typename AccBiases, typename AccWeights, typename PsqtWeights, typename LayerStacksArr>
-    NnueModel(AccBiases &&acc_biases, AccWeights &&acc_weights, PsqtWeights &&psqt_weights, LayerStacksArr &&layer_stacks_)
-        : accumulator(std::forward<AccBiases>(acc_biases), std::forward<AccWeights>(acc_weights)),
+    template <typename AccBiases, typename AccWeightsInt8, typename AccWeightsInt16, typename PsqtWeights, typename LayerStacksArr>
+    NnueModel(AccBiases &&acc_biases, AccWeightsInt8 &&acc_weights_int8, AccWeightsInt16 &&acc_weights_int16, PsqtWeights &&psqt_weights, LayerStacksArr &&layer_stacks_)
+        : accumulator(std::forward<AccBiases>(acc_biases), std::forward<AccWeightsInt8>(acc_weights_int8), std::forward<AccWeightsInt16>(acc_weights_int16)),
           psqt_accumulator(std::forward<PsqtWeights>(psqt_weights)),
           layer_stacks(std::forward<LayerStacksArr>(layer_stacks_))
     {

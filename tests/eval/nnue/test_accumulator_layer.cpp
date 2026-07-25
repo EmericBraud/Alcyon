@@ -7,15 +7,16 @@
 class AccumulatorLayerTest : public ::testing::Test
 {
 protected:
-    AccumulatorLayer<4, 2> acc;
+    AccumulatorLayer<4, 2, 4> acc;
 
     AccumulatorLayerTest()
         : acc(
               std::array<std::int16_t, 2>{{2, -2}},
-              std::array<std::array<std::int16_t, 2>, 4>{{{{5, -5}},
+              std::array<std::array<std::int8_t, 2>, 4>{{{{5, -5}},
                                                          {{2, -2}},
                                                          {{0, 0}},
-                                                         {{0, 0}}}})
+                                                         {{0, 0}}}},
+              std::array<std::array<std::int16_t, 2>, 0>{})
     {
     }
     void SetUp() override

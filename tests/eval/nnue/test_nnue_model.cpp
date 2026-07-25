@@ -33,15 +33,16 @@
 //   layerstack_final = trunc(3325*75/128) = trunc(1948.2421875) = 1948
 //   psqt_diff = 0
 //   result = trunc((2*1948 + 0) / 32) = trunc(121.75) = 121
-using TestModel = NnueModel</*Features=*/4, /*Accum=*/4, /*PsqtBuckets=*/1, /*LsBuckets=*/1, /*L2=*/2, /*L3=*/1>;
+using TestModel = NnueModel</*Features=*/4, /*ThreatFeatures=*/4, /*Accum=*/4, /*PsqtBuckets=*/1, /*LsBuckets=*/1, /*L2=*/2, /*L3=*/1>;
 
 namespace
 {
     TestModel make_model()
     {
         std::array<std::int16_t, 4> acc_biases{200, 100, 150, 50};
-        std::array<std::array<std::int16_t, 4>, 4> acc_weights{};
+        std::array<std::array<std::int8_t, 4>, 4> acc_weights{};
         acc_weights[0] = {50, 0, 0, 0}; // feature 0 nudges the accumulator so update_feature is observable
+        std::array<std::array<std::int16_t, 4>, 0> acc_weights_halfka{};
         std::array<std::array<std::int32_t, 1>, 4> psqt_weights{};
 
         TestModel::L1Layer l1(
@@ -60,6 +61,7 @@ namespace
         return TestModel(
             std::move(acc_biases),
             std::move(acc_weights),
+            std::move(acc_weights_halfka),
             std::move(psqt_weights),
             std::move(layer_stacks));
     }

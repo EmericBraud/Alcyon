@@ -75,7 +75,7 @@ namespace nnue
     class NnueEval
     {
     public:
-        using Model = NnueModel<NumFeatures, L1, NumPsqtBuckets, NumLsBuckets, L2, L3>;
+        using Model = NnueModel<NumFeatures, NumFullThreatsFeatures, L1, NumPsqtBuckets, NumLsBuckets, L2, L3>;
 
     private:
         Model model;
@@ -509,35 +509,33 @@ namespace nnue
             // Feature transformer weights, written as two independent segments
             // (Full_Threats then HalfKAv2_hm^, matching the "Full_Threats+HalfKAv2_hm^"
             // feature-name split order): each segment has its own weight tensor
-            // (int8 for Full_Threats, int16 for HalfKAv2_hm^) and its own
-            // int32 PSQT tensor.
-            // for-overwrite: both arrays (~170MB + ~2.7MB) are fully
-            // populated row-by-row by read_segment() right below: an initial
-            // value-init here would zero all of it for nothing.
-            auto accumulator_weights_ptr = std::make_unique_for_overwrite<std::array<std::array<std::int16_t, L1>, NumFeatures>>();
+            // and its own int32 PSQT tensor. Full_Threats' weight tensor is
+            // kept int8 in memory (not widened to int16 like before) -- see
+            // AccumulatorLayer's class comment for why: it halves the bytes
+            // AccumulatorLayer::apply_row has to fetch from DRAM per update
+            // on the hot incremental-update path, at the cost of a cheap
+            // sign-extend done at apply time instead of load time.
+            // for-overwrite: all arrays are fully populated row-by-row by
+            // read_segment()/below: an initial value-init here would zero
+            // all of it for nothing.
+            auto threat_weights_ptr = std::make_unique_for_overwrite<std::array<std::array<std::int8_t, L1>, NumFullThreatsFeatures>>();
+            auto halfka_weights_ptr = std::make_unique_for_overwrite<std::array<std::array<std::int16_t, L1>, NumHalfkaFeatures>>();
             auto psqt_weights_ptr = std::make_unique_for_overwrite<std::array<std::array<std::int32_t, NumPsqtBuckets>, NumFeatures>>();
-            auto &accumulator_weights = *accumulator_weights_ptr;
+            auto &threat_weights = *threat_weights_ptr;
+            auto &halfka_weights = *halfka_weights_ptr;
             auto &psqt_weights = *psqt_weights_ptr;
 
-            // Reads straight into accumulator_weights[row_offset..]/
-            // psqt_weights[row_offset..]: rows within a segment are
-            // contiguous (std::array packs elements with no padding), and
-            // the file stores each segment in matching row-major order, so
-            // no intermediate flat buffer + row-copy loop is needed.
-            auto read_segment = [&](int row_offset, int n_rows, bool weight_is_int8)
-            {
-                std::int16_t *weight_dst = accumulator_weights[row_offset].data();
-                if (weight_is_int8)
-                    read_tensor_flat_into<std::int8_t>(file, weight_dst, static_cast<std::size_t>(n_rows) * L1, "ft weight (int8 segment)");
-                else
-                    read_tensor_flat_into<std::int16_t>(file, weight_dst, static_cast<std::size_t>(n_rows) * L1, "ft weight (int16 segment)");
+            // Full_Threats segment: weight tensor read directly as int8 (no
+            // widening -- the file already stores it that way).
+            read_tensor_flat_into<std::int8_t>(file, threat_weights.data()->data(), static_cast<std::size_t>(NumFullThreatsFeatures) * L1, "ft weight (int8 segment)");
+            read_tensor_flat_into<std::int32_t>(file, psqt_weights[0].data(), static_cast<std::size_t>(NumFullThreatsFeatures) * NumPsqtBuckets, "ft psqt weight (threats)");
 
-                std::int32_t *psqt_dst = psqt_weights[row_offset].data();
-                read_tensor_flat_into<std::int32_t>(file, psqt_dst, static_cast<std::size_t>(n_rows) * NumPsqtBuckets, "ft psqt weight");
-            };
-
-            read_segment(0, NumFullThreatsFeatures, /*weight_is_int8=*/true);
-            read_segment(NumFullThreatsFeatures, NumHalfkaFeatures, /*weight_is_int8=*/false);
+            // HalfKAv2_hm^ segment: weight tensor stays int16, at row offset
+            // NumFullThreatsFeatures within the combined PSQT table (its own
+            // weight table is separate/zero-based, matching AccumulatorLayer's
+            // halfka_weights indexing of feature - NumFullThreatsFeatures).
+            read_tensor_flat_into<std::int16_t>(file, halfka_weights.data()->data(), static_cast<std::size_t>(NumHalfkaFeatures) * L1, "ft weight (int16 segment)");
+            read_tensor_flat_into<std::int32_t>(file, psqt_weights[NumFullThreatsFeatures].data(), static_cast<std::size_t>(NumHalfkaFeatures) * NumPsqtBuckets, "ft psqt weight (halfka)");
 
             std::vector<typename Model::LayerStackBucket> buckets;
             buckets.reserve(NumLsBuckets);
@@ -557,7 +555,8 @@ namespace nnue
 
             return Model(
                 std::move(*accumulator_biases_ptr),
-                std::move(*accumulator_weights_ptr),
+                std::move(*threat_weights_ptr),
+                std::move(*halfka_weights_ptr),
                 std::move(*psqt_weights_ptr),
                 make_layer_stacks_array(buckets, std::make_index_sequence<NumLsBuckets>{}));
         }
