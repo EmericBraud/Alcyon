@@ -36,8 +36,10 @@
 #include <cstdint>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #include "common/logger.hpp"
@@ -181,8 +183,14 @@ namespace nnue
     public:
         NnueEval(Model &&_model) : model(std::move(_model)) {}
 
+        // Copies from a process-wide cached prototype (see
+        // shared_base_model) instead of re-reading the ~170MB file: every
+        // layer's weight tables are shared_ptr<const>-shared, so this copy
+        // is just fresh accumulator state plus refcount bumps. Constructing
+        // VBoards used to reload the file from disk every time (~measurable
+        // fraction of a whole bench run spent in sys time).
         explicit NnueEval(const std::string &path)
-            : model(load_model(path))
+            : model(shared_base_model(path))
         {
         }
 
@@ -665,6 +673,29 @@ namespace nnue
             read_tensor_flat_into<std::int8_t>(file, weights.data()->data(), static_cast<std::size_t>(In) * Out, name + " weights");
 
             return Layer(std::move(weights), std::move(biases));
+        }
+
+        // Process-wide model cache: the file is read and decoded once per
+        // distinct path, then every NnueEval copy-constructs from the cached
+        // prototype (cheap: weight tables are shared_ptr<const>-shared
+        // across copies, only per-instance accumulator state is duplicated).
+        // The prototype itself stays alive for the program's lifetime -- it
+        // IS the weight storage every instance points into.
+        //
+        // Thread-safety: the mutex serializes lookups/inserts; the returned
+        // reference stays valid outside the lock because unordered_map is
+        // node-based (inserts never invalidate references to existing
+        // elements) and cached entries are never mutated or erased.
+        static const Model &shared_base_model(const std::string &path)
+        {
+            static std::mutex cache_mutex;
+            static std::unordered_map<std::string, Model> cache;
+
+            std::lock_guard<std::mutex> lock(cache_mutex);
+            auto it = cache.find(path);
+            if (it == cache.end())
+                it = cache.emplace(path, load_model(path)).first;
+            return it->second;
         }
 
         static Model load_model(const std::string &path)

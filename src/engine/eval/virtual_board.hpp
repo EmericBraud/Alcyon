@@ -49,7 +49,10 @@ public:
 
             eval_state = EvalState(pieces_occ);
 #ifdef NNUE_EVAL
-            nnue_eval = nnue::NnueEval{NNUE_FULL_MODEL_PATH};
+            // Reuse the member's already-loaded model: initialize() rebuilds
+            // the accumulator from `other`'s position and drops all
+            // lazy/snapshot state, which is everything a fresh NnueEval
+            // would have provided.
             nnue_eval.initialize(other);
 #endif
         };
