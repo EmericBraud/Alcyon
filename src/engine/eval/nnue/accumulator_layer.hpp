@@ -6,15 +6,16 @@
 #include <memory>
 
 #include "core/piece/color.hpp"
+#include "common/aligned_array.hpp"
 
 template <int NFeatures, int NNeurons>
 class AccumulatorLayer
 {
     // On utilise des alias pour rendre le code lisible
-    using AccTable = std::array<std::array<std::int16_t, NNeurons>, 2>;
-    using BiasTable = std::array<std::int16_t, NNeurons>;
+    using AccTable = AlignedArray<std::array<std::int16_t, NNeurons>, 2>;
+    using BiasTable = AlignedArray<std::int16_t, NNeurons>;
     // Feature transformer weights are quantized as int16 (scale = 127), not int8.
-    using WeightTable = std::array<std::array<std::int16_t, NNeurons>, NFeatures>;
+    using WeightTable = AlignedArray<std::array<std::int16_t, NNeurons>, NFeatures>;
 
     std::unique_ptr<AccTable> accumulators;
     std::shared_ptr<const BiasTable> biases;

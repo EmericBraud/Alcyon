@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "core/piece/color.hpp"
+#include "common/aligned_array.hpp"
 
 // Tracks the PSQT (piece-square-table) output buckets that live alongside the
 // main feature transformer accumulator. Quantized as int32 (scale =
@@ -15,8 +16,10 @@
 template <int NFeatures, int NBuckets>
 class PsqtAccumulatorLayer
 {
-    using AccTable = std::array<std::array<std::int32_t, NBuckets>, 2>;
-    using WeightTable = std::array<std::array<std::int32_t, NBuckets>, NFeatures>;
+    // AlignedArray: see common/aligned_array.hpp -- forces cache-line
+    // alignment on the actual heap-allocated table (not just the pointer to it).
+    using AccTable = AlignedArray<std::array<std::int32_t, NBuckets>, 2>;
+    using WeightTable = AlignedArray<std::array<std::int32_t, NBuckets>, NFeatures>;
 
     std::unique_ptr<AccTable> accumulators;
     std::shared_ptr<const WeightTable> weights;

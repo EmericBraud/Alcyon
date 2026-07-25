@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <utility>
+#include <new>
 
 // WeightScaleBits_: hidden-layer weights are quantized with scale 2^WeightScaleBits_
 // (64 by default, matching nnue-pytorch/Stockfish quantization). Set to 0 for
@@ -17,8 +18,8 @@ public:
     static constexpr int NNeurons = NNeurons_;
 
 private:
-    alignas(64) std::array<std::array<std::int8_t, NInputs_>, NNeurons_> weights;
-    alignas(64) std::array<std::int32_t, NNeurons_> biases;
+    alignas(std::hardware_destructive_interference_size) std::array<std::array<std::int8_t, NInputs_>, NNeurons_> weights;
+    alignas(std::hardware_destructive_interference_size) std::array<std::int32_t, NNeurons_> biases;
 
     std::int8_t relu(std::int32_t acc) const;
 
