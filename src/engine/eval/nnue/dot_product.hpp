@@ -7,7 +7,7 @@
 
 #if defined(__AVX2__)
 #include <immintrin.h>
-#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOT_PRODUCT)
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 #include <arm_neon.h>
 #endif
 
@@ -140,7 +140,7 @@ namespace nnue::dot
         return sum;
     }
 
-#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOT_PRODUCT)
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 
     template <int N>
     inline std::int32_t dot_u8_i8_impl(const std::uint8_t *a, const std::int8_t *b)
