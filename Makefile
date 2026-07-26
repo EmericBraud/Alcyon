@@ -4,7 +4,7 @@ EXE := chess26
 NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
 all:
-	cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_GUI=OFF
+	cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_GUI=OFF -DENABLE_NNUE_EVAL=OFF
 	cmake --build build -j$(NPROC)
 	cp build/chess26 ./$(EXE)
 	cp -R build/data ./data
