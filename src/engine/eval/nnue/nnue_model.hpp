@@ -125,10 +125,11 @@ private:
         // 128), multiplied, and the raw product is divided by inference_l0_division_factor=512
         // (== ft_quantized_one^2 / hidden_quantized_one, since l0_correction_factor == 1 here),
         // not by 128 (2^7). No extra *1:27 factor is applied.
-        // int32 lane-matched to int16_v's width (native_simd<int32_t> may have a
-        // narrower native width than native_simd<int16_t>, e.g. 4 vs 8 lanes on
-        // 128-bit NEON/SSE), so the widening simd_cast below needs equal lane counts.
-        using int32_wide_v = stdx::fixed_size_simd<std::int32_t, simd::SimdSize16>;
+        // The whole pipeline stays in 16-bit lanes: both factors are in
+        // [0, 255] after the clamp, so their product fits a uint16
+        // (255*255 = 65025 <= 65535) and (a*b) >> 9 <= 127 by construction
+        // -- no widening to int32 and no output clamp needed.
+        using uint16_v = stdx::rebind_simd_t<std::uint16_t, simd::int16_v>;
         using uint8_wide_v = stdx::fixed_size_simd<std::uint8_t, simd::SimdSize16>;
 
         auto pairwise_square_half = [](const std::int16_t *acc_ptr, std::uint8_t *out)
@@ -144,11 +145,10 @@ private:
                 acc_a_16 = stdx::clamp(acc_a_16, simd::int16_v(0), simd::int16_v(255));
                 acc_b_16 = stdx::clamp(acc_b_16, simd::int16_v(0), simd::int16_v(255));
 
-                int32_wide_v acc_a_32 = stdx::simd_cast<int32_wide_v>(acc_a_16);
-                int32_wide_v acc_b_32 = stdx::simd_cast<int32_wide_v>(acc_b_16);
+                const uint16_v acc_a_u = stdx::static_simd_cast<uint16_v>(acc_a_16);
+                const uint16_v acc_b_u = stdx::static_simd_cast<uint16_v>(acc_b_16);
 
-                int32_wide_v prod = (acc_a_32 * acc_b_32) >> 9;
-                prod = stdx::clamp(prod, int32_wide_v(0), int32_wide_v(127));
+                const uint16_v prod = (acc_a_u * acc_b_u) >> 9;
 
                 const uint8_wide_v prod_8 = stdx::static_simd_cast<uint8_wide_v>(prod);
                 prod_8.copy_to(out + i, stdx::element_aligned);
