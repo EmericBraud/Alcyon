@@ -23,7 +23,6 @@
 
 #include "common/logger.hpp"
 #include "core/move/move.hpp"
-#include "core/board/board.hpp"
 #include "core/move/generator/move_generator.hpp"
 
 #include "engine/config/config.hpp"

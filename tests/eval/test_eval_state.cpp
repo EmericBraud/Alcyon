@@ -3,6 +3,17 @@
 #include "core/move/generator/move_generator.hpp"
 #include "engine/eval/virtual_board.hpp"
 
+// These tests cover the legacy HCE fast-eval path: in NNUE builds VBoard
+// does not carry an EvalState at all (the NNUE PSQT head replaces it as the
+// pruning fast eval -- see Eval::lazy_eval_relative), so the incremental-
+// consistency contract only exists, and only compiles, in non-NNUE builds.
+#ifdef NNUE_EVAL
+TEST(EvalStateTest, RequiresHceBuild)
+{
+    GTEST_SKIP() << "EvalState only exists in non-NNUE (legacy HCE) builds.";
+}
+#else
+
 class EvalStateTest : public ::testing::Test
 {
 protected:
@@ -86,3 +97,5 @@ TEST_F(EvalStateTest, ConsistencyLongSequence)
     ASSERT_EQ(incremental.phase, static_eval.phase) << "Erreur Phase";
     ASSERT_EQ(incremental.pawn_key, static_eval.pawn_key) << "Erreur Pawn Key";
 }
+
+#endif

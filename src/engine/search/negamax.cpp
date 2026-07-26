@@ -324,11 +324,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         if (futil_pruning && moves_searched >= 1 && !is_tactical)
         {
-            board.play<Us>(m);
-            bool gives_check_for_futility = board.is_king_attacked<!Us>();
-            board.unplay<Us>(m);
-
-            if (!gives_check_for_futility)
+            if (!board.template gives_check<Us>(m))
                 continue;
         }
         if (search::should_see_pruning<Us>(*this, in_check, is_pv, depth, moves_searched, tt_move, m))
