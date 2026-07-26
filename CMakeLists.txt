@@ -159,6 +159,10 @@ include(CTest)
     )
 
     target_compile_definitions(chess26_tests PRIVATE CHESS26_UNIT_TESTING)
+    # Enable NNUE_EVAL for tests only when NNUE support is enabled for the main build
+    if(ENABLE_NNUE_EVAL)
+        target_compile_definitions(chess26_tests PRIVATE NNUE_EVAL)
+    endif()
 
     target_compile_options(chess26_tests PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
 

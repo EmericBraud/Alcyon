@@ -1,132 +1,92 @@
 #include "gtest/gtest.h"
 #include "engine/eval/nnue/nnue_model.hpp"
-#include "common/constants.hpp"
 #include <array>
 #include <cstdint>
-#include <tuple>
-#include <memory>
 
-class NnueModelTest : public ::testing::Test
+// Minimal instantiation (Accum=4, 1 PSQT bucket, 1 layer-stack bucket, L2=2,
+// L3=1) with hand-picked weights, so the v2 forward pass (pairwise-square L0,
+// L1's last-two-columns skip term, L1+L2 squared-CReLU concatenated into a
+// wider output layer, PSQT combination) can be verified by hand.
+//
+// Trace (no features activated, so both perspectives' accumulators equal the
+// bias [200, 100, 150, 50]). Note compute_l0 pairs acc[i] with acc[i+Half]
+// (not adjacent elements): out[0] uses acc[0] & acc[2], out[1] uses acc[1] &
+// acc[3]. Per nnue-pytorch's double_feature_transform + ft_act quantization
+// (ft_quantized_max=255, inference_l0_division_factor=512, and
+// l0_correction_factor == 1 for this network's constants), each half is
+// clamped to [0, 255] and the product is divided by 512, *not* by 128:
+//   L0 pairwise square (Half=2): out[0] = clamp((200*150)//512, 0, 127) = 58
+//                                 out[1] = clamp((100*50)//512, 0, 127) = 9
+//   l0 = [58, 9, 58, 9]
+//   L1 raw (weights [64,0,0,0] / [0,0,0,64]): raw[0] = 64*58 = 3712
+//                                              raw[1] = 64*9 = 576
+//   skip_raw = raw[0] - raw[1] = 3136
+//   x0 = 3712>>7 = 29; sqr0 = (29*29)>>7 = 6
+//   x1 = 576>>7 = 4; sqr1 = (4*4)>>7 = 0
+//   l1_out = [6, 0, 29, 4]
+//   L2 raw (weight all 64s, bias 0): raw = 64*(6+0+29+4) = 2496
+//   x = 2496>>6 = 39; sqr = (39*39)>>7 = 11
+//   l2_out = [11, 39]
+//   l3_input = [6, 0, 29, 4, 11, 39]
+//   output_raw (weights all 1s, bias 100) = 100 + 89 = 189
+//   combined_raw = 189 + 3136 = 3325
+//   layerstack_final = trunc(3325*75/128) = trunc(1948.2421875) = 1948
+//   psqt_diff = 0
+//   result = trunc((2*1948 + 0) / 32) = trunc(121.75) = 121
+using TestModel = NnueModel</*Features=*/4, /*ThreatFeatures=*/4, /*Accum=*/4, /*PsqtBuckets=*/1, /*LsBuckets=*/1, /*L2=*/2, /*L3=*/1>;
+
+namespace
 {
-protected:
-    // Taille basée sur l'encodeur : 32 * 12 * 64
-    static constexpr int MAX_FEATURES = 24576;
-    static constexpr int ACC_SIZE = 2;
-
-    using Model = NnueModel<MAX_FEATURES, ACC_SIZE, 4, 1>;
-
-    Model model;
-
-    NnueModelTest()
-        : model(
-              // 1. Accumulator Biases
-              std::array<std::int16_t, ACC_SIZE>{{1, 2}},
-
-              // 2. Accumulator Weights (Allocation sur le tas pour éviter Stack Overflow)
-              *std::unique_ptr<std::array<std::array<std::int8_t, ACC_SIZE>, MAX_FEATURES>>([]()
-                                                                                            {
-                  auto w = std::make_unique<std::array<std::array<std::int8_t, ACC_SIZE>, MAX_FEATURES>>();
-                  for (auto& row : *w) row.fill(0);
-                  // On initialise quelques poids pour les premiers indices pour les tests manuels
-                  (*w)[0] = {1, 0};
-                  (*w)[1] = {0, 1};
-                  return w.release(); }()),
-
-              // 3. Dense Layers
-              std::make_tuple(
-                  DenseLayer<4, 4>(
-                      std::array<std::array<std::int8_t, 4>, 4>{{{{1, 0, 0, 0}},
-                                                                 {{0, 1, 0, 0}},
-                                                                 {{0, 0, 1, 0}},
-                                                                 {{0, 0, 0, 1}}}},
-                      std::array<std::int32_t, 4>{{0, 0, 0, 0}}),
-
-                  DenseLayer<4, 1>(
-                      std::array<std::array<std::int8_t, 4>, 1>{{{{1, 1, 1, 1}}}},
-                      std::array<std::int32_t, 1>{{0}})))
+    TestModel make_model()
     {
+        std::array<std::int16_t, 4> acc_biases{200, 100, 150, 50};
+        std::array<std::array<std::int8_t, 4>, 4> acc_weights{};
+        acc_weights[0] = {50, 0, 0, 0}; // feature 0 nudges the accumulator so update_feature is observable
+        std::array<std::array<std::int16_t, 4>, 0> acc_weights_halfka{};
+        std::array<std::array<std::int32_t, 1>, 4> psqt_weights{};
+
+        TestModel::L1Layer l1(
+            std::array<std::array<std::int8_t, 4>, 2>{{{{64, 0, 0, 0}}, {{0, 0, 0, 64}}}},
+            std::array<std::int32_t, 2>{{0, 0}});
+        TestModel::L2Layer l2(
+            std::array<std::array<std::int8_t, 4>, 1>{{{{64, 64, 64, 64}}}},
+            std::array<std::int32_t, 1>{{0}});
+        TestModel::OutputLayer output(
+            std::array<std::array<std::int8_t, 6>, 1>{{{{1, 1, 1, 1, 1, 1}}}},
+            std::array<std::int32_t, 1>{{100}});
+
+        std::array<TestModel::LayerStackBucket, 1> layer_stacks{
+            TestModel::LayerStackBucket(std::move(l1), std::move(l2), std::move(output))};
+
+        return TestModel(
+            std::move(acc_biases),
+            std::move(acc_weights),
+            std::move(acc_weights_halfka),
+            std::move(psqt_weights),
+            std::move(layer_stacks));
     }
-};
-
-// --- Tests existants (comportement manuel) ---
-
-TEST_F(NnueModelTest, ShouldEvaluateInitialBiases)
-{
-    // [1,2] concat [1,2] = [1,2,1,2] -> somme = 6
-    ASSERT_EQ(model.get_result<WHITE>(), 6);
 }
 
-TEST_F(NnueModelTest, ShouldActivateFeatureManually)
+TEST(NnueModelTest, HandComputedForwardPassNoActiveFeatures)
 {
-    model.update_feature<true, WHITE>(0); // Ajoute {1,0} à l'acc blanc
-    // Acc Blanc: [1+1, 2+0] = [2,2]. Acc Noir: [1,2]. Concat: [2,2,1,2] -> 7
-    ASSERT_EQ(model.get_result<WHITE>(), 7);
+    TestModel model = make_model();
+
+    // No features activated: both perspectives see the same bias-only
+    // accumulator, so both should produce the same result.
+    EXPECT_EQ(model.get_result<WHITE>(/*piece_count=*/32), 121);
+    EXPECT_EQ(model.get_result<BLACK>(/*piece_count=*/32), 121);
 }
 
-// --- Tests de la fonction initialize() ---
-
-TEST_F(NnueModelTest, ShouldInitializeFromOccupancies)
+TEST(NnueModelTest, UpdateFeatureChangesResult)
 {
-    std::array<U64, constants::NumPieceVariants> occupancies{};
+    TestModel model = make_model();
+    const auto baseline = model.get_result<WHITE>(32);
 
-    // Position minimale : Rois uniquement (ne génèrent pas de features selon ton assert)
-    occupancies[KING] = (1ULL << 4);                              // e1
-    occupancies[constants::PieceTypeCount + KING] = (1ULL << 60); // e8
-
-    model.initialize(occupancies);
-
-    // Ne doit contenir que les biais
-    ASSERT_EQ(model.get_result<WHITE>(), 6);
-}
-
-TEST_F(NnueModelTest, ShouldInitializeWithPieces)
-{
-    std::array<U64, constants::NumPieceVariants> occupancies{};
-
-    // Rois obligatoires
-    occupancies[KING] = (1ULL << 4);                              // e1
-    occupancies[constants::PieceTypeCount + KING] = (1ULL << 60); // e8
-
-    // Ajout d'un pion blanc en a2
-    occupancies[PAWN] = (1ULL << 8);
-
-    model.initialize(occupancies);
-
-    // L'accumulateur a été modifié par initialize, le score doit avoir changé
-    // (Même si le poids est 0, l'opération a eu lieu sans crash)
-    ASSERT_NO_FATAL_FAILURE(model.get_result<WHITE>());
-}
-
-TEST_F(NnueModelTest, InitializeShouldResetPreviousState)
-{
-    // 1. Modifier l'état manuellement
     model.update_feature<true, WHITE>(0);
-    ASSERT_EQ(model.get_result<WHITE>(), 7);
+    const auto after = model.get_result<WHITE>(32);
 
-    // 2. Réinitialiser avec juste les rois
-    std::array<U64, constants::NumPieceVariants> occupancies{};
-    occupancies[KING] = (1ULL << 4);
-    occupancies[constants::PieceTypeCount + KING] = (1ULL << 60);
+    EXPECT_NE(baseline, after);
 
-    model.initialize(occupancies);
-
-    // 3. Retour au score de base (6)
-    ASSERT_EQ(model.get_result<WHITE>(), 6);
-}
-
-TEST_F(NnueModelTest, ShouldHandleMultiplePiecesOfSameType)
-{
-    std::array<U64, constants::NumPieceVariants> occupancies{};
-    occupancies[KING] = (1ULL << 4);
-    occupancies[constants::PieceTypeCount + KING] = (1ULL << 60);
-
-    // Deux pions blancs (a2 et b2)
-    occupancies[PAWN] = (1ULL << 8) | (1ULL << 9);
-
-    // Appel direct : si initialize() accède à un index invalide dans MAX_FEATURES,
-    // le test plantera et sera marqué comme FAILED (Segmentation Fault / Signal).
-    model.initialize(occupancies);
-
-    // On vérifie que le résultat est calculable après l'initialisation
-    ASSERT_NO_FATAL_FAILURE(model.get_result<WHITE>());
+    model.update_feature<false, WHITE>(0);
+    EXPECT_EQ(model.get_result<WHITE>(32), baseline);
 }
