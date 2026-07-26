@@ -19,7 +19,7 @@
 class VBoard : public Board
 {
 #ifdef NNUE_EVAL
-#define NNUE_FULL_MODEL_PATH file::get_data_path("nnue/v2.nnue")
+#define NNUE_FULL_MODEL_PATH file::get_data_path("nnue/v3.nnue")
     nnue::NnueEval nnue_eval{NNUE_FULL_MODEL_PATH};
 
     template <bool activate>

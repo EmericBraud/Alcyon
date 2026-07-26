@@ -4,7 +4,7 @@
 // set and the layer-stack architecture produced by nnue-pytorch commit
 // 4289208fe20cc6ec8753e5ee14c2f210de783ff0 with default hyperparameters
 // (L1=1024, L2=32, L3=32, 8 PSQT buckets, 8 layer-stack buckets). Confirmed
-// against data/nnue/v2.nnue's header hash (see nnue_eval.hpp for the
+// against data/nnue/v3.nnue's header hash (see nnue_eval.hpp for the
 // verification note).
 //
 // This differs from v1's layer-stack forward() (nnue_model.hpp) in several

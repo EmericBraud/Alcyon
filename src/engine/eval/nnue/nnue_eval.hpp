@@ -7,7 +7,7 @@
 // Produced by nnue-pytorch commit 4289208fe20cc6ec8753e5ee14c2f210de783ff0
 // with default hyperparameters (model/config.py, model/modules/config.py).
 //
-// Verified against data/nnue/v2.nnue's actual header bytes (not just assumed):
+// Verified against data/nnue/v3.nnue's actual header bytes (not just assumed):
 //   - version == 0x6A448AFA (model/utils/serialize.py's hardcoded VERSION),
 //     matches the file's first 4 bytes exactly.
 //   - The header hash (bytes 4..8) equals fc_hash(L1=1024,L2=32,L3=32) XOR

@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <fstream>
 
-// End-to-end smoke test against the real data/nnue/v2.nnue file: loads it
+// End-to-end smoke test against the real data/nnue/v3.nnue file: loads it
 // (exercising the segmented Full_Threats(int8)/HalfKAv2_hm^(int16) weight
 // tensor parsing and LEB128 decompression), builds both perspectives'
 // accumulators for the starting position via a full board scan, and checks
@@ -16,11 +16,11 @@
 // crashing and produces plausible output.
 TEST(NnueEvalTest, LoadsRealModelAndEvaluatesStartingPosition)
 {
-    const std::string path = "nnue/v2.nnue";
+    const std::string path = "nnue/v3.nnue";
 
     std::ifstream probe(path, std::ios::binary);
     if (!probe)
-        GTEST_SKIP() << "data/nnue/v2.nnue not found at '" << path << "' (untracked binary, expected in dev checkouts)";
+        GTEST_SKIP() << "data/nnue/v3.nnue not found at '" << path << "' (untracked binary, expected in dev checkouts)";
     probe.close();
 
     nnue::NnueEval eval(path);
