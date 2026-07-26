@@ -115,7 +115,7 @@ private:
     static void compute_l0(
         const std::array<std::int16_t, NAccumulator> &acc_us,
         const std::array<std::int16_t, NAccumulator> &acc_them,
-        std::array<std::int8_t, NAccumulator> &l0)
+        std::array<std::uint8_t, NAccumulator> &l0)
     {
         constexpr int Half = NAccumulator / 2;
 
@@ -129,9 +129,9 @@ private:
         // narrower native width than native_simd<int16_t>, e.g. 4 vs 8 lanes on
         // 128-bit NEON/SSE), so the widening simd_cast below needs equal lane counts.
         using int32_wide_v = stdx::fixed_size_simd<std::int32_t, simd::SimdSize16>;
-        using int8_wide_v = stdx::fixed_size_simd<std::int8_t, simd::SimdSize16>;
+        using uint8_wide_v = stdx::fixed_size_simd<std::uint8_t, simd::SimdSize16>;
 
-        auto pairwise_square_half = [](const std::int16_t *acc_ptr, std::int8_t *out)
+        auto pairwise_square_half = [](const std::int16_t *acc_ptr, std::uint8_t *out)
         {
             std::size_t i = 0;
             for (; i + simd::SimdSize16 <= static_cast<std::size_t>(Half); i += simd::SimdSize16)
@@ -150,7 +150,7 @@ private:
                 int32_wide_v prod = (acc_a_32 * acc_b_32) >> 9;
                 prod = stdx::clamp(prod, int32_wide_v(0), int32_wide_v(127));
 
-                const int8_wide_v prod_8 = stdx::static_simd_cast<int8_wide_v>(prod);
+                const uint8_wide_v prod_8 = stdx::static_simd_cast<uint8_wide_v>(prod);
                 prod_8.copy_to(out + i, stdx::element_aligned);
             }
             for (; i < static_cast<std::size_t>(Half); ++i)
@@ -158,7 +158,7 @@ private:
                 std::int32_t a = std::clamp<std::int32_t>(acc_ptr[i], 0, 255);
                 std::int32_t b = std::clamp<std::int32_t>(acc_ptr[i + Half], 0, 255);
                 std::int32_t prod = (a * b) / 512;
-                out[i] = static_cast<std::int8_t>(std::clamp(prod, 0, 127));
+                out[i] = static_cast<std::uint8_t>(std::clamp(prod, 0, 127));
             }
         };
 
@@ -171,14 +171,14 @@ private:
     // [squared-half | raw-half] activation pair used both as the next layer's
     // input and (reused) as part of the output layer's wider input.
     template <int N, int WeightScaleBits>
-    static void squared_crelu(const std::array<std::int32_t, N> &raw, std::array<std::int8_t, 2 * N> &out)
+    static void squared_crelu(const std::array<std::int32_t, N> &raw, std::array<std::uint8_t, 2 * N> &out)
     {
         for (int i = 0; i < N; ++i)
         {
             const std::int32_t x = raw[i] >> WeightScaleBits;
             const std::int32_t sqr = (x * x) >> 7;
-            out[i] = static_cast<std::int8_t>(std::clamp(sqr, 0, 127));
-            out[N + i] = static_cast<std::int8_t>(std::clamp(x, 0, 127));
+            out[i] = static_cast<std::uint8_t>(std::clamp(sqr, 0, 127));
+            out[N + i] = static_cast<std::uint8_t>(std::clamp(x, 0, 127));
         }
     }
 
@@ -340,7 +340,7 @@ public:
         const auto &acc_us = accumulator.template get_accumulator<us>();
         const auto &acc_them = accumulator.template get_accumulator<them>();
 
-        std::array<std::int8_t, NAccumulator> l0;
+        std::array<std::uint8_t, NAccumulator> l0;
         compute_l0(acc_us, acc_them, l0);
 
         const int bucket = bucket_for_piece_count(piece_count);
@@ -349,11 +349,11 @@ public:
         const auto raw_l1 = ls.l1.get_raw(l0);
         const std::int32_t skip_raw = raw_l1[L2 - 2] - raw_l1[L2 - 1];
 
-        std::array<std::int8_t, 2 * L2> l1_out;
+        std::array<std::uint8_t, 2 * L2> l1_out;
         squared_crelu<L2, WeightScaleBitsL1>(raw_l1, l1_out);
 
         const auto raw_l2 = ls.l2.get_raw(l1_out);
-        std::array<std::int8_t, 2 * L3> l2_out;
+        std::array<std::uint8_t, 2 * L3> l2_out;
         squared_crelu<L3, WeightScaleBitsL2>(raw_l2, l2_out);
 
         const std::int32_t output_raw = ls.output.get_result_split(l1_out, l2_out);

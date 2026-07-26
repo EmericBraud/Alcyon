@@ -14,30 +14,40 @@ protected:
 
 TEST_F(DenseLayerTest, ShouldProcess)
 {
-    std::array<std::int8_t, 2> inputs = {5, 2};
-    std::array<std::int8_t, 1> outputs = {68}; // We place a random value to make sure it gets erased
+    std::array<std::uint8_t, 2> inputs = {5, 2};
+    std::array<std::uint8_t, 1> outputs = {68}; // We place a random value to make sure it gets erased
     dense_layer.process(inputs, outputs);
     ASSERT_EQ(outputs[0], 4);
 }
 
 TEST_F(DenseLayerTest, ShouldGetResult)
 {
-    std::array<std::int8_t, 2> inputs = {5, 2};
+    std::array<std::uint8_t, 2> inputs = {5, 2};
     ASSERT_EQ(dense_layer.get_result(inputs), 4);
 }
 
 TEST_F(DenseLayerTest, ShouldBeZeroWhenNegative)
 {
-    std::array<std::int8_t, 2> inputs = {0, 2};
-    std::array<std::int8_t, 1> outputs = {68}; // We place a random value to make sure it gets erased
+    std::array<std::uint8_t, 2> inputs = {0, 2};
+    std::array<std::uint8_t, 1> outputs = {68}; // We place a random value to make sure it gets erased
     dense_layer.process(inputs, outputs);
     ASSERT_EQ(outputs[0], 0);
 }
 
 TEST_F(DenseLayerTest, ShouldClampWhenTooLarge)
 {
-    std::array<std::int8_t, 2> inputs = {127, -127};
-    std::array<std::int8_t, 1> outputs = {68}; // We place a random value to make sure it gets erased
+    // 1 (bias) + 127*1 - 0*1 = 128, one past the ClippedReLU ceiling.
+    // (Inputs are activations, contractually in [0, 127] -- see dense_layer.hpp.)
+    std::array<std::uint8_t, 2> inputs = {127, 0};
+    std::array<std::uint8_t, 1> outputs = {68}; // We place a random value to make sure it gets erased
     dense_layer.process(inputs, outputs);
     ASSERT_EQ(outputs[0], 127);
+}
+
+TEST_F(DenseLayerTest, GetResultSplitMatchesGetResult)
+{
+    std::array<std::uint8_t, 2> inputs = {90, 7};
+    std::array<std::uint8_t, 1> in_a = {90};
+    std::array<std::uint8_t, 1> in_b = {7};
+    ASSERT_EQ(dense_layer.get_result_split(in_a, in_b), dense_layer.get_result(inputs));
 }
