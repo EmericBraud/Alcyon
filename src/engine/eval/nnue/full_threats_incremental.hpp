@@ -87,9 +87,10 @@ namespace nnue::threats
             if (attkd_type == NO_PIECE)
                 continue;
 
+            // push_back_if : "idx valide pour cette perspective" est
+            // data-dépendant (~imprévisible), voir filter_threats_diff.
             const int idx = threat_index<perspective>(pt, color, sq, to, attkd_type, attkd_color, ksq);
-            if (idx >= 0)
-                out.push_back(idx);
+            out.push_back_if(idx, idx >= 0);
         }
     }
 
@@ -119,8 +120,7 @@ namespace nnue::threats
             const Piece attkr_type = board.get_p(from);
             const Color attkr_color = board.get_c(from);
             const int idx = threat_index<perspective>(attkr_type, attkr_color, from, sq, defender_type, defender_color, ksq);
-            if (idx >= 0)
-                out.push_back(idx);
+            out.push_back_if(idx, idx >= 0);
         }
 
         if (sq >= 8)
@@ -170,13 +170,13 @@ namespace nnue::threats
             if (attkd_type == NO_PIECE)
                 continue;
 
+            // push_back_if : "idx valide pour cette perspective" est
+            // data-dépendant (~imprévisible), voir filter_threats_diff.
             const int idx_w = threat_index<WHITE>(pt, color, sq, to, attkd_type, attkd_color, wksq);
-            if (idx_w >= 0)
-                out_white.push_back(idx_w);
+            out_white.push_back_if(idx_w, idx_w >= 0);
 
             const int idx_b = threat_index<BLACK>(pt, color, sq, to, attkd_type, attkd_color, bksq);
-            if (idx_b >= 0)
-                out_black.push_back(idx_b);
+            out_black.push_back_if(idx_b, idx_b >= 0);
         }
     }
 
@@ -187,12 +187,10 @@ namespace nnue::threats
         int wksq, int bksq, FixedIntList<MAX_THREAT_FEATURES> &out_white, FixedIntList<MAX_THREAT_FEATURES> &out_black)
     {
         const int idx_w = threat_index<WHITE>(attkr_type, attkr_color, from, sq, defender_type, defender_color, wksq);
-        if (idx_w >= 0)
-            out_white.push_back(idx_w);
+        out_white.push_back_if(idx_w, idx_w >= 0);
 
         const int idx_b = threat_index<BLACK>(attkr_type, attkr_color, from, sq, defender_type, defender_color, bksq);
-        if (idx_b >= 0)
-            out_black.push_back(idx_b);
+        out_black.push_back_if(idx_b, idx_b >= 0);
     }
 
     // Same result as scanning every non-king piece on the board and checking
