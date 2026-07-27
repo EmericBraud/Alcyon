@@ -12,7 +12,8 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     int tt_score;
     TTFlag flag;
     Move tt_move = 0;
-    if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move, flag))
+    int tt_eval = TT_NO_EVAL;
+    if (shared_tt.probe(board, board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move, flag, tt_eval))
         return tt_score;
 
     bool in_check = board.is_king_attacked<Us>();
@@ -22,7 +23,11 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     // On ne l'utilise que si on n'est pas en échec, car une position en échec est instable
     if (!in_check)
     {
-        stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
+        // L'éval statique stockée en TT est celle qu'eval_relative
+        // recalculerait (même position, même trait) : un hit saute tout le
+        // forward pass NNUE sans changer le moindre score.
+        stand_pat = (tt_eval != TT_NO_EVAL) ? tt_eval
+                                            : Eval::eval_relative<Us>(board, alpha, beta);
         if (stand_pat >= beta)
             return beta;
         if (stand_pat > alpha)
@@ -94,7 +99,8 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
         if (score >= beta)
         {
             // Stockage avec normalisation du score de mat (via ply interne à store)
-            shared_tt.store(board.get_hash(), 0, ply, beta, TT_BETA, m);
+            shared_tt.store(board.get_hash(), 0, ply, beta, TT_BETA, m,
+                            in_check ? TT_NO_EVAL : stand_pat);
             return beta;
         }
 
@@ -121,7 +127,8 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
 
     // 8. Sauvegarde TT finale
     flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-    shared_tt.store(board.get_hash(), 0, ply, best_score, flag, best_move);
+    shared_tt.store(board.get_hash(), 0, ply, best_score, flag, best_move,
+                    in_check ? TT_NO_EVAL : stand_pat);
 
     return best_score;
 }

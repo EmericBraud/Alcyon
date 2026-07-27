@@ -274,7 +274,7 @@ public:
             logs::uci << "Search reached end before pondehit" << std::endl;
 
             Move best_move;
-            best_move = tt.get_move(main_board.get_hash());
+            best_move = tt.get_move(main_board);
             if (main_board.is_move_pseudo_legal(best_move) && main_board.is_move_legal(best_move))
             {
                 root_best_move.store(best_move, std::memory_order_relaxed);
@@ -363,7 +363,7 @@ private:
             logs::uci << "PANICK MODE" << std::endl;
             // Panick mode : we try to find the best possible legal move
             // First attempt : transp table
-            best_move = tt.get_move(main_board.get_hash());
+            best_move = tt.get_move(main_board);
             if (main_board.is_move_pseudo_legal(best_move) && main_board.is_move_legal(best_move))
             {
                 logs::uci << "Resolved : TT" << std::endl;
@@ -419,7 +419,7 @@ private:
             main_board.play(best_move);
             auto guard = CHESS26_SCOPE_EXIT([&best_move, this]
                                             { main_board.unplay(best_move); });
-            Move second_move = tt.get_move(main_board.get_hash());
+            Move second_move = tt.get_move(main_board);
             if (main_board.is_move_pseudo_legal(second_move) && main_board.is_move_legal(second_move))
             {
                 logs::uci << "bestmove " << best_move.to_uci() << " ponder " << second_move.to_uci() << std::endl;

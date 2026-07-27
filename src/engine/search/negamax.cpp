@@ -80,7 +80,7 @@ namespace search
 
         int new_depth = depth - engine_constants::search::iterative_deepening::NewDepthIncr;
         worker.negamax<Us>(new_depth, alpha, beta, ply, true);
-        tt_move = worker.get_tt().get_move(worker.get_board().get_hash());
+        tt_move = worker.get_tt().get_move(worker.get_board());
     }
 
     template <Color Us>
@@ -129,7 +129,8 @@ namespace search
             TTFlag ttf;
             int tts;
             Move ttm;
-            if (worker.get_tt().probe(worker.board.get_hash(), depth, ply, -engine_constants::eval::Inf, engine_constants::eval::Inf, tts, ttm, ttf))
+            int tte = TT_NO_EVAL;
+            if (worker.get_tt().probe(worker.board, worker.board.get_hash(), depth, ply, -engine_constants::eval::Inf, engine_constants::eval::Inf, tts, ttm, ttf, tte))
             {
                 if (ttf == TT_EXACT || ttf == TT_ALPHA)
                 {
@@ -266,7 +267,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     {
         TTFlag flag;
         int tt_score;
-        bool tt_hit = shared_tt.probe(board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move, flag);
+        int tt_eval = TT_NO_EVAL; // pas encore exploitée ici (negamax prune sur l'estimation PSQT)
+        bool tt_hit = shared_tt.probe(board, board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move, flag, tt_eval);
         if (tt_move != excluded_move && search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
             return tt_score;
     }

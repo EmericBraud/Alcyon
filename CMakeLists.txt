@@ -23,6 +23,13 @@ check_cxx_compiler_flag("-mbmi2" COMPILER_SUPPORTS_BMI2)
 check_cxx_compiler_flag("-mpopcnt" COMPILER_SUPPORTS_POPCNT)
 
 set(CPU_FLAGS -march=native)
+# Build compatible valgrind/callgrind : valgrind (VEX <= 3.22) ne décode pas
+# vpdpbusd (AVX-VNNI) et tue le process par SIGILL. Le kernel dot_u8_i8
+# retombe alors sur son chemin AVX2 pur, bit-identique.
+option(DISABLE_VNNI "Disable AVX-VNNI (for valgrind profiling builds)" OFF)
+if(DISABLE_VNNI)
+    list(APPEND CPU_FLAGS -mno-avxvnni -mno-avx512vnni)
+endif()
 if(COMPILER_SUPPORTS_BMI2)
     list(APPEND CPU_FLAGS -mbmi2)
 endif()
@@ -109,6 +116,8 @@ endif()
 check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_ERROR)
 if(IPO_SUPPORTED)
     set_property(TARGET chess26 PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    set_property(TARGET chess_core PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    set_property(TARGET fathom PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
     message(STATUS "LTO/IPO is enabled and active.")
 else()
     message(WARNING "LTO not supported: ${IPO_ERROR}")
