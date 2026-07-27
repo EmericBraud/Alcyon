@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "common/cpu.hpp"
+#include "common/huge_pages.hpp"
 #include "core/move/move.hpp"
 #include "engine/config/config.hpp"
 
@@ -91,6 +92,9 @@ public:
         n >>= 1;
 
         table = std::make_unique<TTBucket[]>(n);
+        // Un probe TT = un accès aléatoire dans des centaines de MB : chaque
+        // probe paie sinon un dTLB miss en plus du cache miss.
+        cpu::advise_huge_pages(table.get(), n * sizeof(TTBucket));
         index_mask = n - 1;
         bucket_count = n;
     }

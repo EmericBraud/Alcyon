@@ -8,6 +8,7 @@
 #include "core/piece/color.hpp"
 #include "common/aligned_array.hpp"
 #include "common/cpu.hpp"
+#include "common/huge_pages.hpp"
 
 // Tracks the PSQT (piece-square-table) output buckets that live alongside the
 // main feature transformer accumulator. Quantized as int32 (scale =
@@ -34,6 +35,9 @@ public:
     explicit PsqtAccumulatorLayer(W &&w)
     {
         weights = std::make_shared<const WeightTable>(std::forward<W>(w));
+        // ~2,7MB, rows de 32B à accès aléatoires : 18,8% des dTLB misses
+        // mesurés malgré sa petite taille.
+        cpu::advise_huge_pages(weights->data(), sizeof(WeightTable));
         accumulators = std::make_unique<AccTable>();
         reset();
     }

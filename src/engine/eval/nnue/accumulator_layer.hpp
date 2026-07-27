@@ -9,6 +9,7 @@
 #include "core/piece/color.hpp"
 #include "common/aligned_array.hpp"
 #include "common/cpu.hpp"
+#include "common/huge_pages.hpp"
 #include "common/simd.hpp"
 
 // NThreatFeatures: rows [0, NThreatFeatures) are stored as int8 (Full_Threats
@@ -109,6 +110,11 @@ public:
         biases = std::make_shared<const BiasTable>(std::forward<B>(b));
         threat_weights = std::make_shared<const Int8WeightTable>(std::forward<W8>(w8));
         halfka_weights = std::make_shared<const Int16WeightTable>(std::forward<W16>(w16));
+        // ~62MB + ~46MB à accès aléatoires par row : les huge pages
+        // suppriment l'essentiel des dTLB misses de l'apply (mesuré +6% NPS
+        // via THP système ; ici on l'obtient sans dépendre du sysctl).
+        cpu::advise_huge_pages(threat_weights->data(), sizeof(Int8WeightTable));
+        cpu::advise_huge_pages(halfka_weights->data(), sizeof(Int16WeightTable));
         accumulators = std::make_unique<AccTable>();
         reset();
     }
