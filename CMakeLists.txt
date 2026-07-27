@@ -23,6 +23,13 @@ check_cxx_compiler_flag("-mbmi2" COMPILER_SUPPORTS_BMI2)
 check_cxx_compiler_flag("-mpopcnt" COMPILER_SUPPORTS_POPCNT)
 
 set(CPU_FLAGS -march=native)
+# Build compatible valgrind/callgrind : valgrind (VEX <= 3.22) ne décode pas
+# vpdpbusd (AVX-VNNI) et tue le process par SIGILL. Le kernel dot_u8_i8
+# retombe alors sur son chemin AVX2 pur, bit-identique.
+option(DISABLE_VNNI "Disable AVX-VNNI (for valgrind profiling builds)" OFF)
+if(DISABLE_VNNI)
+    list(APPEND CPU_FLAGS -mno-avxvnni -mno-avx512vnni)
+endif()
 if(COMPILER_SUPPORTS_BMI2)
     list(APPEND CPU_FLAGS -mbmi2)
 endif()
