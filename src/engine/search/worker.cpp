@@ -76,7 +76,7 @@ std::string SearchWorker::get_pv_line(int depth)
         if (board.is_repetition() || board.get_halfmove_clock() >= 100)
             break;
 
-        Move m = shared_tt.get_move(board.get_hash());
+        Move m = shared_tt.get_move(board);
 
         // 1. Si le coup est 0 (Nœud terminal, Mat, ou pas d'entrée), on arrête.
         if (m.get_value() == 0)
@@ -141,7 +141,7 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
         if (board.is_repetition() || board.get_halfmove_clock() >= 100)
             break;
 
-        Move m = shared_tt.get_move(board.get_hash());
+        Move m = shared_tt.get_move(board);
         if (m.get_value() == 0)
             break;
         if (!board.is_move_pseudo_legal(m) || !board.is_move_legal(m))
