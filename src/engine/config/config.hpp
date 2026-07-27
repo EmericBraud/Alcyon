@@ -15,6 +15,11 @@ namespace engine_constants
         constexpr int Inf = 10000;
         constexpr int SyzygyScore = 9000;
         constexpr int SyzygyMaxPieces = 5;
+        // Sentinel for "no static eval recorded at this ply" (in-check
+        // nodes) in SearchWorker::static_eval_stack -- see negamax.cpp's
+        // improving heuristic. Far outside any real eval value (even NNUE's
+        // internal scale, ~2.4x centipawns, stays well under 1000000).
+        constexpr int NoStaticEval = -1000000;
     }
 #ifdef NNUE_EVAL
     // Search parameters tuned for the NNUE evaluation
@@ -49,6 +54,11 @@ namespace engine_constants
             PARAM_SPECIFIER int MaxDepth = 4;
             PARAM_SPECIFIER int MarginDepthFactor = 73;
             PARAM_SPECIFIER int MarginConst = 61;
+            // Subtracted from the margin when the static eval is improving
+            // (this ply's vs ply-2's, same side to move): a position trending
+            // up makes us trust a would-be beta cutoff more, so we accept a
+            // smaller safety margin. See search::improving in negamax.cpp.
+            PARAM_SPECIFIER int ImprovingMargin = 40;
         }
         namespace iterative_deepening
         {
@@ -66,6 +76,7 @@ namespace engine_constants
             PARAM_SPECIFIER int MaxDepth = 8;
             PARAM_SPECIFIER int MarginConst = 95;
             PARAM_SPECIFIER int MarginDepthFactor = 105;
+            PARAM_SPECIFIER int ImprovingMargin = 40;
         }
         namespace singular
         {
@@ -125,6 +136,7 @@ namespace engine_constants
             PARAM_SPECIFIER int MaxDepth = 7;
             PARAM_SPECIFIER int MarginDepthFactor = 57;
             PARAM_SPECIFIER int MarginConst = 55;
+            PARAM_SPECIFIER int ImprovingMargin = 40;
         }
         namespace iterative_deepening
         {
@@ -142,6 +154,7 @@ namespace engine_constants
             PARAM_SPECIFIER int MaxDepth = 8;
             PARAM_SPECIFIER int MarginConst = 82;
             PARAM_SPECIFIER int MarginDepthFactor = 105;
+            PARAM_SPECIFIER int ImprovingMargin = 40;
         }
         namespace singular
         {

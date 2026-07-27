@@ -34,6 +34,14 @@ struct SearchWorker
     int continuation_hist_2[2][7][64][64]; // [side][piece][from][to] for 2-ply continuation
     std::array<Move, engine_constants::search::MaxDepth> move_stack;
 
+    // Static eval recorded once per negamax node (engine_constants::eval::
+    // NoStaticEval when in check), indexed by ply -- see the "improving"
+    // heuristic in negamax.cpp. Written unconditionally on every visit to a
+    // ply (real or speculative, e.g. singular/null-move probes), so a
+    // descendant reading static_eval_stack[ply-2] always sees the value its
+    // real ancestor at ply-2 last wrote, never a stale sibling's.
+    int static_eval_stack[engine_constants::search::MaxDepth];
+
     // Métriques locales
     long long local_nodes = 0;
     int thread_id;

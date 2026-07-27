@@ -392,6 +392,7 @@ public:
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MaxDepth, "rfp_max_depth"),
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_d_fact"),
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginConst, "rfp_marg_const"),
+            UCIOption<int>(&engine_constants::search::reverse_futility_pruning::ImprovingMargin, "rfp_improving_margin", 0, 200),
 
             UCIOption<int>(&engine_constants::search::iterative_deepening::MaxDepth, "itd_max_depth"),
             UCIOption<int>(&engine_constants::search::iterative_deepening::NewDepthIncr, "itd_new_depth_inc"),
@@ -403,6 +404,7 @@ public:
             UCIOption<int>(&engine_constants::search::futility_pruning::MaxDepth, "fp_max_depth"),
             UCIOption<int>(&engine_constants::search::futility_pruning::MarginConst, "fp_margin_const"),
             UCIOption<int>(&engine_constants::search::futility_pruning::MarginDepthFactor, "fp_margin_d_fact"),
+            UCIOption<int>(&engine_constants::search::futility_pruning::ImprovingMargin, "fp_improving_margin", 0, 200),
 
             UCIOption<int>(&engine_constants::search::singular::MinDepth, "singular_min_depth"),
 

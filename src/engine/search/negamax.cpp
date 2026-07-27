@@ -15,13 +15,11 @@ namespace search
         return board.is_repetition() || board.get_halfmove_clock() >= 100;
     }
 
-    template <Color Us>
-    inline bool razoring(const VBoard &board, int depth, int alpha, bool is_pv, bool in_check, int ply)
+    inline bool razoring(int static_eval, int depth, int alpha, bool is_pv, bool in_check, int ply)
     {
         if (in_check || is_pv || depth > engine_constants::search::razoring::MaxDepth || ply == 0)
             return false;
 
-        int static_eval = Eval::lazy_eval_relative<Us>(board);
         int margin = engine_constants::search::razoring::MarginDepthFactor * depth + engine_constants::search::razoring::MarginConst;
         return static_eval + margin <= alpha;
     }
@@ -38,13 +36,13 @@ namespace search
         return true;
     }
 
-    template <Color Us>
-    inline bool reverse_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, int beta)
+    inline bool reverse_futility_pruning(int static_eval, int depth, int ply, bool in_check, bool is_pv, bool improving, int beta)
     {
         if (depth <= engine_constants::search::reverse_futility_pruning::MaxDepth && !in_check && ply > 0 && !is_pv)
         {
-            int static_eval = Eval::lazy_eval_relative<Us>(board);
             int margin = engine_constants::search::reverse_futility_pruning::MarginDepthFactor * depth + engine_constants::search::reverse_futility_pruning::MarginConst;
+            if (improving)
+                margin -= engine_constants::search::reverse_futility_pruning::ImprovingMargin;
             if (static_eval - margin >= beta)
                 return true;
         }
@@ -105,13 +103,13 @@ namespace search
         return false;
     }
 
-    template <Color Us>
-    bool should_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, bool is_mate_node, int alpha)
+    inline bool should_futility_pruning(int static_eval, int depth, int ply, bool in_check, bool is_pv, bool is_mate_node, bool improving, int alpha)
     {
         if (depth <= engine_constants::search::futility_pruning::MaxDepth && !in_check && !is_pv && ply > 0 && !is_mate_node)
         {
             int futil_margin = engine_constants::search::futility_pruning::MarginConst + engine_constants::search::futility_pruning::MarginDepthFactor * depth;
-            int static_eval = Eval::lazy_eval_relative<Us>(board);
+            if (improving)
+                futil_margin -= engine_constants::search::futility_pruning::ImprovingMargin;
 
             if (static_eval + futil_margin <= alpha)
             {
@@ -260,7 +258,20 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const bool in_check = board.is_king_attacked<Us>();
     const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
 
-    if (search::razoring<Us>(board, depth, alpha, is_pv, in_check, ply))
+    // Static eval, computed once per node (cheap PSQT-only estimate, see
+    // Eval::lazy_eval_relative) and recorded in the per-ply stack: it feeds
+    // every pruning margin below AND the "improving" trend, i.e. whether
+    // this same side's position has gotten better since its last move (two
+    // plies back). Written unconditionally -- see static_eval_stack's
+    // comment in worker.hpp for why a stale/sentinel value can never leak
+    // into a real descendant's ply-2 lookup.
+    const int static_eval = in_check ? engine_constants::eval::NoStaticEval : Eval::lazy_eval_relative<Us>(board);
+    static_eval_stack[ply] = static_eval;
+    const bool improving = !in_check && ply >= 2 &&
+                           static_eval_stack[ply - 2] != engine_constants::eval::NoStaticEval &&
+                           static_eval > static_eval_stack[ply - 2];
+
+    if (search::razoring(static_eval, depth, alpha, is_pv, in_check, ply))
         return qsearch<Us>(alpha, beta, ply);
 
     Move tt_move = 0;
@@ -276,7 +287,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (search::should_qsearch(depth, ply, in_check))
         return qsearch<Us>(alpha, beta, ply);
 
-    if (search::reverse_futility_pruning<Us>(board, depth, ply, in_check, is_pv, beta))
+    if (search::reverse_futility_pruning(static_eval, depth, ply, in_check, is_pv, improving, beta))
         return beta;
 
     // =============================== Search ===============================
@@ -289,7 +300,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             return return_score;
     }
 
-    const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_pv, is_mate_node, alpha);
+    const bool futil_pruning = search::should_futility_pruning(static_eval, depth, ply, in_check, is_pv, is_mate_node, improving, alpha);
 
     const auto *history = board.get_history();
     const Move prev_m = ply > 0 ? history->back().move : 0;
