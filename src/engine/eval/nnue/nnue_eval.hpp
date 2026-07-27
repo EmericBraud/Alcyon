@@ -467,23 +467,28 @@ namespace nnue
             for (int idx : new_idx)
                 threat_marks[idx].new_gen = gen;
 
+            // Boucles d'émission branchless : "émettre ou pas" dépend des
+            // données (~50% d'entrées inchangées, imprévisible => ~1
+            // mispredict sur 2 en version if/push_back, mesuré parmi les plus
+            // gros contributeurs de branch misses du moteur). On écrit
+            // toujours, on n'avance l'index de sortie que si émis, et
+            // emitted_gen est stampé inconditionnellement : marquer un idx
+            // non-émis est sans effet (ses autres occurrences seraient de
+            // toute façon rejetées par le même new_gen/old_gen qui a rejeté
+            // celle-ci).
             for (int idx : old_idx)
             {
                 ThreatMark &mark = threat_marks[idx];
-                if (mark.new_gen != gen && mark.emitted_gen != gen)
-                {
-                    mark.emitted_gen = gen;
-                    out_remove.push_back(idx);
-                }
+                const bool emit = (mark.new_gen != gen) & (mark.emitted_gen != gen);
+                mark.emitted_gen = gen;
+                out_remove.push_back_if(idx, emit);
             }
             for (int idx : new_idx)
             {
                 ThreatMark &mark = threat_marks[idx];
-                if (mark.old_gen != gen && mark.emitted_gen != gen)
-                {
-                    mark.emitted_gen = gen;
-                    out_add.push_back(idx);
-                }
+                const bool emit = (mark.old_gen != gen) & (mark.emitted_gen != gen);
+                mark.emitted_gen = gen;
+                out_add.push_back_if(idx, emit);
             }
         }
 

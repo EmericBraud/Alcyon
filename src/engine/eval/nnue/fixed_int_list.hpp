@@ -42,6 +42,21 @@ namespace nnue::threats
             data[count++] = value;
         }
 
+        // Variante branchless de push_back : écrit TOUJOURS value dans le
+        // slot courant (écriture scratch, jamais exposée si cond est faux --
+        // count borne tout accès) et n'avance count que si cond. Évite un
+        // branchement dépendant des données (imprévisible) dans les boucles
+        // de filtrage ; seul reste le check de capacité, jamais pris donc
+        // parfaitement prédit.
+        inline void push_back_if(int value, bool cond)
+        {
+            if (count >= Capacity)
+                FATAL("FixedIntList<" << Capacity << "> overflow: attempted to push a "
+                                      << (count + 1) << "th element");
+            data[count] = value;
+            count += cond;
+        }
+
         inline void clear() { count = 0; }
         inline int size() const { return count; }
         inline bool empty() const { return count == 0; }
