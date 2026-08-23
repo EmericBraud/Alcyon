@@ -12,7 +12,7 @@ High-Performance Chess Engine in C++
 
 Chess 26 is a complete UCI chess engine written from scratch in modern C++, combining a **NNUE neural network evaluation** with a classical alpha-beta search. Beyond gameplay, this project is a technical showcase of low-level C++ performance work: cache-friendly data layout, SIMD, lazy incremental evaluation, and empirical (SPSA) parameter tuning via [OpenBench](https://github.com/AndyGrant/OpenBench).
 
-It supports the UCI protocol and connects to [lichess.org](https://lichess.org) via [lichess-bot](https://github.com/lichess-bot-devs/lichess-bot).
+It supports the UCI protocol and connects to [lichess.org](https://lichess.org) via [lichess-bot](https://github.com/lichess-bot-devs/lichess-bot) — you can play against it live at **[lichess.org/@/Chess26_BOT](https://lichess.org/@/Chess26_BOT/all)**.
 
 ## ⚙️ Technologies & Core Concepts
 
