@@ -33,6 +33,7 @@ class PlaneBatchCView(ctypes.Structure):
         ("planes", ctypes.POINTER(ctypes.c_float)),
         ("score", ctypes.POINTER(ctypes.c_float)),
         ("result", ctypes.POINTER(ctypes.c_float)),
+        ("piece_count", ctypes.POINTER(ctypes.c_int)),
         ("handle", ctypes.c_void_p),
     ]
 
@@ -45,14 +46,20 @@ class PlaneBatchCView(ctypes.Structure):
         )
         score_cpu = torch.from_numpy(np.ctypeslib.as_array(self.score, shape=(size,)))
         result_cpu = torch.from_numpy(np.ctypeslib.as_array(self.result, shape=(size,)))
+        piece_count_cpu = torch.from_numpy(
+            np.ctypeslib.as_array(self.piece_count, shape=(size,))
+        )
 
         planes = _pin_and_move(planes_cpu, device, use_pinned_memory).view(
             size, NUM_PLANES, BOARD_SIZE, BOARD_SIZE
         )
         score = _pin_and_move(score_cpu, device, use_pinned_memory).view(size, 1)
         result = _pin_and_move(result_cpu, device, use_pinned_memory).view(size, 1)
+        piece_count = _pin_and_move(
+            piece_count_cpu.to(dtype=torch.int64), device, use_pinned_memory
+        ).view(size)
 
-        return planes, score, result
+        return planes, score, result, piece_count
 
 
 class CPlaneDataLoaderAPI:

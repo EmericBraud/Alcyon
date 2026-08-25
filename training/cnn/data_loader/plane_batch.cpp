@@ -33,6 +33,7 @@ PlaneBatch::PlaneBatch(const std::vector<binpack::TrainingDataEntry>& entries)
     planes = new float[static_cast<std::size_t>(size) * NUM_PLANES * PLANE_SIZE]();
     score = new float[size];
     result = new float[size];
+    piece_count = new int[size];
 
     for (int i = 0; i < size; ++i) {
         fill_entry(i, entries[i]);
@@ -43,6 +44,7 @@ PlaneBatch::~PlaneBatch() {
     delete[] planes;
     delete[] score;
     delete[] result;
+    delete[] piece_count;
 }
 
 void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
@@ -56,6 +58,7 @@ void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
         base[static_cast<std::size_t>(plane) * PLANE_SIZE + square_index] = 1.0f;
     };
 
+    int non_king_pieces = 0;
     for (int sq = 0; sq < 64; ++sq) {
         const Piece piece = pos.pieceAt(Square(sq));
         if (piece == Piece::none()) continue;
@@ -64,7 +67,10 @@ void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
         const int plane = plane_for_piece(piece.type(), is_us);
         const int oriented_sq = orient_flip ? flip_rank(sq) : sq;
         set(plane, oriented_sq);
+
+        if (piece.type() != PieceType::King) ++non_king_pieces;
     }
+    piece_count[i] = non_king_pieces;
 
     // Side to move (constant plane, matches NNUE-style "us is always
     // white" reorientation semantics: after flipping, this records

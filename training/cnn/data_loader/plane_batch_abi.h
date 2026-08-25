@@ -21,6 +21,7 @@ struct PlaneBatchCView {
     float* planes;
     float* score;
     float* result;
+    int* piece_count;
     void* handle;  // opaque PlaneBatch*, owned until destroy_plane_batch()
 };
 

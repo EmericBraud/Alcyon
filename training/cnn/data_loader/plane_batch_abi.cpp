@@ -26,9 +26,10 @@ PLANE_API void destroy_plane_batch_stream(PlaneBatchCStream* stream) { delete st
 PLANE_API PlaneBatchCView fetch_next_plane_batch(PlaneBatchCStream* stream) {
     PlaneBatch* batch = stream->impl.next();
     if (batch == nullptr) {
-        return PlaneBatchCView{0, nullptr, nullptr, nullptr, nullptr};
+        return PlaneBatchCView{0, nullptr, nullptr, nullptr, nullptr, nullptr};
     }
-    return PlaneBatchCView{batch->size, batch->planes, batch->score, batch->result, batch};
+    return PlaneBatchCView{batch->size, batch->planes, batch->score, batch->result,
+                            batch->piece_count, batch};
 }
 
 PLANE_API void destroy_plane_batch(PlaneBatchCView view) {
