@@ -105,6 +105,8 @@ class CPlaneDataLoaderAPI:
             ctypes.POINTER(ctypes.c_char_p),
             ctypes.c_int,
             ctypes.c_bool,
+            ctypes.c_int,
+            ctypes.c_bool,
         ]
 
         # void destroy_plane_batch_stream(PlaneBatchCStream* stream)

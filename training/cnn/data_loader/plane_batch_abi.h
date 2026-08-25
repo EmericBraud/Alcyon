@@ -25,11 +25,17 @@ struct PlaneBatchCView {
     void* handle;  // opaque PlaneBatch*, owned until destroy_plane_batch()
 };
 
+// val_percent/is_validation: see PlaneBatchStream's constructor doc in
+// plane_batch_stream.h — lets two streams built from the SAME files
+// yield disjoint, reproducible train/validation splits without
+// physically cutting the binpack file.
 PLANE_API PlaneBatchCStream* create_plane_batch_stream(int concurrency,
                                                          int num_files,
                                                          const char* const* filenames,
                                                          int batch_size,
-                                                         bool cyclic);
+                                                         bool cyclic,
+                                                         int val_percent,
+                                                         bool is_validation);
 
 PLANE_API void destroy_plane_batch_stream(PlaneBatchCStream* stream);
 
