@@ -112,7 +112,7 @@ def main():
     parser.add_argument("--lambda-end", type=float, default=0.3)
     parser.add_argument("--checkpoint-dir", default="checkpoints")
     parser.add_argument("--checkpoint-every", type=int, default=5000)
-    parser.add_argument("--log-every", type=int, default=100)
+    parser.add_argument("--log-every", type=int, default=20)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -125,13 +125,19 @@ def main():
             flush=True,
         )
 
+    print(f"torch {torch.__version__}, device={args.device}", flush=True)
+
     device = torch.device(args.device)
+    print("building model...", flush=True)
     model = ChessCNN().to(device)
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"model ready: {num_params:,} params on {device}", flush=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lr_lambda=lambda step: lr_schedule(step, args.steps, args.warmup_steps)
     )
 
+    print(f"opening binpack stream: {args.binpack}", flush=True)
     # When splitting a single file by hash, the training stream must
     # skip the validation share (val_percent, is_validation=False) so
     # the two streams never see the same position.
@@ -166,9 +172,12 @@ def main():
         val_iter = iter(val_dataset)
 
     os.makedirs(args.checkpoint_dir, exist_ok=True)
+    print(f"checkpoints will be written to: {os.path.abspath(args.checkpoint_dir)}", flush=True)
+    print(f"starting training: {args.steps} steps, batch_size={args.batch_size}", flush=True)
 
     running_loss = 0.0
     t_start = time.time()
+    t_last_log = t_start
 
     for step in range(args.steps):
         planes, score, result, piece_count = next(data_iter)
@@ -192,29 +201,37 @@ def main():
 
         running_loss += loss.item()
 
-        if (step + 1) % args.log_every == 0:
-            avg_loss = running_loss / args.log_every
-            elapsed = time.time() - t_start
+        # Print the very first step unconditionally — with a large
+        # batch size, waiting for the first --log-every window can
+        # look like the process has hung when it's actually just
+        # compiling MPS/CUDA kernels or loading the first batches.
+        if step == 0 or (step + 1) % args.log_every == 0:
+            steps_since_log = 1 if step == 0 else args.log_every
+            avg_loss = running_loss / steps_since_log
+            now = time.time()
+            window_pos_per_s = (steps_since_log * args.batch_size) / max(now - t_last_log, 1e-9)
             current_lr = scheduler.get_last_lr()[0]
             print(
                 f"step {step + 1}/{args.steps}  loss={avg_loss:.4f}  "
                 f"lambda={lambda_:.3f}  lr={current_lr:.2e}  "
-                f"{(step + 1) * args.batch_size / elapsed:.0f} pos/s"
+                f"{window_pos_per_s:.0f} pos/s  ({now - t_start:.0f}s elapsed)",
+                flush=True,
             )
             running_loss = 0.0
+            t_last_log = now
 
         if val_iter is not None and (step + 1) % args.val_every == 0:
             val_loss = evaluate(model, val_iter, device, args.val_batches, lambda_)
-            print(f"step {step + 1}/{args.steps}  val_loss={val_loss:.4f}")
+            print(f"step {step + 1}/{args.steps}  val_loss={val_loss:.4f}", flush=True)
 
         if (step + 1) % args.checkpoint_every == 0:
             path = os.path.join(args.checkpoint_dir, f"chesscnn_step{step + 1}.pt")
             torch.save({"model": model.state_dict(), "step": step + 1}, path)
-            print(f"checkpoint saved: {path}")
+            print(f"checkpoint saved: {path}", flush=True)
 
     final_path = os.path.join(args.checkpoint_dir, "chesscnn_final.pt")
     torch.save({"model": model.state_dict(), "step": args.steps}, final_path)
-    print(f"training done, final checkpoint: {final_path}")
+    print(f"training done, final checkpoint: {final_path}", flush=True)
 
 
 if __name__ == "__main__":
