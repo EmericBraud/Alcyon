@@ -34,6 +34,7 @@ import torch.nn.functional as F
 # docs/gpu-async-eval/architecture.md.
 NUM_PLANES = 19
 BOARD_SIZE = 8
+NUM_PIECE_PLANES = 12  # planes 0-11: the piece-placement planes only
 
 # --- Phase buckets ------------------------------------------------------
 # Non-king piece count (both sides, see plane_batch.h's piece_count
@@ -85,12 +86,37 @@ class PhaseValueHead(nn.Module):
         return self.fc2(h).squeeze(-1)  # (batch,)
 
 
+class PSQTHead(nn.Module):
+    """Direct linear piece-square skip, analogous to NNUE's PSQT accumulator.
+
+    Bypasses the residual trunk entirely: one learnable per-square,
+    per-piece-plane weight, summed over the board, with its own value
+    per phase bucket (mirrors NNUE's separate PSQT weights per
+    bucket). Added directly to the trunk's logit output — gives the
+    network a stable linear material/positional baseline to correct,
+    instead of having to rediscover material counting indirectly
+    through convolutions and nonlinear heads.
+    """
+
+    def __init__(self, num_piece_planes=NUM_PIECE_PLANES, num_phase_buckets=NUM_PHASE_BUCKETS):
+        super().__init__()
+        self.conv = nn.Conv2d(num_piece_planes, num_phase_buckets, kernel_size=1, bias=False)
+
+    def forward(self, piece_planes, bucket):
+        # piece_planes: (batch, NUM_PIECE_PLANES, BOARD_SIZE, BOARD_SIZE)
+        # bucket: (batch,) int64 phase bucket index.
+        per_bucket = self.conv(piece_planes).sum(dim=(2, 3))  # (batch, num_phase_buckets)
+        return per_bucket.gather(1, bucket.unsqueeze(1)).squeeze(1)  # (batch,)
+
+
 class ChessCNN(nn.Module):
-    """8 residual blocks x 96 channels, shared trunk, one scalar head per phase bucket.
+    """8 residual blocks x 96 channels, shared trunk, one scalar head per
+    phase bucket, plus a direct linear PSQT skip (see PSQTHead).
 
     The trunk is trained on every position regardless of phase, so it
     keeps the statistical benefit of the full dataset; only the small
-    per-bucket heads specialize (see PHASE_BUCKET_BOUNDARIES above).
+    per-bucket heads and PSQT weights specialize (see
+    PHASE_BUCKET_BOUNDARIES above).
     """
 
     def __init__(self, channels=96, num_blocks=8, num_planes=NUM_PLANES,
@@ -101,24 +127,28 @@ class ChessCNN(nn.Module):
 
         self.blocks = nn.ModuleList(ResidualBlock(channels) for _ in range(num_blocks))
         self.heads = nn.ModuleList(PhaseValueHead(channels) for _ in range(num_phase_buckets))
+        self.psqt = PSQTHead(num_phase_buckets=num_phase_buckets)
 
     def forward(self, planes, piece_count):
         # planes: (batch, NUM_PLANES, BOARD_SIZE, BOARD_SIZE)
         # piece_count: (batch,) int64, non-king piece count from the loader.
         # returns: (batch,) win-probability logits (pass through sigmoid for [0, 1]).
+        bucket = phase_bucket_for_piece_count(piece_count)
+
         x = F.relu(self.stem_bn(self.stem_conv(planes)))
         for block in self.blocks:
             x = block(x)
 
         pooled = x.mean(dim=(2, 3))  # global average pool -> (batch, channels)
-        bucket = phase_bucket_for_piece_count(piece_count)
 
-        logits = torch.empty(planes.shape[0], device=planes.device, dtype=pooled.dtype)
+        trunk_logits = torch.empty(planes.shape[0], device=planes.device, dtype=pooled.dtype)
         for bucket_idx, head in enumerate(self.heads):
             mask = bucket == bucket_idx
             if mask.any():
-                logits[mask] = head(pooled[mask])
-        return logits
+                trunk_logits[mask] = head(pooled[mask])
+
+        psqt_logits = self.psqt(planes[:, :NUM_PIECE_PLANES], bucket)
+        return trunk_logits + psqt_logits
 
     @torch.no_grad()
     def eval_centipawns(self, planes, piece_count, cp_scale=410.0):
