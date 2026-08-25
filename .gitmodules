@@ -1,0 +1,3 @@
+[submodule "training/nnue-pytorch"]
+	path = training/nnue-pytorch
+	url = https://github.com/official-stockfish/nnue-pytorch.git
