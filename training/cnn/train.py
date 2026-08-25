@@ -114,7 +114,21 @@ def main():
     parser.add_argument("--checkpoint-every", type=int, default=5000)
     parser.add_argument("--log-every", type=int, default=20)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--cpu-threads",
+        type=int,
+        default=8,
+        help="torch.set_num_threads() cap. PyTorch defaults this to the "
+        "visible host core count, which on a cgroup-limited container "
+        "(shared GPU rental, Docker, etc.) can be wildly higher than the "
+        "actual CPU quota — causing massive thread oversubscription and "
+        "contention rather than useful parallelism. Set to comfortably "
+        "under the container's real CPU allocation.",
+    )
     args = parser.parse_args()
+
+    torch.set_num_threads(args.cpu_threads)
+    torch.set_num_interop_threads(max(2, args.cpu_threads // 4))
 
     use_hash_split = args.val_binpack is None and args.val_percent > 0
     if args.val_binpack is None and args.val_percent <= 0:
