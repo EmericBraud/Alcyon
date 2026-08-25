@@ -68,9 +68,14 @@ class CPlaneDataLoaderAPI:
         self._define_prototypes()
 
     def _load_library(self):
+        # Search relative to this file, not the process cwd — train.py
+        # is meant to be launched from training/cnn/, one level above
+        # this package, so a cwd-relative "./build" would only work if
+        # the caller happened to cd into data_loader/ first.
+        this_dir = os.path.dirname(os.path.abspath(__file__))
         candidates = []
-        for pattern in ("./build/**/*plane_batch_loader.*", "./build/*plane_batch_loader.*"):
-            for lib in glob.glob(pattern, recursive=True):
+        for pattern in ("build/**/*plane_batch_loader.*", "build/*plane_batch_loader.*"):
+            for lib in glob.glob(os.path.join(this_dir, pattern), recursive=True):
                 if lib.endswith((".so", ".dll", ".dylib")):
                     candidates.append(os.path.abspath(lib))
 
