@@ -74,15 +74,23 @@ class ResidualBlock(nn.Module):
 
 
 class PhaseValueHead(nn.Module):
-    """One small value head — global average pool -> MLP -> scalar win-prob logit."""
+    """One small value head — MLP -> scalar win-prob logit.
+
+    Takes the concatenation of mid-trunk and final pooled features
+    (see ChessCNN.forward), not just the final ones — analogous to
+    NNUE's output layer receiving both L1 and L2 activations directly
+    (DenseLayer<2*L2+2*L3, 1> in nnue_model.hpp), rather than only the
+    deepest layer's output. Gives the head a shorter path to less-
+    transformed features alongside the fully-processed ones.
+    """
 
     def __init__(self, channels):
         super().__init__()
-        self.fc1 = nn.Linear(channels, channels)
+        self.fc1 = nn.Linear(channels * 2, channels)
         self.fc2 = nn.Linear(channels, 1)
 
-    def forward(self, pooled):
-        h = F.relu(self.fc1(pooled))
+    def forward(self, pooled_mid, pooled_final):
+        h = F.relu(self.fc1(torch.cat([pooled_mid, pooled_final], dim=-1)))
         return self.fc2(h).squeeze(-1)  # (batch,)
 
 
@@ -136,16 +144,19 @@ class ChessCNN(nn.Module):
         bucket = phase_bucket_for_piece_count(piece_count)
 
         x = F.relu(self.stem_bn(self.stem_conv(planes)))
-        for block in self.blocks:
+        mid_point = len(self.blocks) // 2
+        for i, block in enumerate(self.blocks):
             x = block(x)
+            if i == mid_point - 1:
+                pooled_mid = x.mean(dim=(2, 3))  # (batch, channels), less-transformed
 
-        pooled = x.mean(dim=(2, 3))  # global average pool -> (batch, channels)
+        pooled_final = x.mean(dim=(2, 3))  # (batch, channels), fully-transformed
 
-        trunk_logits = torch.empty(planes.shape[0], device=planes.device, dtype=pooled.dtype)
+        trunk_logits = torch.empty(planes.shape[0], device=planes.device, dtype=pooled_final.dtype)
         for bucket_idx, head in enumerate(self.heads):
             mask = bucket == bucket_idx
             if mask.any():
-                trunk_logits[mask] = head(pooled[mask])
+                trunk_logits[mask] = head(pooled_mid[mask], pooled_final[mask])
 
         psqt_logits = self.psqt(planes[:, :NUM_PIECE_PLANES], bucket)
         return trunk_logits + psqt_logits
