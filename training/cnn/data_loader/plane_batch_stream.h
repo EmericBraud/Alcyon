@@ -1,7 +1,11 @@
 #pragma once
 
+#include <condition_variable>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "nnue_training_data_stream.h"
@@ -9,11 +13,38 @@
 
 namespace chess26::cnn {
 
-// v1: synchronous, single-threaded fetch — no background prefetch
-// worker yet. SparseBatch/FenBatch in nnue-pytorch use a threaded
-// producer/consumer queue (see FeaturedBatchStream) for throughput;
-// add the same pattern here once this path is validated end-to-end
-// and prefetch is confirmed to be a bottleneck for CNN training.
+// Synchronous, single-threaded core: blocks on the underlying binpack
+// reader for every batch. Used only as the producer inside
+// PlaneBatchStream's background thread (below) — not exposed via the
+// ABI directly, since callers always want the prefetching version.
+class PlaneBatchStreamImpl {
+public:
+    PlaneBatchStreamImpl(int concurrency,
+                          const std::vector<std::string>& filenames,
+                          int batch_size,
+                          bool cyclic,
+                          int val_percent,
+                          bool is_validation);
+
+    // Returns nullptr once the underlying stream is exhausted and not
+    // cyclic. Caller owns the returned batch.
+    PlaneBatch* next();
+
+private:
+    int m_batch_size;
+    std::unique_ptr<training_data::BasicSfenInputStream> m_stream;
+};
+
+// Prefetching wrapper: a background thread keeps calling
+// PlaneBatchStreamImpl::next() and pushes completed batches into a
+// bounded queue, so the consumer (the training loop, blocked on GPU
+// compute or Python-side tensor conversion) finds a batch already
+// waiting instead of blocking on binpack I/O + plane encoding for
+// every step. This is what closed the CPU-bound gap identified when
+// profiling training on a single synchronous thread (see
+// docs/gpu-async-eval/ discussion) — the model here is small enough
+// that GPU compute alone rarely keeps up with a purely synchronous
+// loader, so the queue buys back the idle time on both sides.
 class PlaneBatchStream {
 public:
     // val_percent: 0-100, the share of positions (by hash_position,
@@ -25,20 +56,40 @@ public:
     // physical file split needed. Pass val_percent=0 to disable
     // splitting entirely (every position goes to the training/only
     // stream), e.g. when validation comes from a separate file.
+    // queue_capacity: max number of fully-built PlaneBatch objects
+    // held in memory ahead of consumption. Higher hides more I/O
+    // latency but costs more RAM (each batch is
+    // batch_size * NUM_PLANES * 64 floats, see plane_batch.h).
     PlaneBatchStream(int concurrency,
                       const std::vector<std::string>& filenames,
                       int batch_size,
                       bool cyclic,
                       int val_percent = 0,
-                      bool is_validation = false);
+                      bool is_validation = false,
+                      int queue_capacity = 4);
+    ~PlaneBatchStream();
 
-    // Returns nullptr once the underlying stream is exhausted and
-    // not cyclic. Caller owns the returned batch (delete when done).
+    PlaneBatchStream(const PlaneBatchStream&) = delete;
+    PlaneBatchStream& operator=(const PlaneBatchStream&) = delete;
+
+    // Returns nullptr once the underlying stream is exhausted and not
+    // cyclic. Caller owns the returned batch (delete when done).
     PlaneBatch* next();
 
 private:
-    int m_batch_size;
-    std::unique_ptr<training_data::BasicSfenInputStream> m_stream;
+    void worker_loop();
+
+    PlaneBatchStreamImpl m_impl;
+    std::size_t m_capacity;
+
+    std::mutex m_mutex;
+    std::condition_variable m_not_empty;
+    std::condition_variable m_not_full;
+    std::deque<PlaneBatch*> m_queue;
+    bool m_exhausted = false;
+    bool m_stop = false;
+
+    std::thread m_worker;
 };
 
 }  // namespace chess26::cnn
