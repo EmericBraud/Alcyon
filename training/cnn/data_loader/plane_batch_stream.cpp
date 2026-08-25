@@ -22,12 +22,12 @@ std::function<bool(const binpack::TrainingDataEntry&)> make_split_predicate(int 
 
 }  // namespace
 
-PlaneBatchStream::PlaneBatchStream(int concurrency,
-                                    const std::vector<std::string>& filenames,
-                                    int batch_size,
-                                    bool cyclic,
-                                    int val_percent,
-                                    bool is_validation)
+PlaneBatchStreamImpl::PlaneBatchStreamImpl(int concurrency,
+                                            const std::vector<std::string>& filenames,
+                                            int batch_size,
+                                            bool cyclic,
+                                            int val_percent,
+                                            bool is_validation)
     : m_batch_size(batch_size),
       m_stream(training_data::open_sfen_input_file_parallel(
           concurrency,
@@ -37,7 +37,7 @@ PlaneBatchStream::PlaneBatchStream(int concurrency,
           /*rank=*/0,
           /*world_size=*/1)) {}
 
-PlaneBatch* PlaneBatchStream::next() {
+PlaneBatch* PlaneBatchStreamImpl::next() {
     std::vector<binpack::TrainingDataEntry> entries;
     entries.reserve(m_batch_size);
 
@@ -49,6 +49,69 @@ PlaneBatch* PlaneBatchStream::next() {
 
     if (entries.empty()) return nullptr;
     return new PlaneBatch(entries);
+}
+
+PlaneBatchStream::PlaneBatchStream(int concurrency,
+                                    const std::vector<std::string>& filenames,
+                                    int batch_size,
+                                    bool cyclic,
+                                    int val_percent,
+                                    bool is_validation,
+                                    int queue_capacity)
+    : m_impl(concurrency, filenames, batch_size, cyclic, val_percent, is_validation),
+      m_capacity(static_cast<std::size_t>(queue_capacity)) {
+    m_worker = std::thread(&PlaneBatchStream::worker_loop, this);
+}
+
+PlaneBatchStream::~PlaneBatchStream() {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_stop = true;
+    }
+    m_not_full.notify_all();   // wake the worker if it's blocked pushing
+    m_not_empty.notify_all();  // wake next() if a caller is still waiting
+    if (m_worker.joinable()) m_worker.join();
+
+    for (PlaneBatch* batch : m_queue) delete batch;
+}
+
+void PlaneBatchStream::worker_loop() {
+    while (true) {
+        PlaneBatch* batch = m_impl.next();  // blocking I/O + plane encoding, off the consumer thread
+
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_not_full.wait(lock, [&] { return m_stop || m_queue.size() < m_capacity; });
+        if (m_stop) {
+            delete batch;  // no-op if batch == nullptr
+            return;
+        }
+
+        if (batch == nullptr) {
+            m_exhausted = true;
+            lock.unlock();
+            m_not_empty.notify_all();
+            return;
+        }
+
+        m_queue.push_back(batch);
+        lock.unlock();
+        m_not_empty.notify_one();
+    }
+}
+
+PlaneBatch* PlaneBatchStream::next() {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_not_empty.wait(lock, [&] { return m_stop || !m_queue.empty() || m_exhausted; });
+
+    if (!m_queue.empty()) {
+        PlaneBatch* batch = m_queue.front();
+        m_queue.pop_front();
+        lock.unlock();
+        m_not_full.notify_one();
+        return batch;
+    }
+
+    return nullptr;  // m_stop or m_exhausted with an empty queue
 }
 
 }  // namespace chess26::cnn
