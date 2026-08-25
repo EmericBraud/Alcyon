@@ -62,6 +62,13 @@ struct PlaneBatch final {
     // 0 draw, -1 loss (same convention as TrainingDataEntry::result).
     float* result;
 
+    // size. Total non-king pieces on the board (both sides). Free to
+    // compute here since we already walk all 64 squares — used on
+    // the Python side to pick which value head to route each sample
+    // to (see model.py's phase-bucketed heads). Kings excluded since
+    // they're always exactly 2 and carry no phase information.
+    int* piece_count;
+
 private:
     void fill_entry(int i, const binpack::TrainingDataEntry& e);
 };

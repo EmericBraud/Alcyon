@@ -32,6 +32,27 @@ import torch.nn.functional as F
 NUM_PLANES = 19
 BOARD_SIZE = 8
 
+# --- Phase buckets ------------------------------------------------------
+# Non-king piece count (both sides, see plane_batch.h's piece_count
+# field) determines which value head evaluates a given position.
+# Boundaries are a starting point, not tuned — revisit once real
+# training data shows how positions distribute across buckets.
+#
+#   bucket 0: >= 24 pieces  (opening / early middlegame)
+#   bucket 1: 16-23 pieces  (middlegame)
+#   bucket 2: 8-15 pieces   (late middlegame / early endgame)
+#   bucket 3: < 8 pieces    (endgame)
+PHASE_BUCKET_BOUNDARIES = (24, 16, 8)
+NUM_PHASE_BUCKETS = len(PHASE_BUCKET_BOUNDARIES) + 1
+
+
+def phase_bucket_for_piece_count(piece_count: torch.Tensor) -> torch.Tensor:
+    """Maps a (batch,) int64 piece_count tensor to bucket indices in [0, NUM_PHASE_BUCKETS)."""
+    bucket = torch.zeros_like(piece_count)
+    for boundary in PHASE_BUCKET_BOUNDARIES:
+        bucket += (piece_count < boundary).to(bucket.dtype)
+    return bucket
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, channels):
@@ -48,41 +69,65 @@ class ResidualBlock(nn.Module):
         return F.relu(out + residual)
 
 
-class ChessCNN(nn.Module):
-    """8 residual blocks x 96 channels, WDL value head."""
+class PhaseValueHead(nn.Module):
+    """One small value head — global average pool -> MLP -> WDL logits."""
 
-    def __init__(self, channels=96, num_blocks=8, num_planes=NUM_PLANES):
+    def __init__(self, channels):
+        super().__init__()
+        self.fc1 = nn.Linear(channels, channels)
+        self.fc2 = nn.Linear(channels, 3)  # [win, draw, loss] logits
+
+    def forward(self, pooled):
+        h = F.relu(self.fc1(pooled))
+        return self.fc2(h)
+
+
+class ChessCNN(nn.Module):
+    """8 residual blocks x 96 channels, shared trunk, one WDL head per phase bucket.
+
+    The trunk is trained on every position regardless of phase, so it
+    keeps the statistical benefit of the full dataset; only the small
+    per-bucket heads specialize (see PHASE_BUCKET_BOUNDARIES above).
+    """
+
+    def __init__(self, channels=96, num_blocks=8, num_planes=NUM_PLANES,
+                 num_phase_buckets=NUM_PHASE_BUCKETS):
         super().__init__()
         self.stem_conv = nn.Conv2d(num_planes, channels, kernel_size=3, padding=1, bias=False)
         self.stem_bn = nn.BatchNorm2d(channels)
 
         self.blocks = nn.ModuleList(ResidualBlock(channels) for _ in range(num_blocks))
+        self.heads = nn.ModuleList(PhaseValueHead(channels) for _ in range(num_phase_buckets))
 
-        # Value head: global average pool -> small MLP -> 3-way WDL logits.
-        self.value_fc1 = nn.Linear(channels, channels)
-        self.value_fc2 = nn.Linear(channels, 3)  # [win, draw, loss] logits
-
-    def forward(self, planes):
+    def forward(self, planes, piece_count):
         # planes: (batch, NUM_PLANES, BOARD_SIZE, BOARD_SIZE)
+        # piece_count: (batch,) int64, non-king piece count from the loader.
         x = F.relu(self.stem_bn(self.stem_conv(planes)))
         for block in self.blocks:
             x = block(x)
 
         pooled = x.mean(dim=(2, 3))  # global average pool -> (batch, channels)
-        h = F.relu(self.value_fc1(pooled))
-        wdl_logits = self.value_fc2(h)
+        bucket = phase_bucket_for_piece_count(piece_count)
+
+        wdl_logits = torch.empty(planes.shape[0], 3, device=planes.device, dtype=pooled.dtype)
+        for bucket_idx, head in enumerate(self.heads):
+            mask = bucket == bucket_idx
+            if mask.any():
+                wdl_logits[mask] = head(pooled[mask])
         return wdl_logits
 
     @torch.no_grad()
-    def eval_centipawns(self, planes, cp_scale=410.0):
+    def eval_centipawns(self, planes, piece_count, cp_scale=410.0):
         """WDL logits -> expected score in [0, 1] -> centipawns.
 
         cp_scale must be calibrated against the engine's NNUE score
         scale on a held-out set (see scripts/calibrate_cp_scale.py,
         not yet written) before this is trustworthy for the async
-        GPU eval cache.
+        GPU eval cache. A single global cp_scale is used across all
+        phase buckets for now — revisit if calibration turns out to
+        need per-bucket scales too.
         """
-        wdl = F.softmax(self.forward(planes), dim=-1)
+        wdl = F.softmax(self.forward(planes, piece_count), dim=-1)
         win, draw, loss = wdl[:, 0], wdl[:, 1], wdl[:, 2]
         expected_score = win + 0.5 * draw  # in [0, 1]
         # Inverse logistic, same family Stockfish uses to convert
