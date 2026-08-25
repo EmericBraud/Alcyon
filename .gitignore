@@ -21,3 +21,6 @@ py_scripts/
 compile_commands.json
 profile.txt
 src/.DS_Store
+
+__pycache__/
+*.pyc
