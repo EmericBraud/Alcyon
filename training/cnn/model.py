@@ -1,9 +1,12 @@
 """CNN position evaluator, complementary to the engine's NNUE.
 
 Value-only network (no policy head — move search stays in the C++
-alpha-beta engine). Output is WDL (win/draw/loss), converted to
-centipawns at inference time using a calibrated sigmoid, to stay on
-the same score scale as the NNUE eval.
+alpha-beta engine). Output is a single scalar win-probability logit,
+trained against a lambda-blended target of the Stockfish search score
+and the actual game result (see train.py's lambda annealing schedule
+and docs/gpu-async-eval/ for the rationale) — not a 3-way WDL
+classification, since the blended target is a continuous probability,
+not a discrete class.
 
 Input: dense 8x8xN board planes (see PLANES below), one stack per
 side to move already oriented so the side to move is always "us".
@@ -70,20 +73,20 @@ class ResidualBlock(nn.Module):
 
 
 class PhaseValueHead(nn.Module):
-    """One small value head — global average pool -> MLP -> WDL logits."""
+    """One small value head — global average pool -> MLP -> scalar win-prob logit."""
 
     def __init__(self, channels):
         super().__init__()
         self.fc1 = nn.Linear(channels, channels)
-        self.fc2 = nn.Linear(channels, 3)  # [win, draw, loss] logits
+        self.fc2 = nn.Linear(channels, 1)
 
     def forward(self, pooled):
         h = F.relu(self.fc1(pooled))
-        return self.fc2(h)
+        return self.fc2(h).squeeze(-1)  # (batch,)
 
 
 class ChessCNN(nn.Module):
-    """8 residual blocks x 96 channels, shared trunk, one WDL head per phase bucket.
+    """8 residual blocks x 96 channels, shared trunk, one scalar head per phase bucket.
 
     The trunk is trained on every position regardless of phase, so it
     keeps the statistical benefit of the full dataset; only the small
@@ -102,6 +105,7 @@ class ChessCNN(nn.Module):
     def forward(self, planes, piece_count):
         # planes: (batch, NUM_PLANES, BOARD_SIZE, BOARD_SIZE)
         # piece_count: (batch,) int64, non-king piece count from the loader.
+        # returns: (batch,) win-probability logits (pass through sigmoid for [0, 1]).
         x = F.relu(self.stem_bn(self.stem_conv(planes)))
         for block in self.blocks:
             x = block(x)
@@ -109,16 +113,17 @@ class ChessCNN(nn.Module):
         pooled = x.mean(dim=(2, 3))  # global average pool -> (batch, channels)
         bucket = phase_bucket_for_piece_count(piece_count)
 
-        wdl_logits = torch.empty(planes.shape[0], 3, device=planes.device, dtype=pooled.dtype)
+        logits = torch.empty(planes.shape[0], device=planes.device, dtype=pooled.dtype)
         for bucket_idx, head in enumerate(self.heads):
             mask = bucket == bucket_idx
             if mask.any():
-                wdl_logits[mask] = head(pooled[mask])
-        return wdl_logits
+                logits[mask] = head(pooled[mask])
+        return logits
 
     @torch.no_grad()
     def eval_centipawns(self, planes, piece_count, cp_scale=410.0):
-        """WDL logits -> expected score in [0, 1] -> centipawns.
+        """Win-probability logit -> centipawns, same sigmoid family Stockfish
+        uses to convert win probability to a centipawn-like score.
 
         cp_scale must be calibrated against the engine's NNUE score
         scale on a held-out set (see scripts/calibrate_cp_scale.py,
@@ -127,10 +132,7 @@ class ChessCNN(nn.Module):
         phase buckets for now — revisit if calibration turns out to
         need per-bucket scales too.
         """
-        wdl = F.softmax(self.forward(planes, piece_count), dim=-1)
-        win, draw, loss = wdl[:, 0], wdl[:, 1], wdl[:, 2]
-        expected_score = win + 0.5 * draw  # in [0, 1]
-        # Inverse logistic, same family Stockfish uses to convert
-        # win probability to a centipawn-like score.
-        expected_score = expected_score.clamp(1e-6, 1 - 1e-6)
-        return cp_scale * torch.log(expected_score / (1 - expected_score))
+        logit = self.forward(planes, piece_count)
+        # logit is already logit(p); centipawns = cp_scale * logit(p) is the
+        # same transform as cp_scale * log(p / (1 - p)) applied to sigmoid(logit).
+        return cp_scale * logit
