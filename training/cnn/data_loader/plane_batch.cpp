@@ -121,4 +121,20 @@ void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
     result[i] = static_cast<float>(e.result);
 }
 
+std::uint64_t hash_position(const Position& pos) {
+    // 24-byte stable serialization (8-byte occupied bitboard + 16-byte
+    // packed piece state) — see CompressedPosition::writeToBigEndian in
+    // chess.h. Hashed with FNV-1a, a plain deterministic hash with no
+    // dependency on std::hash's per-process seeding.
+    unsigned char buf[24];
+    pos.compress().writeToBigEndian(buf);
+
+    std::uint64_t h = 0xcbf29ce484222325ULL;  // FNV-1a 64-bit offset basis
+    for (unsigned char byte : buf) {
+        h ^= byte;
+        h *= 0x100000001b3ULL;  // FNV-1a 64-bit prime
+    }
+    return h;
+}
+
 }  // namespace chess26::cnn

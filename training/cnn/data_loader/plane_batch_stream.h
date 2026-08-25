@@ -16,10 +16,21 @@ namespace chess26::cnn {
 // and prefetch is confirmed to be a bottleneck for CNN training.
 class PlaneBatchStream {
 public:
+    // val_percent: 0-100, the share of positions (by hash_position,
+    // see plane_batch.h) routed to the validation split.
+    // is_validation: false -> stream yields the (100 - val_percent)%
+    // training positions; true -> yields the val_percent% validation
+    // positions. Two streams built from the same filenames with
+    // is_validation flipped are disjoint and reproducible — no
+    // physical file split needed. Pass val_percent=0 to disable
+    // splitting entirely (every position goes to the training/only
+    // stream), e.g. when validation comes from a separate file.
     PlaneBatchStream(int concurrency,
                       const std::vector<std::string>& filenames,
                       int batch_size,
-                      bool cyclic);
+                      bool cyclic,
+                      int val_percent = 0,
+                      bool is_validation = false);
 
     // Returns nullptr once the underlying stream is exhausted and
     // not cyclic. Caller owns the returned batch (delete when done).

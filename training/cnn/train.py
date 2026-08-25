@@ -85,9 +85,19 @@ def main():
         "--val-binpack",
         nargs="+",
         default=None,
-        help="Path(s) to a held-out .binpack for validation. If omitted, "
-        "no validation loss is reported — only the training loss, which "
-        "cannot tell you whether the model generalizes or is overfitting.",
+        help="Path(s) to a SEPARATE held-out .binpack for validation, if "
+        "you have one. If omitted, validation positions are instead "
+        "carved out of --binpack itself via a deterministic per-position "
+        "hash split (--val-percent) — see plane_batch_stream.h. No file "
+        "is physically cut; the split is applied while streaming.",
+    )
+    parser.add_argument(
+        "--val-percent",
+        type=int,
+        default=5,
+        help="Percent of --binpack positions held out for validation via "
+        "the hash split, used only when --val-binpack is not given. 0 "
+        "disables validation entirely.",
     )
     parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--val-batch-size", type=int, default=4096)
@@ -106,11 +116,12 @@ def main():
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
-    if args.val_binpack is None:
+    use_hash_split = args.val_binpack is None and args.val_percent > 0
+    if args.val_binpack is None and args.val_percent <= 0:
         print(
-            "WARNING: no --val-binpack given. Only training loss will be "
-            "logged — you won't be able to tell overfitting from real "
-            "progress. Pass a held-out .binpack once you have one.",
+            "WARNING: no --val-binpack and --val-percent <= 0. Only "
+            "training loss will be logged — you won't be able to tell "
+            "overfitting from real progress.",
             flush=True,
         )
 
@@ -121,11 +132,16 @@ def main():
         optimizer, lr_lambda=lambda step: lr_schedule(step, args.steps, args.warmup_steps)
     )
 
+    # When splitting a single file by hash, the training stream must
+    # skip the validation share (val_percent, is_validation=False) so
+    # the two streams never see the same position.
     dataset = PlaneBatchDataset(
         filenames=args.binpack,
         batch_size=args.batch_size,
         cyclic=True,
         num_workers=args.num_workers,
+        val_percent=args.val_percent if use_hash_split else 0,
+        is_validation=False,
     )
     data_iter = iter(dataset)
 
@@ -136,6 +152,16 @@ def main():
             batch_size=args.val_batch_size,
             cyclic=True,  # cyclic so a short/small val set never raises StopIteration mid-run
             num_workers=1,
+        )
+        val_iter = iter(val_dataset)
+    elif use_hash_split:
+        val_dataset = PlaneBatchDataset(
+            filenames=args.binpack,
+            batch_size=args.val_batch_size,
+            cyclic=True,
+            num_workers=1,
+            val_percent=args.val_percent,
+            is_validation=True,
         )
         val_iter = iter(val_dataset)
 

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "chess.h"
 #include "training_data_entry.h"
 
 namespace chess26::cnn {
@@ -72,5 +73,14 @@ struct PlaneBatch final {
 private:
     void fill_entry(int i, const binpack::TrainingDataEntry& e);
 };
+
+// Deterministic 64-bit hash of a position, independent of thread/
+// process/read order — used to split a single binpack file into
+// disjoint, reproducible train/validation subsets by position rather
+// than by physically cutting the file (which would corrupt its
+// delta-compressed per-game encoding, see binpack.h). Same position
+// always hashes the same way, so train and validation streams reading
+// the same file with complementary predicates never overlap.
+std::uint64_t hash_position(const chess::Position& pos);
 
 }  // namespace chess26::cnn

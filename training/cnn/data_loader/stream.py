@@ -14,6 +14,8 @@ def create_plane_batch_stream(
     filenames: list[str],
     batch_size: int,
     cyclic: bool,
+    val_percent: int = 0,
+    is_validation: bool = False,
 ) -> ctypes.c_void_p:
     return c_lib.dll.create_plane_batch_stream(
         concurrency,
@@ -21,6 +23,8 @@ def create_plane_batch_stream(
         _to_c_str_array(filenames),
         batch_size,
         cyclic,
+        val_percent,
+        is_validation,
     )
 
 
