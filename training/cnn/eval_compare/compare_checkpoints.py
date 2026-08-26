@@ -44,7 +44,7 @@ DEFAULT_EPD = os.path.join(HERE, "wac.epd")
 DEFAULT_CACHE = os.path.join(HERE, "ground_truth_cache.json")
 MATE_SENTINEL_CP = 10000
 
-NUM_PLANES, BOARD_SIZE = 21, 8
+NUM_PLANES, BOARD_SIZE = 31, 8
 PIECE_TYPE_INDEX = {chess.PAWN: 0, chess.KNIGHT: 1, chess.BISHOP: 2,
                      chess.ROOK: 3, chess.QUEEN: 4, chess.KING: 5}
 
@@ -90,12 +90,17 @@ def fen_to_planes_and_piece_count(fen):
         flat[17, oriented_ep] = 1.0
     flat[18, :] = board.halfmove_clock / 100.0
 
-    for sq in chess.SQUARES:
-        oriented_sq = flip_rank(sq) if orient_flip else sq
-        if board.is_attacked_by(us, sq):
-            flat[19, oriented_sq] = 1.0
-        if board.is_attacked_by(them, sq):
-            flat[20, oriented_sq] = 1.0
+    # Per-piece-type attack planes (19-24 us, 25-30 them) — mirrors
+    # plane_batch.cpp's bb::attacks()-per-piece union exactly.
+    for color, base in ((us, 19), (them, 25)):
+        for sq in chess.SQUARES:
+            piece = board.piece_at(sq)
+            if piece is None or piece.color != color:
+                continue
+            plane = base + (piece.piece_type - 1)
+            for target in board.attacks(sq):
+                oriented_target = flip_rank(target) if orient_flip else target
+                flat[plane, oriented_target] = 1.0
 
     return planes, non_king_pieces
 
