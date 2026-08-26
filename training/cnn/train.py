@@ -127,6 +127,18 @@ def main():
         "hiccup, not a correctness issue).",
     )
     parser.add_argument(
+        "--extend-steps",
+        type=int,
+        default=None,
+        help="Continue training past a FINISHED run's horizon (its cosine "
+        "decay already hit lr=0 and lambda already hit --lambda-end, so a "
+        "plain --resume-from with a bigger --steps would either train at "
+        "lr=0 or corrupt the lambda/LR curves). Requires --resume-from. "
+        "Runs a fresh mini warmup+cosine-decay over this many additional "
+        "steps, with lambda held fixed at --lambda-end throughout (no "
+        "further annealing beyond the floor already reached).",
+    )
+    parser.add_argument(
         "--cpu-threads",
         type=int,
         default=8,
@@ -153,15 +165,15 @@ def main():
 
     print(f"torch {torch.__version__}, device={args.device}", flush=True)
 
+    if args.extend_steps is not None and args.resume_from is None:
+        raise SystemExit("--extend-steps requires --resume-from")
+
     device = torch.device(args.device)
     print("building model...", flush=True)
     model = ChessCNN().to(device)
     num_params = sum(p.numel() for p in model.parameters())
     print(f"model ready: {num_params:,} params on {device}", flush=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda=lambda step: lr_schedule(step, args.steps, args.warmup_steps)
-    )
 
     start_step = 0
     if args.resume_from is not None:
@@ -178,19 +190,42 @@ def main():
                 "brief hiccup in the LR schedule's effective step size.",
                 flush=True,
             )
-        # Fast-forward the scheduler's internal counter to start_step so
-        # the next .step() call resumes the cosine decay at the right
-        # point, instead of restarting warmup from step 0. This
-        # deliberately calls scheduler.step() without a matching
-        # optimizer.step() in between (we're only replaying the counter,
-        # not re-doing the optimization), which triggers a harmless
-        # PyTorch ordering warning — silenced here since it doesn't
-        # apply to this use.
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            for _ in range(start_step):
-                scheduler.step()
         print(f"resumed at step {start_step}", flush=True)
+
+    extending = args.extend_steps is not None
+    if extending:
+        args.steps = start_step + args.extend_steps
+        print(
+            f"extending past the original horizon: {args.extend_steps} new steps "
+            f"(fresh warmup+decay), lambda held fixed at {args.lambda_end}",
+            flush=True,
+        )
+        # Fresh, independent mini-schedule for just the extension —
+        # deliberately NOT a continuation of the original cosine curve
+        # (that one already finished, decayed to lr=0). A fresh scheduler
+        # (last_epoch=-1) naturally counts its OWN .step() calls from 0,
+        # which lines up with lr_schedule(local_step, extend_steps, ...)
+        # without any fast-forward replay needed.
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer, lr_lambda=lambda step: lr_schedule(step, args.extend_steps, args.warmup_steps)
+        )
+    else:
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer, lr_lambda=lambda step: lr_schedule(step, args.steps, args.warmup_steps)
+        )
+        if start_step > 0:
+            # Fast-forward the scheduler's internal counter to start_step
+            # so the next .step() call resumes the cosine decay at the
+            # right point, instead of restarting warmup from step 0. This
+            # deliberately calls scheduler.step() without a matching
+            # optimizer.step() in between (we're only replaying the
+            # counter, not re-doing the optimization), which triggers a
+            # harmless PyTorch ordering warning — silenced here since it
+            # doesn't apply to this use.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                for _ in range(start_step):
+                    scheduler.step()
 
     print(f"opening binpack stream: {args.binpack}", flush=True)
     # When splitting a single file by hash, the training stream must
@@ -241,7 +276,9 @@ def main():
         result = result.to(device).squeeze(-1)
         piece_count = piece_count.to(device)
 
-        lambda_ = lambda_schedule(step, args.steps, args.lambda_start, args.lambda_end)
+        lambda_ = args.lambda_end if extending else lambda_schedule(
+            step, args.steps, args.lambda_start, args.lambda_end
+        )
         target = blended_target(score, result, lambda_)
 
         logits = model(planes, piece_count)
