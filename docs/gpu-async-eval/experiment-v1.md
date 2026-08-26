@@ -144,18 +144,33 @@ sur les 20 000 derniers steps.
 
 ### Analyse par position (step 200 000, échelle recalibrée par CV)
 
-- Échelle optimale recalibrée : **~89** (contre 410 par défaut — le
-  score brut était donc massivement sous-exploité à l'échelle initiale)
-- Taux de victoire du CNN vs NNUE (erreur la plus faible vs eval
-  statique Stockfish), à l'échelle recalibrée : **88.5%** (208/235
-  positions WAC valides)
+**Attention — cette section contenait initialement une comparaison
+biaisée : le CNN était recalibré par échelle (moindres carrés
+cross-validés) mais la NNUE était laissée à sa sortie brute. Corrigé
+ci-dessous.**
+
+- Échelle optimale recalibrée du CNN : **~89** (contre 410 par défaut
+  — le score brut était donc massivement sous-exploité à l'échelle
+  initiale)
+- Taux de victoire du CNN vs NNUE **brute (non calibrée)** : 88.5%
+  (208/235) — chiffre trompeur, voir ci-dessous.
+- **La NNUE de chess26 s'est révélée, elle aussi, non calibrée** : ses
+  sorties brutes sont ~3,4× plus grandes que l'eval statique Stockfish
+  (ex: NNUE=901 vs Stockfish=263). Une fois recalibrée par la même
+  méthode (moindres carrés cross-validés sur WAC), son MAE s'effondre
+  de 328.2 à **37.3**.
+- **Comparaison équitable (CNN et NNUE tous deux recalibrés)** :
+  - NNUE calibrée : MAE = 37.3
+  - CNN calibré : MAE = 60.8
+  - Taux de victoire du CNN : **29.4%** (69/235) — la NNUE a raison
+    plus souvent (~70% des cas), cohérent avec sa meilleure corrélation
+    (0.9499 vs 0.87).
 - Corrélation entre les magnitudes d'erreur NNUE/CNN : **0.23** (basse)
-- Les plus gros écarts en faveur du CNN sont systématiquement des cas
-  où la NNUE surestime massivement l'avantage matériel (+1000 à +1900
-  cp d'erreur) sur des positions tactiquement chargées, alors que le
-  CNN reste proche de l'eval statique Stockfish (souvent <100 cp
-  d'écart) — piste : la NNUE sur-évalue en présence de tension
-  tactique non résolue par une éval statique seule.
+  — ce chiffre-là n'est pas affecté par le biais d'échelle (calcul sur
+  des erreurs absolues indépendant du sens de la comparaison) et reste
+  le point important : les deux modèles se trompent sur des positions
+  largement différentes, même si le CNN se trompe un peu plus en
+  moyenne une fois les deux calibrés équitablement.
 
 ## Apprentissages
 
