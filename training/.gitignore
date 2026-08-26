@@ -1,1 +1,4 @@
-datasets/training/cnn/eval_compare/calibration.json
+datasets/
+cnn/eval_compare/calibration.json
+cnn/eval_compare/learning_curve.json
+cnn/checkpoints/
