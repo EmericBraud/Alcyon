@@ -10,7 +10,7 @@ namespace chess26::cnn {
 
 // Must match the plane layout documented in training/cnn/model.py
 // (NUM_PLANES and the comment above it) — keep the two in sync.
-constexpr int NUM_PLANES = 21;
+constexpr int NUM_PLANES = 31;
 constexpr int BOARD_SIZE = 8;
 constexpr int PLANE_SIZE = BOARD_SIZE * BOARD_SIZE;
 
@@ -35,14 +35,28 @@ enum PlaneIndex : int {
     PLANE_THEM_CASTLE_QUEENSIDE = 16,
     PLANE_EN_PASSANT = 17,
     PLANE_RULE50 = 18,
-    // Binary attack maps: square is attacked by at least one of our/
-    // their pieces (pseudo-legal attacks, king included, same notion
-    // as Board::isSquareAttacked). Gives the trunk a directly usable
-    // signal for piece mobility/reach that would otherwise take
-    // several conv layers to approximate (a rook's attack ray spans
-    // the whole board, a 3x3 kernel does not).
-    PLANE_US_ATTACKS = 19,
-    PLANE_THEM_ATTACKS = 20,
+    // Binary attack maps, one per piece type per side (pseudo-legal
+    // attacks, same notion as Board::isSquareAttacked but broken down
+    // by attacker type instead of aggregated) — lets the trunk tell
+    // "attacked by a pawn" from "attacked by a queen" directly,
+    // rather than having to infer it by combining an aggregated
+    // attack plane with piece-position planes across several conv
+    // layers (a 1x1 conv can't do it — the attacker's position and
+    // the attacked square are different squares by definition).
+    // Order matches PieceType ordinal (Pawn..King), offset by 6 for
+    // "them" — mirrors PLANE_US_PAWN/PLANE_THEM_PAWN above.
+    PLANE_US_PAWN_ATTACKS = 19,
+    PLANE_US_KNIGHT_ATTACKS = 20,
+    PLANE_US_BISHOP_ATTACKS = 21,
+    PLANE_US_ROOK_ATTACKS = 22,
+    PLANE_US_QUEEN_ATTACKS = 23,
+    PLANE_US_KING_ATTACKS = 24,
+    PLANE_THEM_PAWN_ATTACKS = 25,
+    PLANE_THEM_KNIGHT_ATTACKS = 26,
+    PLANE_THEM_BISHOP_ATTACKS = 27,
+    PLANE_THEM_ROOK_ATTACKS = 28,
+    PLANE_THEM_QUEEN_ATTACKS = 29,
+    PLANE_THEM_KING_ATTACKS = 30,
 };
 
 // Dense CNN input batch, built directly from binpack::TrainingDataEntry

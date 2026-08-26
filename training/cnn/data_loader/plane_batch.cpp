@@ -4,6 +4,7 @@
 
 namespace chess26::cnn {
 
+using chess::Bitboard;
 using chess::CastlingRights;
 using chess::Color;
 using chess::Piece;
@@ -24,6 +25,11 @@ int plane_for_piece(PieceType type, bool is_us) {
     // order (Pawn..King), offset by 6 for "them" — see plane_batch.h.
     const int ordinal = static_cast<int>(type);
     return is_us ? PLANE_US_PAWN + ordinal : PLANE_THEM_PAWN + ordinal;
+}
+
+int attack_plane_for_piece(PieceType type, bool is_us) {
+    const int ordinal = static_cast<int>(type);
+    return is_us ? PLANE_US_PAWN_ATTACKS + ordinal : PLANE_THEM_PAWN_ATTACKS + ordinal;
 }
 
 }  // namespace
@@ -117,10 +123,30 @@ void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
         base[static_cast<std::size_t>(PLANE_RULE50) * PLANE_SIZE + sq] = rule50_normalized;
     }
 
-    for (int sq = 0; sq < 64; ++sq) {
-        const int oriented_sq = orient_flip ? flip_rank(sq) : sq;
-        if (pos.isSquareAttacked(Square(sq), us)) set(PLANE_US_ATTACKS, oriented_sq);
-        if (pos.isSquareAttacked(Square(sq), them)) set(PLANE_THEM_ATTACKS, oriented_sq);
+    // Per-piece-type attack maps: pawns via the aggregate pawnAttacks
+    // helper (color-dependent capture direction, no per-pawn loop
+    // needed); every other type by unioning bb::attacks(pt, from,
+    // occupied) over each piece of that type/color on the board.
+    const Bitboard occupied = pos.piecesBB();
+    for (const Color color : {us, them}) {
+        const bool is_us = (color == us);
+
+        const Bitboard pawn_attacks = chess::bb::pawnAttacks(pos.piecesBB(Piece(PieceType::Pawn, color)), color);
+        for (const Square sq : pawn_attacks) {
+            const int oriented_sq = orient_flip ? flip_rank(static_cast<int>(sq)) : static_cast<int>(sq);
+            set(attack_plane_for_piece(PieceType::Pawn, is_us), oriented_sq);
+        }
+
+        for (const PieceType pt : {PieceType::Knight, PieceType::Bishop, PieceType::Rook,
+                                    PieceType::Queen, PieceType::King}) {
+            for (const Square from : pos.piecesBB(Piece(pt, color))) {
+                const Bitboard piece_attacks = chess::bb::attacks(pt, from, occupied);
+                for (const Square sq : piece_attacks) {
+                    const int oriented_sq = orient_flip ? flip_rank(static_cast<int>(sq)) : static_cast<int>(sq);
+                    set(attack_plane_for_piece(pt, is_us), oriented_sq);
+                }
+            }
+        }
     }
 
     score[i] = static_cast<float>(e.score);

@@ -27,14 +27,15 @@ import torch.nn.functional as F
 #                             them kingside, them queenside)
 #   17    : en passant target square (one-hot, all zeros if none)
 #   18    : halfmove clock (rule50 counter), normalized to [0, 1]
-#   19    : squares attacked by us (binary, pseudo-legal, king included)
-#   20    : squares attacked by them (binary, pseudo-legal, king included)
+#   19-24 : squares attacked by our pawn/knight/bishop/rook/queen/king
+#           (binary, pseudo-legal, one plane per piece type)
+#   25-30 : same, for their pieces
 #
 # Repetition is intentionally NOT included — the binpack format has
 # no game-history window to derive it from, and the search already
 # handles repetition detection on its own. See
 # docs/gpu-async-eval/architecture.md.
-NUM_PLANES = 21
+NUM_PLANES = 31
 BOARD_SIZE = 8
 NUM_PIECE_PLANES = 12  # planes 0-11: the piece-placement planes only
 
