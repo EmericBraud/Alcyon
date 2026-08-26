@@ -17,6 +17,7 @@ import argparse
 import math
 import os
 import time
+import warnings
 
 import torch
 import torch.nn.functional as F
@@ -115,6 +116,17 @@ def main():
     parser.add_argument("--log-every", type=int, default=20)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument(
+        "--resume-from",
+        default=None,
+        help="Path to a checkpoint .pt to resume from — restores model "
+        "weights, the training step counter, and the LR schedule "
+        "position. Optimizer momentum (Adam's per-parameter moment "
+        "estimates) is also restored if the checkpoint has it; older "
+        "checkpoints saved before this feature only have model+step, "
+        "in which case the optimizer restarts cold (a brief LR-schedule "
+        "hiccup, not a correctness issue).",
+    )
+    parser.add_argument(
         "--cpu-threads",
         type=int,
         default=8,
@@ -150,6 +162,35 @@ def main():
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lr_lambda=lambda step: lr_schedule(step, args.steps, args.warmup_steps)
     )
+
+    start_step = 0
+    if args.resume_from is not None:
+        print(f"resuming from checkpoint: {args.resume_from}", flush=True)
+        ckpt = torch.load(args.resume_from, map_location=device, weights_only=True)
+        model.load_state_dict(ckpt["model"])
+        start_step = ckpt["step"]
+        if "optimizer" in ckpt:
+            optimizer.load_state_dict(ckpt["optimizer"])
+        else:
+            print(
+                "WARNING: checkpoint has no optimizer state (saved before "
+                "--resume-from existed) — Adam restarts cold, expect a "
+                "brief hiccup in the LR schedule's effective step size.",
+                flush=True,
+            )
+        # Fast-forward the scheduler's internal counter to start_step so
+        # the next .step() call resumes the cosine decay at the right
+        # point, instead of restarting warmup from step 0. This
+        # deliberately calls scheduler.step() without a matching
+        # optimizer.step() in between (we're only replaying the counter,
+        # not re-doing the optimization), which triggers a harmless
+        # PyTorch ordering warning — silenced here since it doesn't
+        # apply to this use.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            for _ in range(start_step):
+                scheduler.step()
+        print(f"resumed at step {start_step}", flush=True)
 
     print(f"opening binpack stream: {args.binpack}", flush=True)
     # When splitting a single file by hash, the training stream must
@@ -193,7 +234,7 @@ def main():
     t_start = time.time()
     t_last_log = t_start
 
-    for step in range(args.steps):
+    for step in range(start_step, args.steps):
         planes, score, result, piece_count = next(data_iter)
         planes = planes.to(device)
         score = score.to(device).squeeze(-1)
@@ -219,8 +260,8 @@ def main():
         # batch size, waiting for the first --log-every window can
         # look like the process has hung when it's actually just
         # compiling MPS/CUDA kernels or loading the first batches.
-        if step == 0 or (step + 1) % args.log_every == 0:
-            steps_since_log = 1 if step == 0 else args.log_every
+        if step == start_step or (step + 1) % args.log_every == 0:
+            steps_since_log = 1 if step == start_step else args.log_every
             avg_loss = running_loss / steps_since_log
             now = time.time()
             window_pos_per_s = (steps_since_log * args.batch_size) / max(now - t_last_log, 1e-9)
@@ -240,11 +281,17 @@ def main():
 
         if (step + 1) % args.checkpoint_every == 0:
             path = os.path.join(args.checkpoint_dir, f"chesscnn_step{step + 1}.pt")
-            torch.save({"model": model.state_dict(), "step": step + 1}, path)
+            torch.save(
+                {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "step": step + 1},
+                path,
+            )
             print(f"checkpoint saved: {path}", flush=True)
 
     final_path = os.path.join(args.checkpoint_dir, "chesscnn_final.pt")
-    torch.save({"model": model.state_dict(), "step": args.steps}, final_path)
+    torch.save(
+        {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "step": args.steps},
+        final_path,
+    )
     print(f"training done, final checkpoint: {final_path}", flush=True)
 
 
