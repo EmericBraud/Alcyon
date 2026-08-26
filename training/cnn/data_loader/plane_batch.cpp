@@ -117,6 +117,12 @@ void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
         base[static_cast<std::size_t>(PLANE_RULE50) * PLANE_SIZE + sq] = rule50_normalized;
     }
 
+    for (int sq = 0; sq < 64; ++sq) {
+        const int oriented_sq = orient_flip ? flip_rank(sq) : sq;
+        if (pos.isSquareAttacked(Square(sq), us)) set(PLANE_US_ATTACKS, oriented_sq);
+        if (pos.isSquareAttacked(Square(sq), them)) set(PLANE_THEM_ATTACKS, oriented_sq);
+    }
+
     score[i] = static_cast<float>(e.score);
     result[i] = static_cast<float>(e.result);
 }

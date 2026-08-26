@@ -44,7 +44,7 @@ DEFAULT_EPD = os.path.join(HERE, "wac.epd")
 DEFAULT_CACHE = os.path.join(HERE, "ground_truth_cache.json")
 MATE_SENTINEL_CP = 10000
 
-NUM_PLANES, BOARD_SIZE = 19, 8
+NUM_PLANES, BOARD_SIZE = 21, 8
 PIECE_TYPE_INDEX = {chess.PAWN: 0, chess.KNIGHT: 1, chess.BISHOP: 2,
                      chess.ROOK: 3, chess.QUEEN: 4, chess.KING: 5}
 
@@ -89,6 +89,13 @@ def fen_to_planes_and_piece_count(fen):
         oriented_ep = flip_rank(board.ep_square) if orient_flip else board.ep_square
         flat[17, oriented_ep] = 1.0
     flat[18, :] = board.halfmove_clock / 100.0
+
+    for sq in chess.SQUARES:
+        oriented_sq = flip_rank(sq) if orient_flip else sq
+        if board.is_attacked_by(us, sq):
+            flat[19, oriented_sq] = 1.0
+        if board.is_attacked_by(them, sq):
+            flat[20, oriented_sq] = 1.0
 
     return planes, non_king_pieces
 

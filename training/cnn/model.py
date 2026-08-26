@@ -27,12 +27,14 @@ import torch.nn.functional as F
 #                             them kingside, them queenside)
 #   17    : en passant target square (one-hot, all zeros if none)
 #   18    : halfmove clock (rule50 counter), normalized to [0, 1]
+#   19    : squares attacked by us (binary, pseudo-legal, king included)
+#   20    : squares attacked by them (binary, pseudo-legal, king included)
 #
 # Repetition is intentionally NOT included — the binpack format has
 # no game-history window to derive it from, and the search already
 # handles repetition detection on its own. See
 # docs/gpu-async-eval/architecture.md.
-NUM_PLANES = 19
+NUM_PLANES = 21
 BOARD_SIZE = 8
 NUM_PIECE_PLANES = 12  # planes 0-11: the piece-placement planes only
 
@@ -58,6 +60,28 @@ def phase_bucket_for_piece_count(piece_count: torch.Tensor) -> torch.Tensor:
     return bucket
 
 
+class SqueezeExcitation(nn.Module):
+    """Channel attention: pools each channel to a scalar, learns a
+    per-channel gate from that summary, and rescales the channel by
+    it — lets the trunk dynamically emphasize/suppress whole feature
+    channels per position (e.g. "king-safety channels matter a lot
+    here") instead of treating every channel uniformly. Same block
+    used in Leela Chess Zero's trunk; cheap (a 2-layer MLP over a
+    pooled vector) relative to the convolutions around it.
+    """
+
+    def __init__(self, channels, reduction=4):
+        super().__init__()
+        reduced = max(channels // reduction, 1)
+        self.fc1 = nn.Linear(channels, reduced)
+        self.fc2 = nn.Linear(reduced, channels)
+
+    def forward(self, x):
+        pooled = x.mean(dim=(2, 3))
+        gate = torch.sigmoid(self.fc2(F.relu(self.fc1(pooled))))
+        return x * gate.unsqueeze(-1).unsqueeze(-1)
+
+
 class ResidualBlock(nn.Module):
     def __init__(self, channels):
         super().__init__()
@@ -65,11 +89,13 @@ class ResidualBlock(nn.Module):
         self.bn1 = nn.BatchNorm2d(channels)
         self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(channels)
+        self.se = SqueezeExcitation(channels)
 
     def forward(self, x):
         residual = x
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
+        out = self.se(out)
         return F.relu(out + residual)
 
 
@@ -118,8 +144,10 @@ class PSQTHead(nn.Module):
 
 
 class ChessCNN(nn.Module):
-    """8 residual blocks x 96 channels, shared trunk, one scalar head per
-    phase bucket, plus a direct linear PSQT skip (see PSQTHead).
+    """14 residual blocks x 160 channels (each with a squeeze-excitation
+    channel-attention gate, see SqueezeExcitation), shared trunk, one
+    scalar head per phase bucket, plus a direct linear PSQT skip (see
+    PSQTHead).
 
     The trunk is trained on every position regardless of phase, so it
     keeps the statistical benefit of the full dataset; only the small
@@ -127,7 +155,7 @@ class ChessCNN(nn.Module):
     PHASE_BUCKET_BOUNDARIES above).
     """
 
-    def __init__(self, channels=96, num_blocks=8, num_planes=NUM_PLANES,
+    def __init__(self, channels=160, num_blocks=14, num_planes=NUM_PLANES,
                  num_phase_buckets=NUM_PHASE_BUCKETS):
         super().__init__()
         self.stem_conv = nn.Conv2d(num_planes, channels, kernel_size=3, padding=1, bias=False)

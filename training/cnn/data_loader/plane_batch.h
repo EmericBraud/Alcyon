@@ -10,7 +10,7 @@ namespace chess26::cnn {
 
 // Must match the plane layout documented in training/cnn/model.py
 // (NUM_PLANES and the comment above it) — keep the two in sync.
-constexpr int NUM_PLANES = 19;
+constexpr int NUM_PLANES = 21;
 constexpr int BOARD_SIZE = 8;
 constexpr int PLANE_SIZE = BOARD_SIZE * BOARD_SIZE;
 
@@ -35,6 +35,14 @@ enum PlaneIndex : int {
     PLANE_THEM_CASTLE_QUEENSIDE = 16,
     PLANE_EN_PASSANT = 17,
     PLANE_RULE50 = 18,
+    // Binary attack maps: square is attacked by at least one of our/
+    // their pieces (pseudo-legal attacks, king included, same notion
+    // as Board::isSquareAttacked). Gives the trunk a directly usable
+    // signal for piece mobility/reach that would otherwise take
+    // several conv layers to approximate (a rook's attack ray spans
+    // the whole board, a 3x3 kernel does not).
+    PLANE_US_ATTACKS = 19,
+    PLANE_THEM_ATTACKS = 20,
 };
 
 // Dense CNN input batch, built directly from binpack::TrainingDataEntry
