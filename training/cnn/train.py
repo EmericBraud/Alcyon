@@ -56,7 +56,7 @@ def blended_target(score: torch.Tensor, result: torch.Tensor, lambda_: float) ->
 
 
 @torch.no_grad()
-def evaluate(model, val_iter, device, num_batches, lambda_):
+def evaluate(model, val_iter, device, num_batches, lambda_, autocast_dtype):
     """Runs num_batches from val_iter and returns the mean blended-target loss.
 
     lambda_ is fixed at the current training step's value so the
@@ -73,8 +73,10 @@ def evaluate(model, val_iter, device, num_batches, lambda_):
         piece_count = piece_count.to(device)
 
         target = blended_target(score, result, lambda_)
-        logits = model(planes, piece_count)
-        total_loss += F.binary_cross_entropy_with_logits(logits, target).item()
+        with torch.autocast(device_type=device.type, dtype=autocast_dtype, enabled=autocast_dtype is not None):
+            logits = model(planes, piece_count)
+            loss = F.binary_cross_entropy_with_logits(logits, target)
+        total_loss += loss.item()
     model.train()
     return total_loss / num_batches
 
@@ -154,6 +156,12 @@ def main():
     torch.set_num_threads(args.cpu_threads)
     torch.set_num_interop_threads(max(2, args.cpu_threads // 4))
 
+    # Input shape (planes, batch_size) never changes across steps, so
+    # cuDNN's autotuner can safely pick the fastest conv algorithm once
+    # and reuse it — free speedup, no correctness tradeoff for a
+    # fixed-shape workload like this one.
+    torch.backends.cudnn.benchmark = True
+
     use_hash_split = args.val_binpack is None and args.val_percent > 0
     if args.val_binpack is None and args.val_percent <= 0:
         print(
@@ -191,6 +199,19 @@ def main():
                 flush=True,
             )
         print(f"resumed at step {start_step}", flush=True)
+
+    # bf16 autocast: same dynamic range as fp32 (just less mantissa),
+    # so it's safe without a GradScaler — free throughput on GPUs with
+    # bf16 tensor cores. Only enabled on CUDA; MPS/CPU autocast support
+    # is inconsistent, not worth the risk for a "free" optimization.
+    autocast_dtype = torch.bfloat16 if device.type == "cuda" else None
+
+    # torch.compile fuses the trunk's conv/BN/ReLU chain into fewer
+    # kernel launches. Compiling the raw (uncompiled) `model` object
+    # for training — model.state_dict()/checkpointing below stays
+    # untouched by this, since torch.compile wraps a module without
+    # replacing it; `train_model` is only used for the forward call.
+    train_model = torch.compile(model) if device.type == "cuda" else model
 
     extending = args.extend_steps is not None
     if extending:
@@ -281,8 +302,9 @@ def main():
         )
         target = blended_target(score, result, lambda_)
 
-        logits = model(planes, piece_count)
-        loss = F.binary_cross_entropy_with_logits(logits, target)
+        with torch.autocast(device_type=device.type, dtype=autocast_dtype, enabled=autocast_dtype is not None):
+            logits = train_model(planes, piece_count)
+            loss = F.binary_cross_entropy_with_logits(logits, target)
 
         optimizer.zero_grad()
         loss.backward()
@@ -313,7 +335,7 @@ def main():
             t_last_log = now
 
         if val_iter is not None and (step + 1) % args.val_every == 0:
-            val_loss = evaluate(model, val_iter, device, args.val_batches, lambda_)
+            val_loss = evaluate(train_model, val_iter, device, args.val_batches, lambda_, autocast_dtype)
             print(f"step {step + 1}/{args.steps}  val_loss={val_loss:.4f}", flush=True)
 
         if (step + 1) % args.checkpoint_every == 0:
