@@ -44,7 +44,7 @@ DEFAULT_EPD = os.path.join(HERE, "wac.epd")
 DEFAULT_CACHE = os.path.join(HERE, "ground_truth_cache.json")
 MATE_SENTINEL_CP = 10000
 
-NUM_PLANES, BOARD_SIZE = 31, 8
+NUM_PLANES, BOARD_SIZE = 33, 8
 PIECE_TYPE_INDEX = {chess.PAWN: 0, chess.KNIGHT: 1, chess.BISHOP: 2,
                      chess.ROOK: 3, chess.QUEEN: 4, chess.KING: 5}
 
@@ -101,6 +101,18 @@ def fen_to_planes_and_piece_count(fen):
             for target in board.attacks(sq):
                 oriented_target = flip_rank(target) if orient_flip else target
                 flat[plane, oriented_target] = 1.0
+
+    # King-distance planes (31 us, 32 them) — Chebyshev distance from
+    # each square to the king, normalized to [0, 1]. Mirrors
+    # plane_batch.cpp's fill_king_distance exactly.
+    for color, plane in ((us, 31), (them, 32)):
+        ksq = board.king(color)
+        k_file, k_rank = chess.square_file(ksq), chess.square_rank(ksq)
+        for sq in chess.SQUARES:
+            file, rank = chess.square_file(sq), chess.square_rank(sq)
+            chebyshev = max(abs(file - k_file), abs(rank - k_rank))
+            oriented_sq = flip_rank(sq) if orient_flip else sq
+            flat[plane, oriented_sq] = chebyshev / 7.0
 
     return planes, non_king_pieces
 
@@ -251,6 +263,19 @@ def main():
                          help="path to chess26's NNUE-enabled UCI binary (build-nnue/chess26)")
     parser.add_argument("--checkpoints", required=True, help="glob pattern for CNN checkpoints, e.g. 'checkpoints/chesscnn_step*.pt'")
     parser.add_argument("--depth", type=int, default=15, help="Stockfish search depth for the (reference-only) searched score")
+    parser.add_argument(
+        "--target",
+        choices=["static", "searched"],
+        default="static",
+        help="Ground-truth column to compare against. 'static' (default) is "
+        "Stockfish's no-search eval -- the fair comparison, since NNUE/CNN "
+        "are both static evaluators and WAC is tactical-by-construction "
+        "(a searched score already resolves combinations no static "
+        "evaluator can see). 'searched' compares against the depth-N "
+        "searched score instead -- conflates search depth with eval "
+        "quality, kept only for explicit side-by-side curiosity, not as "
+        "the default methodology.",
+    )
     parser.add_argument("--out", default=None, help="write the CNN learning-curve JSON here")
     args = parser.parse_args()
 
@@ -264,12 +289,14 @@ def main():
 
     keep = [abs(s) < MATE_SENTINEL_CP and static is not None
             for s, static in zip(sf, sf_static)]
-    sf_static_f = [s for s, k in zip(sf_static, keep) if k]
+    target_col = sf_static if args.target == "static" else sf
+    target_f = [s for s, k in zip(target_col, keep) if k]
     nnue_f = [s for s, k in zip(nnue, keep) if k]
     print(f"{sum(keep)}/{len(fens)} positions kept for comparison "
-          f"(mate/in-check positions excluded)", flush=True)
+          f"(mate/in-check positions excluded)  target={args.target}"
+          f"{f' (depth={args.depth})' if args.target == 'searched' else ''}", flush=True)
 
-    nnue_mae, nnue_corr = mae(nnue_f, sf_static_f), correlation(nnue_f, sf_static_f)
+    nnue_mae, nnue_corr = mae(nnue_f, target_f), correlation(nnue_f, target_f)
     print(f"NNUE reference: MAE={nnue_mae:.1f}  corr={nnue_corr:.4f}\n", flush=True)
 
     print("encoding planes once for all positions...", flush=True)
@@ -293,7 +320,7 @@ def main():
     for ckpt_path in ckpt_paths:
         cnn, step = cnn_scores(planes_batch, pc_batch, ckpt_path, device)
         cnn_f = [s for s, k in zip(cnn, keep) if k]
-        m, c = mae(cnn_f, sf_static_f), correlation(cnn_f, sf_static_f)
+        m, c = mae(cnn_f, target_f), correlation(cnn_f, target_f)
         curve.append({"step": step, "mae": m, "corr": c})
         print(f"step {step:6d}  MAE={m:8.1f}  corr={c:.4f}", flush=True)
 

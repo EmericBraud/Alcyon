@@ -24,3 +24,16 @@ target_link_libraries(plane_batch_loader PRIVATE Threads::Threads)
 if(NOT MSVC)
     target_compile_options(plane_batch_loader PRIVATE -O3 -march=native)
 endif()
+
+# One-off debugging tool: dumps FEN + game result for a validation-split
+# sample, so NNUE (FEN-only via UCI) can be checked against real game
+# outcomes the same way the CNN already is via PlaneBatchDataset tensors.
+add_executable(dump_val_fens dump_val_fens.cpp plane_batch.cpp)
+target_include_directories(dump_val_fens PRIVATE
+    "${NNUE_PYTORCH_CPP_DIR}"
+    "${NNUE_PYTORCH_CPP_DIR}/lib"
+)
+target_link_libraries(dump_val_fens PRIVATE Threads::Threads)
+if(NOT MSVC)
+    target_compile_options(dump_val_fens PRIVATE -O3 -march=native)
+endif()

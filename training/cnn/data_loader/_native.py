@@ -7,7 +7,7 @@ import torch
 
 # Kept in sync by hand with plane_batch.h / model.py — not imported
 # to avoid a fragile cross-package import path.
-NUM_PLANES = 31
+NUM_PLANES = 33
 BOARD_SIZE = 8
 
 
