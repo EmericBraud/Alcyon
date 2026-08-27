@@ -30,26 +30,35 @@ import torch.nn.functional as F
 #   19-24 : squares attacked by our pawn/knight/bishop/rook/queen/king
 #           (binary, pseudo-legal, one plane per piece type)
 #   25-30 : same, for their pieces
+#   31    : Chebyshev distance to our king, normalized to [0, 1]
+#   32    : Chebyshev distance to their king, normalized to [0, 1]
 #
 # Repetition is intentionally NOT included — the binpack format has
 # no game-history window to derive it from, and the search already
 # handles repetition detection on its own. See
 # docs/gpu-async-eval/architecture.md.
-NUM_PLANES = 31
+NUM_PLANES = 33
 BOARD_SIZE = 8
 NUM_PIECE_PLANES = 12  # planes 0-11: the piece-placement planes only
 
 # --- Phase buckets ------------------------------------------------------
 # Non-king piece count (both sides, see plane_batch.h's piece_count
 # field) determines which value head evaluates a given position.
-# Boundaries are a starting point, not tuned — revisit once real
-# training data shows how positions distribute across buckets.
+# 8 buckets, ~4 pieces per bucket -- matches the granularity of the
+# NNUE's own 8 layer-stack/PSQT buckets (bucket_for_piece_count in
+# nnue_model.hpp, which spaces its 8 buckets every 4 pieces out of a
+# 32-piece range that includes kings; ours excludes kings, hence the
+# range 0-30 instead of 2-32).
 #
-#   bucket 0: >= 24 pieces  (opening / early middlegame)
-#   bucket 1: 16-23 pieces  (middlegame)
-#   bucket 2: 8-15 pieces   (late middlegame / early endgame)
-#   bucket 3: < 8 pieces    (endgame)
-PHASE_BUCKET_BOUNDARIES = (24, 16, 8)
+#   bucket 0: >= 26 pieces
+#   bucket 1: 22-25 pieces
+#   bucket 2: 18-21 pieces
+#   bucket 3: 14-17 pieces
+#   bucket 4: 10-13 pieces
+#   bucket 5: 6-9 pieces
+#   bucket 6: 3-5 pieces
+#   bucket 7: < 3 pieces    (near-empty endgame)
+PHASE_BUCKET_BOUNDARIES = (26, 22, 18, 14, 10, 6, 3)
 NUM_PHASE_BUCKETS = len(PHASE_BUCKET_BOUNDARIES) + 1
 
 
@@ -145,7 +154,7 @@ class PSQTHead(nn.Module):
 
 
 class ChessCNN(nn.Module):
-    """14 residual blocks x 160 channels (each with a squeeze-excitation
+    """20 residual blocks x 224 channels (each with a squeeze-excitation
     channel-attention gate, see SqueezeExcitation), shared trunk, one
     scalar head per phase bucket, plus a direct linear PSQT skip (see
     PSQTHead).
@@ -156,7 +165,7 @@ class ChessCNN(nn.Module):
     PHASE_BUCKET_BOUNDARIES above).
     """
 
-    def __init__(self, channels=160, num_blocks=14, num_planes=NUM_PLANES,
+    def __init__(self, channels=224, num_blocks=20, num_planes=NUM_PLANES,
                  num_phase_buckets=NUM_PHASE_BUCKETS):
         super().__init__()
         self.stem_conv = nn.Conv2d(num_planes, channels, kernel_size=3, padding=1, bias=False)

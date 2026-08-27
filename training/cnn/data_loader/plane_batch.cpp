@@ -1,5 +1,8 @@
 #include "plane_batch.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include "chess.h"
 
 namespace chess26::cnn {
@@ -148,6 +151,20 @@ void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
             }
         }
     }
+
+    const auto fill_king_distance = [&](int plane, Color king_color) {
+        const int ksq = static_cast<int>(pos.kingSquare(king_color));
+        const int k_file = ksq & 7, k_rank = ksq >> 3;
+        for (int sq = 0; sq < 64; ++sq) {
+            const int file = sq & 7, rank = sq >> 3;
+            const int chebyshev = std::max(std::abs(file - k_file), std::abs(rank - k_rank));
+            const int oriented_sq = orient_flip ? flip_rank(sq) : sq;
+            base[static_cast<std::size_t>(plane) * PLANE_SIZE + oriented_sq] =
+                static_cast<float>(chebyshev) / 7.0f;
+        }
+    };
+    fill_king_distance(PLANE_US_KING_DISTANCE, us);
+    fill_king_distance(PLANE_THEM_KING_DISTANCE, them);
 
     score[i] = static_cast<float>(e.score);
     result[i] = static_cast<float>(e.result);

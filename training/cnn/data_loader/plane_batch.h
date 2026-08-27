@@ -10,7 +10,7 @@ namespace chess26::cnn {
 
 // Must match the plane layout documented in training/cnn/model.py
 // (NUM_PLANES and the comment above it) — keep the two in sync.
-constexpr int NUM_PLANES = 31;
+constexpr int NUM_PLANES = 33;
 constexpr int BOARD_SIZE = 8;
 constexpr int PLANE_SIZE = BOARD_SIZE * BOARD_SIZE;
 
@@ -57,6 +57,16 @@ enum PlaneIndex : int {
     PLANE_THEM_ROOK_ATTACKS = 28,
     PLANE_THEM_QUEEN_ATTACKS = 29,
     PLANE_THEM_KING_ATTACKS = 30,
+    // Chebyshev distance (in squares) from each square to our/their king,
+    // normalized to [0, 1] (max possible distance on an 8x8 board is 7).
+    // A continuous per-square "field" centered on the king, giving the
+    // trunk a direct positional signal for king-safety-relevant distance
+    // without needing several conv layers to triangulate it from the raw
+    // king-position plane alone — mirrors the role HalfKA's king-relative
+    // feature indexing plays for the NNUE, without replicating its full
+    // per-king-square bucketing (see docs/gpu-async-eval/v4-ideas.md).
+    PLANE_US_KING_DISTANCE = 31,
+    PLANE_THEM_KING_DISTANCE = 32,
 };
 
 // Dense CNN input batch, built directly from binpack::TrainingDataEntry
