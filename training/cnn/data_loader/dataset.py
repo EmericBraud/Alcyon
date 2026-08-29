@@ -24,6 +24,8 @@ class PlaneBatchProvider:
         val_percent: int = 0,
         is_validation: bool = False,
         nnue_path: str = "",
+        rank: int = 0,
+        world_size: int = 1,
     ):
         self.filenames = filenames
         self.batch_size = batch_size
@@ -32,7 +34,8 @@ class PlaneBatchProvider:
         self.device = device
         self.use_pinned_memory = use_pinned_memory
         self._stream = stream.create_plane_batch_stream(
-            num_workers, filenames, batch_size, cyclic, val_percent, is_validation, nnue_path
+            num_workers, filenames, batch_size, cyclic, val_percent, is_validation, nnue_path,
+            rank, world_size,
         )
 
     def __iter__(self):
@@ -70,6 +73,12 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
     plane_batch.h's PlaneBatch::nnue_score) — used by v5's residual-
     correction training. Leave empty ("") to skip NNUE evaluation
     entirely (nnue_score is filled with 0.0 in that case).
+
+    rank/world_size: for multi-GPU (DDP) training, shards the binpack
+    across processes so each rank trains on a disjoint chunk sequence
+    — see plane_batch_stream.h. Defaults (0, 1) disable sharding
+    entirely, e.g. for single-GPU training or a validation stream every
+    rank reads independently.
     """
 
     def __init__(
@@ -82,6 +91,8 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
         val_percent: int = 0,
         is_validation: bool = False,
         nnue_path: str = "",
+        rank: int = 0,
+        world_size: int = 1,
     ):
         super().__init__()
         self.filenames = filenames
@@ -92,6 +103,8 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
         self.val_percent = val_percent
         self.is_validation = is_validation
         self.nnue_path = nnue_path
+        self.rank = rank
+        self.world_size = world_size
         self.device = "cpu"
 
     def __iter__(self):
@@ -105,4 +118,6 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
             val_percent=self.val_percent,
             is_validation=self.is_validation,
             nnue_path=self.nnue_path,
+            rank=self.rank,
+            world_size=self.world_size,
         )

@@ -19,13 +19,23 @@ namespace chess26::cnn {
 // ABI directly, since callers always want the prefetching version.
 class PlaneBatchStreamImpl {
 public:
+    // rank/world_size: for multi-GPU (DDP) training, shards the
+    // underlying binpack file(s) across processes -- each rank reads a
+    // disjoint chunk sequence (see binpack.h's
+    // CompressedTrainingDataEntryParallelReader "DDP seeking" logic),
+    // so world_size streams built from the same files with different
+    // ranks never see the same chunk of positions. rank=0/world_size=1
+    // (the defaults) disables sharding entirely -- every position goes
+    // to the single stream, as before.
     PlaneBatchStreamImpl(int concurrency,
                           const std::vector<std::string>& filenames,
                           int batch_size,
                           bool cyclic,
                           int val_percent,
                           bool is_validation,
-                          std::string nnue_path);
+                          std::string nnue_path,
+                          int rank,
+                          int world_size);
 
     // Returns nullptr once the underlying stream is exhausted and not
     // cyclic. Caller owns the returned batch.
@@ -62,6 +72,7 @@ public:
     // held in memory ahead of consumption. Higher hides more I/O
     // latency but costs more RAM (each batch is
     // batch_size * NUM_PLANES * 64 floats, see plane_batch.h).
+    // rank/world_size: see PlaneBatchStreamImpl's constructor doc above.
     PlaneBatchStream(int concurrency,
                       const std::vector<std::string>& filenames,
                       int batch_size,
@@ -69,6 +80,8 @@ public:
                       int val_percent = 0,
                       bool is_validation = false,
                       std::string nnue_path = "",
+                      int rank = 0,
+                      int world_size = 1,
                       int queue_capacity = 4);
     ~PlaneBatchStream();
 

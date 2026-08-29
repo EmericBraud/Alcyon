@@ -20,7 +20,9 @@ import time
 import warnings
 
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from data_loader import PlaneBatchDataset
 from model import ChessCNN
@@ -171,9 +173,38 @@ def main():
         "(shared GPU rental, Docker, etc.) can be wildly higher than the "
         "actual CPU quota — causing massive thread oversubscription and "
         "contention rather than useful parallelism. Set to comfortably "
-        "under the container's real CPU allocation.",
+        "under the container's real CPU allocation DIVIDED BY the number "
+        "of GPU processes on this node (see --distributed below) -- each "
+        "process sets this cap independently.",
     )
     args = parser.parse_args()
+
+    # Multi-GPU (DDP): launch via `torchrun --nproc_per_node=N train.py ...`
+    # (same args on every process) -- torchrun sets these env vars. Absent
+    # (plain `python3 train.py ...`), rank=0/world_size=1 and everything
+    # behaves exactly as a single-GPU run always has.
+    distributed = "RANK" in os.environ and "WORLD_SIZE" in os.environ
+    rank = int(os.environ.get("RANK", 0))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    is_main_process = rank == 0
+
+    def log(msg):
+        if is_main_process:
+            print(msg, flush=True)
+
+    if distributed:
+        # --device must be "cuda" for multi-GPU -- each process pins to
+        # its own GPU via LOCAL_RANK, so requesting "cuda" (not
+        # "cuda:0") here and then set_device()'ing is what lets the
+        # same launch command work unchanged across all N processes.
+        if args.device != "cuda":
+            raise SystemExit("--distributed (torchrun) requires --device cuda")
+        torch.cuda.set_device(local_rank)
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+        log(f"distributed: world_size={world_size}, nccl backend, "
+            f"effective global batch size = {args.batch_size} x {world_size} = "
+            f"{args.batch_size * world_size}")
 
     torch.set_num_threads(args.cpu_threads)
     torch.set_num_interop_threads(max(2, args.cpu_threads // 4))
@@ -195,43 +226,45 @@ def main():
 
     use_hash_split = args.val_binpack is None and args.val_percent > 0
     if args.val_binpack is None and args.val_percent <= 0:
-        print(
+        log(
             "WARNING: no --val-binpack and --val-percent <= 0. Only "
             "training loss will be logged — you won't be able to tell "
-            "overfitting from real progress.",
-            flush=True,
+            "overfitting from real progress."
         )
 
-    print(f"torch {torch.__version__}, device={args.device}", flush=True)
+    log(f"torch {torch.__version__}, device={args.device}")
 
     if args.extend_steps is not None and args.resume_from is None:
         raise SystemExit("--extend-steps requires --resume-from")
 
-    device = torch.device(args.device)
+    device = torch.device(f"cuda:{local_rank}") if distributed else torch.device(args.device)
     nnue_calibration = NnueCalibration(args.nnue_calibration).to(device)
-    print(f"loaded NNUE calibration curve: {args.nnue_calibration}", flush=True)
-    print("building model...", flush=True)
+    log(f"loaded NNUE calibration curve: {args.nnue_calibration}")
+    log("building model...")
+    # `model` stays the bare (un-DDP-wrapped) module throughout -- state_dict()/
+    # checkpointing and optimizer/grad-clip below all operate on this one, not
+    # on the DDP wrapper (below) built around it, so checkpoints stay in the
+    # same non-prefixed format whether or not this run is distributed.
     model = ChessCNN().to(device)
     num_params = sum(p.numel() for p in model.parameters())
-    print(f"model ready: {num_params:,} params on {device}", flush=True)
+    log(f"model ready: {num_params:,} params on {device}")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     start_step = 0
     if args.resume_from is not None:
-        print(f"resuming from checkpoint: {args.resume_from}", flush=True)
+        log(f"resuming from checkpoint: {args.resume_from}")
         ckpt = torch.load(args.resume_from, map_location=device, weights_only=True)
         model.load_state_dict(ckpt["model"])
         start_step = ckpt["step"]
         if "optimizer" in ckpt:
             optimizer.load_state_dict(ckpt["optimizer"])
         else:
-            print(
+            log(
                 "WARNING: checkpoint has no optimizer state (saved before "
                 "--resume-from existed) — Adam restarts cold, expect a "
-                "brief hiccup in the LR schedule's effective step size.",
-                flush=True,
+                "brief hiccup in the LR schedule's effective step size."
             )
-        print(f"resumed at step {start_step}", flush=True)
+        log(f"resumed at step {start_step}")
 
     # bf16 autocast: same dynamic range as fp32 (just less mantissa),
     # so it's safe without a GradScaler — free throughput on GPUs with
@@ -239,20 +272,26 @@ def main():
     # is inconsistent, not worth the risk for a "free" optimization.
     autocast_dtype = torch.bfloat16 if device.type == "cuda" else None
 
+    # For multi-GPU, wrap in DistributedDataParallel BEFORE torch.compile
+    # (PyTorch's own recommended order) -- DDP synchronizes gradients
+    # across processes via an all-reduce hooked into .backward(), fully
+    # transparent to the training loop below (optimizer.step() still
+    # only ever touches the bare `model`'s parameters, which DDP wraps
+    # rather than copies). Single-GPU: forward_model is just `model`.
+    forward_model = DDP(model, device_ids=[local_rank]) if distributed else model
+
     # torch.compile fuses the trunk's conv/BN/ReLU chain into fewer
-    # kernel launches. Compiling the raw (uncompiled) `model` object
-    # for training — model.state_dict()/checkpointing below stays
-    # untouched by this, since torch.compile wraps a module without
-    # replacing it; `train_model` is only used for the forward call.
-    train_model = torch.compile(model) if device.type == "cuda" else model
+    # kernel launches. `train_model` is only ever used for the forward
+    # call — model.state_dict()/checkpointing below always goes through
+    # the bare `model`, untouched by either wrapper.
+    train_model = torch.compile(forward_model) if device.type == "cuda" else forward_model
 
     extending = args.extend_steps is not None
     if extending:
         args.steps = start_step + args.extend_steps
-        print(
+        log(
             f"extending past the original horizon: {args.extend_steps} new steps "
-            f"(fresh warmup+decay), lambda held fixed at {args.lambda_end}",
-            flush=True,
+            f"(fresh warmup+decay), lambda held fixed at {args.lambda_end}"
         )
         # Fresh, independent mini-schedule for just the extension —
         # deliberately NOT a continuation of the original cosine curve
@@ -281,10 +320,14 @@ def main():
                 for _ in range(start_step):
                     scheduler.step()
 
-    print(f"opening binpack stream: {args.binpack}", flush=True)
+    log(f"opening binpack stream: {args.binpack}")
     # When splitting a single file by hash, the training stream must
     # skip the validation share (val_percent, is_validation=False) so
-    # the two streams never see the same position.
+    # the two streams never see the same position. rank/world_size (see
+    # --distributed above) additionally shard the training stream
+    # itself across GPU processes, on top of that split -- each rank
+    # reads a disjoint chunk sequence of its own (100-val_percent)%
+    # share, so no two ranks ever train on the same position either.
     dataset = PlaneBatchDataset(
         filenames=args.binpack,
         batch_size=args.batch_size,
@@ -293,34 +336,44 @@ def main():
         val_percent=args.val_percent if use_hash_split else 0,
         is_validation=False,
         nnue_path=args.nnue_path,
+        rank=rank,
+        world_size=world_size,
     )
     data_iter = iter(dataset)
 
+    # Validation only ever runs on the main process (see the evaluate()
+    # call below) -- every rank reading/evaluating the same val split
+    # redundantly would waste compute for no benefit, so the val stream
+    # itself is only built at all when is_main_process, at rank=0/
+    # world_size=1 (no sharding -- it's meant to see the whole split).
     val_iter = None
-    if args.val_binpack is not None:
-        val_dataset = PlaneBatchDataset(
-            filenames=args.val_binpack,
-            batch_size=args.val_batch_size,
-            cyclic=True,  # cyclic so a short/small val set never raises StopIteration mid-run
-            num_workers=1,
-            nnue_path=args.nnue_path,
-        )
-        val_iter = iter(val_dataset)
-    elif use_hash_split:
-        val_dataset = PlaneBatchDataset(
-            filenames=args.binpack,
-            batch_size=args.val_batch_size,
-            cyclic=True,
-            num_workers=1,
-            val_percent=args.val_percent,
-            is_validation=True,
-            nnue_path=args.nnue_path,
-        )
-        val_iter = iter(val_dataset)
+    if is_main_process:
+        if args.val_binpack is not None:
+            val_dataset = PlaneBatchDataset(
+                filenames=args.val_binpack,
+                batch_size=args.val_batch_size,
+                cyclic=True,  # cyclic so a short/small val set never raises StopIteration mid-run
+                num_workers=1,
+                nnue_path=args.nnue_path,
+            )
+            val_iter = iter(val_dataset)
+        elif use_hash_split:
+            val_dataset = PlaneBatchDataset(
+                filenames=args.binpack,
+                batch_size=args.val_batch_size,
+                cyclic=True,
+                num_workers=1,
+                val_percent=args.val_percent,
+                is_validation=True,
+                nnue_path=args.nnue_path,
+            )
+            val_iter = iter(val_dataset)
 
-    os.makedirs(args.checkpoint_dir, exist_ok=True)
-    print(f"checkpoints will be written to: {os.path.abspath(args.checkpoint_dir)}", flush=True)
-    print(f"starting training: {args.steps} steps, batch_size={args.batch_size}", flush=True)
+    if is_main_process:
+        os.makedirs(args.checkpoint_dir, exist_ok=True)
+    log(f"checkpoints will be written to: {os.path.abspath(args.checkpoint_dir)}")
+    log(f"starting training: {args.steps} steps, batch_size={args.batch_size} per GPU"
+        f"{f' ({world_size} GPUs, {args.batch_size * world_size} global)' if distributed else ''}")
 
     running_loss = 0.0
     t_start = time.time()
@@ -364,13 +417,15 @@ def main():
             steps_since_log = 1 if step == start_step else args.log_every
             avg_loss = running_loss / steps_since_log
             now = time.time()
-            window_pos_per_s = (steps_since_log * args.batch_size) / max(now - t_last_log, 1e-9)
+            # pos/s across all GPUs combined when distributed -- each rank
+            # processes its own args.batch_size positions per step, in
+            # parallel, so the global rate is the per-rank rate x world_size.
+            window_pos_per_s = (steps_since_log * args.batch_size * world_size) / max(now - t_last_log, 1e-9)
             current_lr = scheduler.get_last_lr()[0]
-            print(
+            log(
                 f"step {step + 1}/{args.steps}  loss={avg_loss:.4f}  "
                 f"lambda={lambda_:.3f}  lr={current_lr:.2e}  "
-                f"{window_pos_per_s:.0f} pos/s  ({now - t_start:.0f}s elapsed)",
-                flush=True,
+                f"{window_pos_per_s:.0f} pos/s  ({now - t_start:.0f}s elapsed)"
             )
             running_loss = 0.0
             t_last_log = now
@@ -379,9 +434,9 @@ def main():
             val_loss = evaluate(
                 train_model, val_iter, device, args.val_batches, lambda_, autocast_dtype, nnue_calibration
             )
-            print(f"step {step + 1}/{args.steps}  val_loss={val_loss:.4f}", flush=True)
+            log(f"step {step + 1}/{args.steps}  val_loss={val_loss:.4f}")
 
-        if (step + 1) % args.checkpoint_every == 0:
+        if is_main_process and (step + 1) % args.checkpoint_every == 0:
             path = os.path.join(args.checkpoint_dir, f"chesscnn_step{step + 1}.pt")
             torch.save(
                 {
@@ -393,20 +448,24 @@ def main():
                 },
                 path,
             )
-            print(f"checkpoint saved: {path}", flush=True)
+            log(f"checkpoint saved: {path}")
 
-    final_path = os.path.join(args.checkpoint_dir, "chesscnn_final.pt")
-    torch.save(
-        {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "step": args.steps,
-            "nnue_path": args.nnue_path,
-            "nnue_calibration": args.nnue_calibration,
-        },
-        final_path,
-    )
-    print(f"training done, final checkpoint: {final_path}", flush=True)
+    if is_main_process:
+        final_path = os.path.join(args.checkpoint_dir, "chesscnn_final.pt")
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "step": args.steps,
+                "nnue_path": args.nnue_path,
+                "nnue_calibration": args.nnue_calibration,
+            },
+            final_path,
+        )
+        log(f"training done, final checkpoint: {final_path}")
+
+    if distributed:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

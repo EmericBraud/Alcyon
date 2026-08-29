@@ -20,11 +20,13 @@ PLANE_API PlaneBatchCStream* create_plane_batch_stream(int concurrency,
                                                          bool cyclic,
                                                          int val_percent,
                                                          bool is_validation,
-                                                         const char* nnue_path) {
+                                                         const char* nnue_path,
+                                                         int rank,
+                                                         int world_size) {
     std::vector<std::string> filenames_vec(filenames, filenames + num_files);
     return new PlaneBatchCStream{
         PlaneBatchStream(concurrency, filenames_vec, batch_size, cyclic, val_percent, is_validation,
-                          std::string(nnue_path))};
+                          std::string(nnue_path), rank, world_size)};
 }
 
 PLANE_API void destroy_plane_batch_stream(PlaneBatchCStream* stream) { delete stream; }

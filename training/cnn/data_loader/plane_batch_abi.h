@@ -34,6 +34,10 @@ struct PlaneBatchCView {
 // nnue_path: path to the .nnue weight file used to compute nnue_score
 // per position (see plane_batch.h's PlaneBatch::nnue_score) — chess26's
 // own NNUE, evaluated once per position, non-incrementally.
+//
+// rank/world_size: shards the binpack across multiple processes for
+// multi-GPU (DDP) training — see PlaneBatchStream's constructor doc in
+// plane_batch_stream.h. rank=0/world_size=1 disables sharding.
 PLANE_API PlaneBatchCStream* create_plane_batch_stream(int concurrency,
                                                          int num_files,
                                                          const char* const* filenames,
@@ -41,7 +45,9 @@ PLANE_API PlaneBatchCStream* create_plane_batch_stream(int concurrency,
                                                          bool cyclic,
                                                          int val_percent,
                                                          bool is_validation,
-                                                         const char* nnue_path);
+                                                         const char* nnue_path,
+                                                         int rank,
+                                                         int world_size);
 
 PLANE_API void destroy_plane_batch_stream(PlaneBatchCStream* stream);
 
