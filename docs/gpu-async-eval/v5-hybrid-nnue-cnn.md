@@ -36,18 +36,36 @@ score_final = score_NNUE (précalculé, figé)  +  correction_CNN(position)
 
 Concrètement, ça se branche directement sur l'architecture `ChessCNN`
 existante ([model.py](../../training/cnn/model.py)) : la somme
-actuelle est déjà `trunk_logits + psqt_logits`. On ajoute un
-**troisième terme additif figé** :
+actuelle est `trunk_logits + psqt_logits`. On y ajoute `nnue_logit`
+comme constante additive figée — mais **on retire le skip PSQT du
+CNN** (voir raison ci-dessous), donc la somme finale devient :
 
 ```
-logit_final = trunk_logits + psqt_logits + nnue_logit
+logit_final = trunk_logits + nnue_logit
 ```
 
 où `nnue_logit` est le score de la NNUE pour cette position, converti
 en logit et traité comme une **constante non entraînée** (précalculée
 une fois par position, pas un paramètre du modèle — aucun gradient ne
-la traverse). Le reste de l'architecture, la loss, la boucle
-d'entraînement : **rien ne change** par rapport à v1-v4.
+la traverse). Le reste de l'architecture (trunk, mid-trunk skip,
+têtes par bucket), la loss, la boucle d'entraînement : rien ne change
+par rapport à v1-v4.
+
+### Pourquoi retirer le skip PSQT du CNN
+
+Dans les CNN autonomes (v1-v4), le skip PSQT avait un vrai rôle :
+seule source de signal matériel/positionnel linéaire stable, rien
+d'autre ne le fournissait. Ici, `nnue_logit` contient déjà son propre
+PSQT en interne (`psqt_diff/FinalScale` fait partie du score NNUE
+final) — la cible réelle du CNN est le résidu `target - nnue_logit`,
+dans lequel la composante matérielle est déjà largement retirée par
+construction. Un skip PSQT séparé côté CNN n'aurait plus qu'un rôle
+résiduel étroit (capter un éventuel biais linéaire systématique dans
+le PSQT *de la NNUE elle-même*) — probablement d'apport marginal, vu
+que sa contribution était déjà modeste (-0,02 de corrélation à
+l'ablation sur v1) même quand il faisait tout le travail matériel.
+Retiré du design par défaut ; à ré-ajouter seulement si une ablation
+future montre un gain mesurable.
 
 ### Pourquoi ce design plutôt que la fusion par MLP (première version de ce doc)
 
@@ -96,9 +114,9 @@ autre branche dans un MLP partagé.
     prototype.
 - **Cible d'entraînement inchangée** — toujours le blend lambda
   score-Stockfish/résultat-réel existant. Le modèle apprend `trunk +
-  psqt + nnue_logit ≈ target`, donc implicitement `trunk + psqt ≈
-  target - nnue_logit` — un résidu, sans qu'on ait besoin de
-  reformuler la loss.
+  nnue_logit ≈ target`, donc implicitement `trunk ≈ target -
+  nnue_logit` — un résidu, sans qu'on ait besoin de reformuler la
+  loss.
 - **`nnue_logit` doit être sur la même échelle logit que le reste**
   — nécessite de reprendre la conversion `sigmoid(nnue_cp / scale)`
   avec un `scale` calibré pour la NNUE (voir la calibration
@@ -110,7 +128,6 @@ autre branche dans un MLP partagé.
 - Le trunk v1 (8 blocs × 96 canaux, SE, plans d'attaque décomposés
   par type de pièce + distance au roi) comme point de départ — voir
   la section taille ci-dessous pour la question ouverte.
-- Skip PSQT linéaire séparé (celui du CNN, indépendant du PSQT NNUE).
 - 8 buckets de phase, alignés sur la granularité NNUE.
 - Optimisations d'entraînement déjà en place (bf16, `torch.compile`,
   `cudnn.benchmark`, TF32).
