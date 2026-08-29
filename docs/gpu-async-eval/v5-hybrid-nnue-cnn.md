@@ -74,16 +74,28 @@ Plans 8x8 (33) ───▶ │ Trunk v1 (NON figé,      │──▶│ MLP pa
   `bucket_for_piece_count` de la NNUE — mêmes bornes des deux côtés,
   pour rester synchronisé).
 
-### Question ouverte à trancher à l'implémentation
+### Point de tap sur l'accumulateur : L0, pas L1/L2 — tranché
 
-Quel point de l'accumulateur exposer au MLP final : le vecteur `l0`
-brut (sortie de la "pairwise square", 1024 de large, ce que la
-NNUE elle-même utilise comme entrée de son propre layer-stack), ou
-des représentations plus transformées (L1/L2 internes de la NNUE,
-façon skip mid-trunk qu'on a déjà fait pour le CNN autonome) ? Cette
-deuxième option est plus riche mais demande d'exposer plus de tenseurs
-intermédiaires — à trancher en fonction de ce que révèle une première
-ablation.
+On expose au MLP final le vecteur `l0` brut (sortie de la "pairwise
+square" de l'accumulateur, 1024 de large — ce que la NNUE elle-même
+utilise comme entrée de son propre layer-stack), **pas** les
+représentations L1/L2 internes de la NNUE. Deux raisons :
+
+1. **L1/L2 sont déjà "l'opinion finale" de la NNUE**, pas un signal
+   brut — donner ça au MLP joint risque d'amplifier le problème de
+   sous-utilisation du trunk (cf. section risque ci-dessous) : le
+   chemin de gradient le plus facile devient "recopier ce que dit
+   déjà L1/L2" plutôt qu'apprendre le résidu.
+2. **Double-bucketing redondant** : le layer-stack L1/L2 de la NNUE
+   est déjà spécifique à un bucket (8 jeux de poids selon la phase).
+   L0, lui, est calculé *avant* la séparation par bucket (accumulateur
+   partagé) — le MLP final (lui-même par bucket) peut faire tout le
+   travail de spécialisation par phase sans hériter d'un découpage
+   déjà fait ailleurs.
+
+L0 est aussi simplement plus riche en information brute (1024 de
+large, contre 32+32 pour un L1+L2 déjà compressé pour les besoins
+propres de la NNUE, pas nécessairement adaptés à notre tâche jointe).
 
 ## Ce qui est réutilisé sans changement (déjà validé dans le projet)
 
