@@ -127,6 +127,33 @@ tester une réduction (ex: 3-4 blocs) comme première ablation une fois
 l'architecture fonctionnelle, plutôt que de présupposer la bonne
 taille.
 
+## Risque : une correction peut se tromper de sens sur une position donnée
+
+Le CNN n'est jamais garanti juste position par position — seulement
+en moyenne sur la distribution d'entraînement. Si sa correction va
+dans le même sens qu'une erreur déjà présente dans `score_NNUE` sur
+une position donnée (plutôt que dans le sens inverse, comme prévu),
+le résultat final est pire que la NNUE seule sur cette position
+précise — un risque de "double peine". Ce n'est pas spécifique à ce
+design (tout ensemble/blend a le même risque), mais reste réel et à
+traiter sérieusement avant tout déploiement :
+
+1. **Mesurer avant de déployer** — comparer `score_NNUE + correction`
+   contre `score_NNUE` seul sur un grand échantillon représentatif
+   tenu à l'écart de l'entraînement (même méthodologie que pour
+   v3/v4 : MAE calibré, taux de victoire, corrélation d'erreur). Ne
+   jamais supposer que la correction aide sans le vérifier
+   directement.
+2. **Amortir la correction (shrinkage)** — technique standard en
+   gradient boosting : multiplier la correction par un facteur < 1
+   (ex: 0.5) pour limiter l'ampleur d'un éventuel excès en cas
+   d'erreur du correcteur, au prix d'un peu de gain potentiel.
+3. **Intégration moteur "consultative", pas absolue** — envisager
+   d'utiliser la correction pour influencer l'ordre des coups ou la
+   fenêtre d'aspiration plutôt que de remplacer purement le score
+   final, pour limiter les dégâts d'une correction ponctuellement
+   fausse.
+
 ## Déploiement — ce que ça change pour l'usage final
 
 À l'inférence, il faut toujours calculer `score_NNUE` (rapide,
