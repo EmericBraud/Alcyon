@@ -23,6 +23,7 @@ class PlaneBatchProvider:
         use_pinned_memory: bool = False,
         val_percent: int = 0,
         is_validation: bool = False,
+        nnue_path: str = "",
     ):
         self.filenames = filenames
         self.batch_size = batch_size
@@ -31,7 +32,7 @@ class PlaneBatchProvider:
         self.device = device
         self.use_pinned_memory = use_pinned_memory
         self._stream = stream.create_plane_batch_stream(
-            num_workers, filenames, batch_size, cyclic, val_percent, is_validation
+            num_workers, filenames, batch_size, cyclic, val_percent, is_validation, nnue_path
         )
 
     def __iter__(self):
@@ -63,6 +64,12 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
     same filenames with is_validation flipped never see the same
     position. Leave val_percent=0 (default) to use every position, e.g.
     when filenames already points at a dedicated held-out file.
+
+    nnue_path: path to a .nnue weight file. When non-empty, each batch
+    also yields chess26's own NNUE static evaluation per position (see
+    plane_batch.h's PlaneBatch::nnue_score) — used by v5's residual-
+    correction training. Leave empty ("") to skip NNUE evaluation
+    entirely (nnue_score is filled with 0.0 in that case).
     """
 
     def __init__(
@@ -74,6 +81,7 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
         use_pinned_memory: bool = False,
         val_percent: int = 0,
         is_validation: bool = False,
+        nnue_path: str = "",
     ):
         super().__init__()
         self.filenames = filenames
@@ -83,6 +91,7 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
         self.use_pinned_memory = use_pinned_memory
         self.val_percent = val_percent
         self.is_validation = is_validation
+        self.nnue_path = nnue_path
         self.device = "cpu"
 
     def __iter__(self):
@@ -95,4 +104,5 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
             use_pinned_memory=self.use_pinned_memory,
             val_percent=self.val_percent,
             is_validation=self.is_validation,
+            nnue_path=self.nnue_path,
         )

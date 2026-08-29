@@ -16,6 +16,7 @@ def create_plane_batch_stream(
     cyclic: bool,
     val_percent: int = 0,
     is_validation: bool = False,
+    nnue_path: str = "",
 ) -> ctypes.c_void_p:
     return c_lib.dll.create_plane_batch_stream(
         concurrency,
@@ -25,6 +26,7 @@ def create_plane_batch_stream(
         cyclic,
         val_percent,
         is_validation,
+        nnue_path.encode("utf-8"),
     )
 
 

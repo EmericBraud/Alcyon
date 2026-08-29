@@ -1,12 +1,16 @@
-"""CNN position evaluator, complementary to the engine's NNUE.
+"""CNN residual-error corrector for the engine's NNUE (v5).
 
 Value-only network (no policy head — move search stays in the C++
-alpha-beta engine). Output is a single scalar win-probability logit,
-trained against a lambda-blended target of the Stockfish search score
-and the actual game result (see train.py's lambda annealing schedule
-and docs/gpu-async-eval/ for the rationale) — not a 3-way WDL
-classification, since the blended target is a continuous probability,
-not a discrete class.
+alpha-beta engine). Predicts a correction on top of a precomputed,
+frozen NNUE score: `logit_final = trunk_logits + nnue_logit`, where
+`nnue_logit` is supplied by the data loader (chess26's own NNUE,
+evaluated once per position, treated as a non-trainable constant —
+no gradient flows into it). Trained against the same lambda-blended
+target of the Stockfish search score and the actual game result as
+before (see train.py's lambda annealing schedule and
+docs/gpu-async-eval/v5-hybrid-nnue-cnn.md for the full rationale) —
+the trunk implicitly learns `target - nnue_logit`, i.e. NNUE's
+residual error, without needing to reformulate the loss.
 
 Input: dense 8x8xN board planes (see PLANES below), one stack per
 side to move already oriented so the side to move is always "us".
@@ -39,7 +43,6 @@ import torch.nn.functional as F
 # docs/gpu-async-eval/architecture.md.
 NUM_PLANES = 33
 BOARD_SIZE = 8
-NUM_PIECE_PLANES = 12  # planes 0-11: the piece-placement planes only
 
 # --- Phase buckets ------------------------------------------------------
 # Non-king piece count (both sides, see plane_batch.h's piece_count
@@ -130,42 +133,26 @@ class PhaseValueHead(nn.Module):
         return self.fc2(h).squeeze(-1)  # (batch,)
 
 
-class PSQTHead(nn.Module):
-    """Direct linear piece-square skip, analogous to NNUE's PSQT accumulator.
-
-    Bypasses the residual trunk entirely: one learnable per-square,
-    per-piece-plane weight, summed over the board, with its own value
-    per phase bucket (mirrors NNUE's separate PSQT weights per
-    bucket). Added directly to the trunk's logit output — gives the
-    network a stable linear material/positional baseline to correct,
-    instead of having to rediscover material counting indirectly
-    through convolutions and nonlinear heads.
-    """
-
-    def __init__(self, num_piece_planes=NUM_PIECE_PLANES, num_phase_buckets=NUM_PHASE_BUCKETS):
-        super().__init__()
-        self.conv = nn.Conv2d(num_piece_planes, num_phase_buckets, kernel_size=1, bias=False)
-
-    def forward(self, piece_planes, bucket):
-        # piece_planes: (batch, NUM_PIECE_PLANES, BOARD_SIZE, BOARD_SIZE)
-        # bucket: (batch,) int64 phase bucket index.
-        per_bucket = self.conv(piece_planes).sum(dim=(2, 3))  # (batch, num_phase_buckets)
-        return per_bucket.gather(1, bucket.unsqueeze(1)).squeeze(1)  # (batch,)
-
-
 class ChessCNN(nn.Module):
-    """20 residual blocks x 224 channels (each with a squeeze-excitation
+    """8 residual blocks x 96 channels (each with a squeeze-excitation
     channel-attention gate, see SqueezeExcitation), shared trunk, one
-    scalar head per phase bucket, plus a direct linear PSQT skip (see
-    PSQTHead).
+    scalar head per phase bucket. No PSQT skip: the frozen `nnue_logit`
+    term (see forward()) already carries the NNUE's own PSQT signal,
+    so a separate linear material skip here would be redundant (see
+    docs/gpu-async-eval/v5-hybrid-nnue-cnn.md).
+
+    Deliberately kept at v1's size, not v4's (20x224) — the trunk's
+    job here is to predict a residual correction, an easier task than
+    being a standalone evaluator, so it doesn't need v4's capacity.
+    Revisit (e.g. reduce further) once ablations on the residual task
+    itself are available.
 
     The trunk is trained on every position regardless of phase, so it
     keeps the statistical benefit of the full dataset; only the small
-    per-bucket heads and PSQT weights specialize (see
-    PHASE_BUCKET_BOUNDARIES above).
+    per-bucket heads specialize (see PHASE_BUCKET_BOUNDARIES above).
     """
 
-    def __init__(self, channels=224, num_blocks=20, num_planes=NUM_PLANES,
+    def __init__(self, channels=96, num_blocks=8, num_planes=NUM_PLANES,
                  num_phase_buckets=NUM_PHASE_BUCKETS):
         super().__init__()
         self.stem_conv = nn.Conv2d(num_planes, channels, kernel_size=3, padding=1, bias=False)
@@ -173,11 +160,14 @@ class ChessCNN(nn.Module):
 
         self.blocks = nn.ModuleList(ResidualBlock(channels) for _ in range(num_blocks))
         self.heads = nn.ModuleList(PhaseValueHead(channels) for _ in range(num_phase_buckets))
-        self.psqt = PSQTHead(num_phase_buckets=num_phase_buckets)
 
-    def forward(self, planes, piece_count):
+    def forward(self, planes, piece_count, nnue_logit):
         # planes: (batch, NUM_PLANES, BOARD_SIZE, BOARD_SIZE)
         # piece_count: (batch,) int64, non-king piece count from the loader.
+        # nnue_logit: (batch,) float, precomputed NNUE score converted to a
+        #   win-probability logit — a non-trainable constant, not a model
+        #   parameter (no gradient flows into it; the loader supplies it
+        #   already detached).
         # returns: (batch,) win-probability logits (pass through sigmoid for [0, 1]).
         bucket = phase_bucket_for_piece_count(piece_count)
 
@@ -196,11 +186,10 @@ class ChessCNN(nn.Module):
             if mask.any():
                 trunk_logits[mask] = head(pooled_mid[mask], pooled_final[mask])
 
-        psqt_logits = self.psqt(planes[:, :NUM_PIECE_PLANES], bucket)
-        return trunk_logits + psqt_logits
+        return trunk_logits + nnue_logit
 
     @torch.no_grad()
-    def eval_centipawns(self, planes, piece_count, cp_scale=410.0):
+    def eval_centipawns(self, planes, piece_count, nnue_logit, cp_scale=410.0):
         """Win-probability logit -> centipawns, same sigmoid family Stockfish
         uses to convert win probability to a centipawn-like score.
 
@@ -211,7 +200,7 @@ class ChessCNN(nn.Module):
         phase buckets for now — revisit if calibration turns out to
         need per-bucket scales too.
         """
-        logit = self.forward(planes, piece_count)
+        logit = self.forward(planes, piece_count, nnue_logit)
         # logit is already logit(p); centipawns = cp_scale * logit(p) is the
         # same transform as cp_scale * log(p / (1 - p)) applied to sigmoid(logit).
         return cp_scale * logit

@@ -22,6 +22,7 @@ struct PlaneBatchCView {
     float* score;
     float* result;
     int* piece_count;
+    float* nnue_score;
     void* handle;  // opaque PlaneBatch*, owned until destroy_plane_batch()
 };
 
@@ -29,13 +30,18 @@ struct PlaneBatchCView {
 // plane_batch_stream.h — lets two streams built from the SAME files
 // yield disjoint, reproducible train/validation splits without
 // physically cutting the binpack file.
+//
+// nnue_path: path to the .nnue weight file used to compute nnue_score
+// per position (see plane_batch.h's PlaneBatch::nnue_score) — chess26's
+// own NNUE, evaluated once per position, non-incrementally.
 PLANE_API PlaneBatchCStream* create_plane_batch_stream(int concurrency,
                                                          int num_files,
                                                          const char* const* filenames,
                                                          int batch_size,
                                                          bool cyclic,
                                                          int val_percent,
-                                                         bool is_validation);
+                                                         bool is_validation,
+                                                         const char* nnue_path);
 
 PLANE_API void destroy_plane_batch_stream(PlaneBatchCStream* stream);
 

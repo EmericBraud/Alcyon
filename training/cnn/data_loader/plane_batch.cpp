@@ -4,6 +4,7 @@
 #include <cstdlib>
 
 #include "chess.h"
+#include "nnue_bridge.h"
 
 namespace chess26::cnn {
 
@@ -37,15 +38,16 @@ int attack_plane_for_piece(PieceType type, bool is_us) {
 
 }  // namespace
 
-PlaneBatch::PlaneBatch(const std::vector<binpack::TrainingDataEntry>& entries)
+PlaneBatch::PlaneBatch(const std::vector<binpack::TrainingDataEntry>& entries, const std::string& nnue_path)
     : size(static_cast<int>(entries.size())) {
     planes = new float[static_cast<std::size_t>(size) * NUM_PLANES * PLANE_SIZE]();
     score = new float[size];
     result = new float[size];
     piece_count = new int[size];
+    nnue_score = new float[size];
 
     for (int i = 0; i < size; ++i) {
-        fill_entry(i, entries[i]);
+        fill_entry(i, entries[i], nnue_path);
     }
 }
 
@@ -54,9 +56,10 @@ PlaneBatch::~PlaneBatch() {
     delete[] score;
     delete[] result;
     delete[] piece_count;
+    delete[] nnue_score;
 }
 
-void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
+void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e, const std::string& nnue_path) {
     const Position& pos = e.pos;
     const Color us = pos.sideToMove();
     const Color them = (us == Color::White) ? Color::Black : Color::White;
@@ -168,6 +171,7 @@ void PlaneBatch::fill_entry(int i, const binpack::TrainingDataEntry& e) {
 
     score[i] = static_cast<float>(e.score);
     result[i] = static_cast<float>(e.result);
+    nnue_score[i] = nnue_path.empty() ? 0.0f : static_cast<float>(compute_nnue_score(pos.fen(), nnue_path));
 }
 
 std::uint64_t hash_position(const Position& pos) {
