@@ -21,7 +21,8 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from data_loader import PlaneBatchDataset  # noqa: E402
-from model import ChessCNN  # noqa: E402
+from nnue_calibration import NnueCalibration  # noqa: E402
+from model_loader import load_model  # noqa: E402
 
 MATE_ABS_THRESHOLD = 8000
 
@@ -34,28 +35,51 @@ def main():
                          help="must match the --val-percent used during training")
     parser.add_argument("--num-positions", type=int, default=16384)
     parser.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json"))
+    parser.add_argument(
+        "--nnue-calibration",
+        default=None,
+        help="Path to the NNUE calibration curve JSON -- only required "
+        "if --checkpoint is a v5 (residual-correction) one. Defaults to "
+        "the path recorded in the checkpoint itself (train.py saves it), "
+        "if present.",
+    )
     args = parser.parse_args()
 
     device = torch.device("cpu")
-    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=True)
-    model = ChessCNN().to(device)
-    model.load_state_dict(ckpt["model"])
-    model.eval()
+    model, is_v5, ckpt = load_model(args.checkpoint, device)
 
+    nnue_path = ckpt.get("nnue_path", "") if is_v5 else ""
     dataset = PlaneBatchDataset(
         filenames=args.binpack, batch_size=args.num_positions, cyclic=False,
         num_workers=2, val_percent=args.val_percent, is_validation=True,
+        nnue_path=nnue_path,
     )
-    planes, score, result, piece_count = next(iter(dataset))
+    planes, score, result, piece_count, nnue_score = next(iter(dataset))
     score = score.squeeze(-1)
+    nnue_score = nnue_score.squeeze(-1)
 
     mask = score.abs() < MATE_ABS_THRESHOLD
-    planes, score, piece_count = planes[mask], score[mask], piece_count[mask]
+    planes, score, piece_count, nnue_score = planes[mask], score[mask], piece_count[mask], nnue_score[mask]
     print(f"calibration sample: {planes.shape[0]} positions from the binpack's "
           f"validation split (mate sentinels excluded)")
 
+    # Older checkpoints (pre-v4) were trained with fewer input planes.
+    num_planes = model.stem_conv.weight.shape[1]
+    planes = planes[:, :num_planes]
+
     with torch.no_grad():
-        logit = model(planes, piece_count)
+        if is_v5:
+            calibration_path = args.nnue_calibration or ckpt.get("nnue_calibration")
+            if calibration_path is None:
+                raise SystemExit(
+                    f"{args.checkpoint} is a v5 checkpoint (needs nnue_logit) but "
+                    "--nnue-calibration was not given and none is recorded in the checkpoint."
+                )
+            calibration = NnueCalibration(calibration_path).to(device)
+            nnue_logit = calibration(nnue_score)
+            logit = model(planes, piece_count, nnue_logit)
+        else:
+            logit = model(planes, piece_count)
 
     optimal_scale = (logit * score).sum() / (logit * logit).sum()
     residual_before = (410.0 * logit - score).abs().mean().item()
