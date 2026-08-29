@@ -28,8 +28,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_checkpoints import (  # noqa: E402
     DEFAULT_CACHE, MATE_SENTINEL_CP, fen_to_planes_and_piece_count,
 )
+from model_loader import load_model  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from model import ChessCNN  # noqa: E402
+from nnue_calibration import NnueCalibration  # noqa: E402
 
 
 def correlation(a, b):
@@ -42,6 +43,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache", default=DEFAULT_CACHE)
     parser.add_argument("--checkpoint", required=True)
+    parser.add_argument(
+        "--nnue-calibration",
+        default=None,
+        help="Path to the NNUE calibration curve JSON (see "
+        "eval_compare/calibrate_nnue_scale.py) -- only required if "
+        "--checkpoint is a v5 (residual-correction) one, which needs "
+        "nnue_logit as a forward() input.",
+    )
     args = parser.parse_args()
 
     with open(args.cache) as f:
@@ -54,10 +63,7 @@ def main():
     print(f"{len(keep_idx)}/{len(fens)} positions kept (mate/in-check excluded)\n")
 
     device = torch.device("cpu")
-    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=True)
-    model = ChessCNN().to(device)
-    model.load_state_dict(ckpt["model"])
-    model.eval()
+    model, is_v5, ckpt = load_model(args.checkpoint, device)
     print(f"CNN checkpoint step: {ckpt['step']}\n")
 
     planes_list, pc_list = [], []
@@ -67,9 +73,23 @@ def main():
         pc_list.append(pc)
     planes_batch = torch.stack(planes_list)
     pc_batch = torch.tensor(pc_list, dtype=torch.int64)
+    # Older checkpoints (pre-v4) were trained with fewer input planes.
+    num_planes = model.stem_conv.weight.shape[1]
+    planes_batch = planes_batch[:, :num_planes]
 
     with torch.no_grad():
-        cnn_logit = model(planes_batch, pc_batch)  # raw logit, before any cp_scale
+        if is_v5:
+            if args.nnue_calibration is None:
+                raise SystemExit(
+                    f"{args.checkpoint} is a v5 checkpoint (needs nnue_logit) but "
+                    "--nnue-calibration was not given."
+                )
+            calibration = NnueCalibration(args.nnue_calibration).to(device)
+            nnue_raw = torch.tensor([nnue[i] for i in keep_idx], dtype=torch.float32)
+            nnue_logit = calibration(nnue_raw)
+            cnn_logit = model(planes_batch, pc_batch, nnue_logit)
+        else:
+            cnn_logit = model(planes_batch, pc_batch)  # raw logit, before any cp_scale
         cnn_pred_uncalibrated = (410.0 * cnn_logit).tolist()
 
     sf_static_f = [sf_static[i] for i in keep_idx]

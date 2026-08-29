@@ -37,7 +37,8 @@ import chess.engine
 import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from model import ChessCNN  # noqa: E402
+from nnue_calibration import NnueCalibration  # noqa: E402
+from model_loader import load_model  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EPD = os.path.join(HERE, "wac.epd")
@@ -231,13 +232,32 @@ def load_or_compute_ground_truth(epd_path, cache_path, stockfish_bin, nnue_bin, 
     return cache
 
 
-def cnn_scores(fens_planes, piece_counts, ckpt_path, device):
-    ckpt = torch.load(ckpt_path, map_location=device, weights_only=True)
-    model = ChessCNN().to(device)
-    model.load_state_dict(ckpt["model"])
-    model.eval()
+def cnn_scores(fens_planes, piece_counts, ckpt_path, device, nnue_raw_scores, nnue_calibration_path):
+    """nnue_raw_scores: raw NNUE UCI scores for the SAME positions/order as
+    fens_planes (already computed once for the ground-truth cache) -- only
+    used for v5 checkpoints, which need nnue_logit as a third forward()
+    argument (see model.py). Ignored for legacy (v1/v3/v4) checkpoints."""
+    model, is_v5, ckpt = load_model(ckpt_path, device)
+    # Older checkpoints (pre-v4) were trained with fewer input planes
+    # (no king-distance planes, added in v4) -- fen_to_planes_and_piece_count
+    # always encodes the current full 33-plane layout, so slice down to
+    # what this particular checkpoint's stem_conv actually expects.
+    num_planes = model.stem_conv.weight.shape[1]
+    fens_planes = fens_planes[:, :num_planes]
     with torch.no_grad():
-        pred_cp = model.eval_centipawns(fens_planes, piece_counts, cp_scale=410.0)
+        if is_v5:
+            if nnue_calibration_path is None:
+                raise SystemExit(
+                    f"{ckpt_path} is a v5 checkpoint (needs nnue_logit) but --nnue-calibration "
+                    "was not given. Pass the calibration curve used for this training run "
+                    "(see eval_compare/calibrate_nnue_scale.py)."
+                )
+            calibration = NnueCalibration(nnue_calibration_path).to(device)
+            nnue_logit = calibration(torch.tensor(nnue_raw_scores, dtype=torch.float32, device=device))
+            logit = model(fens_planes, piece_counts, nnue_logit)
+            pred_cp = 410.0 * logit
+        else:
+            pred_cp = model.eval_centipawns(fens_planes, piece_counts, cp_scale=410.0)
     return pred_cp.tolist(), ckpt["step"]
 
 
@@ -277,6 +297,14 @@ def main():
         "the default methodology.",
     )
     parser.add_argument("--out", default=None, help="write the CNN learning-curve JSON here")
+    parser.add_argument(
+        "--nnue-calibration",
+        default=None,
+        help="Path to the NNUE calibration curve JSON (see "
+        "eval_compare/calibrate_nnue_scale.py) -- only required if any "
+        "matched checkpoint is a v5 (residual-correction) one, which "
+        "needs nnue_logit as a forward() input.",
+    )
     args = parser.parse_args()
 
     device = torch.device("cpu")
@@ -318,7 +346,7 @@ def main():
 
     curve = []
     for ckpt_path in ckpt_paths:
-        cnn, step = cnn_scores(planes_batch, pc_batch, ckpt_path, device)
+        cnn, step = cnn_scores(planes_batch, pc_batch, ckpt_path, device, nnue, args.nnue_calibration)
         cnn_f = [s for s, k in zip(cnn, keep) if k]
         m, c = mae(cnn_f, target_f), correlation(cnn_f, target_f)
         curve.append({"step": step, "mae": m, "corr": c})
