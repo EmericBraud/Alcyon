@@ -1,10 +1,9 @@
-# v5 — architecture hybride NNUE (figée) + CNN (trunk v1)
+# v5 — CNN correcteur de résidu de la NNUE
 
 Statut : proposition retenue, pas encore implémentée. Fait suite à
-`v4-ideas.md` — cette fois, au lieu de continuer à scaler un CNN
-autonome, on fusionne l'accumulateur NNUE (rapide, incrémental,
-déjà entraîné) avec un petit trunk convolutionnel pour capturer
-uniquement le signal résiduel que la NNUE ne représente pas.
+`v4-ideas.md`. Remplace une première version de ce document qui
+proposait une fusion via MLP conjoint (accumulateur NNUE + trunk CNN)
+— abandonnée au profit d'un design bien plus simple, décrit ici.
 
 ## Constat de départ
 
@@ -18,132 +17,123 @@ plutôt qu'un v5 "encore plus gros CNN autonome" :
    NNUE reste nettement devant.
 2. **La corrélation d'erreur entre les deux modèles sur les positions
    quiètes est haute (0,79)** — leurs erreurs sont largement
-   redondantes, pas complémentaires. Un simple blend/moyenne des deux
-   scores n'apporterait donc qu'un gain de variance limité (la
-   réduction de variance d'un ensemble s'effondre quand la
-   corrélation entre les deux membres approche 1).
+   redondantes, pas complémentaires. Sur WAC (tactique), elle est
+   basse (~0,40) — du vrai signal complémentaire.
 
-Conclusion : au lieu de faire cohabiter deux évaluateurs entraînés
-séparément et de les moyenner après coup, on entraîne un seul modèle
-qui **apprend explicitement à ne représenter que le résidu** que
-l'accumulateur ne capture pas déjà — plus efficace qu'un ensemble
-naïf, et ça règle aussi le problème de déploiement (l'accumulateur
-reste incrémental et rapide comme aujourd'hui ; seule la petite
-branche CNN a un coût de calcul plein, et seulement quand on
-l'invoque).
+Conclusion : au lieu d'entraîner un second évaluateur autonome et de
+le moyenner avec la NNUE après coup, on entraîne le CNN à faire
+directement ce que ces deux chiffres suggèrent : **prédire l'erreur
+résiduelle de la NNUE**, pas une évaluation indépendante. Le réseau
+apprendra naturellement une correction quasi nulle là où la NNUE est
+déjà bonne (positions quiètes, résidu faible) et une vraie correction
+là où elle diverge (positions tactiques, résidu informatif).
 
-## Architecture proposée
+## Architecture — additive, pas fusionnée
 
 ```
-                    ┌─────────────────────────┐
-FEN / position ───▶ │ Accumulateur NNUE (FIGÉ) │──▶ features accumulateur (1024, l0/l1)
-                    └─────────────────────────┘         │
-                    ┌─────────────────────────┐         │
-                    │   PSQT NNUE (FIGÉ)       │──▶ psqt_score (par bucket)
-                    └─────────────────────────┘         │
-                                                          ▼
-                    ┌─────────────────────────┐   ┌──────────────┐
-Plans 8x8 (33) ───▶ │ Trunk v1 (NON figé,      │──▶│ MLP par bucket│──▶ logit
-                    │ 8 blocs x 96, SE, attack/│   │ (8 buckets)   │      │
-                    │ king planes)             │   └──────────────┘      │
-                    └─────────────────────────┘                          ▼
-                                                                  + psqt_score (figé)
-                                                                          │
-                                                                          ▼
-                                                              logit final de victoire
+score_final = score_NNUE (précalculé, figé)  +  correction_CNN(position)
 ```
 
-### Composants
+Concrètement, ça se branche directement sur l'architecture `ChessCNN`
+existante ([model.py](../../training/cnn/model.py)) : la somme
+actuelle est déjà `trunk_logits + psqt_logits`. On ajoute un
+**troisième terme additif figé** :
 
-- **Accumulateur NNUE (`HalfKAv2_hm`, figé)** : poids gelés, tels
-  qu'entraînés dans `v3.nnue`. Reste utilisable de façon incrémentale
-  (une seule addition/soustraction par coup, comme aujourd'hui dans
-  le moteur) — c'est ce qui garde la partie "rapide" de la fusion
-  réellement rapide.
-- **PSQT NNUE (figé)** : le skip linéaire déjà entraîné, additionné
-  directement à la sortie finale (même rôle que `PSQTHead` dans le
-  CNN autonome, mais réutilisé tel quel plutôt que réentraîné —
-  aucune raison de repayer ce coût, cette partie fonctionne déjà).
-- **Trunk v1 (non figé)** : 8 blocs résiduels × 96 canaux + SE, plans
-  d'attaque décomposés par type de pièce + distance au roi (les
-  plans validés utiles dans v3/v4). Continue d'apprendre — c'est lui
-  qui doit se spécialiser sur le résidu.
-- **MLP final par bucket** : prend en entrée la concaténation des
-  features de l'accumulateur et de la sortie poolée du trunk, une
-  instance par bucket de phase (8 buckets, alignés sur le
-  `bucket_for_piece_count` de la NNUE — mêmes bornes des deux côtés,
-  pour rester synchronisé).
+```
+logit_final = trunk_logits + psqt_logits + nnue_logit
+```
 
-### Point de tap sur l'accumulateur : L0, pas L1/L2 — tranché
+où `nnue_logit` est le score de la NNUE pour cette position, converti
+en logit et traité comme une **constante non entraînée** (précalculée
+une fois par position, pas un paramètre du modèle — aucun gradient ne
+la traverse). Le reste de l'architecture, la loss, la boucle
+d'entraînement : **rien ne change** par rapport à v1-v4.
 
-On expose au MLP final le vecteur `l0` brut (sortie de la "pairwise
-square" de l'accumulateur, 1024 de large — ce que la NNUE elle-même
-utilise comme entrée de son propre layer-stack), **pas** les
-représentations L1/L2 internes de la NNUE. Deux raisons :
+### Pourquoi ce design plutôt que la fusion par MLP (première version de ce doc)
 
-1. **L1/L2 sont déjà "l'opinion finale" de la NNUE**, pas un signal
-   brut — donner ça au MLP joint risque d'amplifier le problème de
-   sous-utilisation du trunk (cf. section risque ci-dessous) : le
-   chemin de gradient le plus facile devient "recopier ce que dit
-   déjà L1/L2" plutôt qu'apprendre le résidu.
-2. **Double-bucketing redondant** : le layer-stack L1/L2 de la NNUE
-   est déjà spécifique à un bucket (8 jeux de poids selon la phase).
-   L0, lui, est calculé *avant* la séparation par bucket (accumulateur
-   partagé) — le MLP final (lui-même par bucket) peut faire tout le
-   travail de spécialisation par phase sans hériter d'un découpage
-   déjà fait ailleurs.
+La première version proposait de figer l'accumulateur NNUE, l'exposer
+(vecteur `l0`, 1024 de large) à un MLP conjoint prenant aussi les
+features du trunk CNN, un par bucket. Deux problèmes ont fait
+abandonner cette voie :
 
-L0 est aussi simplement plus riche en information brute (1024 de
-large, contre 32+32 pour un L1+L2 déjà compressé pour les besoins
-propres de la NNUE, pas nécessairement adaptés à notre tâche jointe).
+1. **Coût d'ingénierie** : nécessitait une réplique PyTorch
+   différentiable de l'accumulateur NNUE (le binaire C++ quantifié
+   utilisé partout ailleurs dans ce projet ne suffit pas pour
+   rétropropager le gradient) — un chantier non négligeable pour un
+   gain incertain.
+2. **Risque de déséquilibre** : `l0` (1024 dims, déjà très prédictif)
+   aurait dominé numériquement les features du trunk CNN (192 dims)
+   dans un MLP fusionné — risque réel de sous-utilisation du CNN
+   (phénomène documenté sous le nom de "modality imbalance" en
+   apprentissage multi-branches), sans solution propre sans perte
+   d'info (une projection linéaire pour rééquilibrer les dimensions
+   aurait perdu de l'information, sans garantie de résoudre le
+   problème).
+
+Le design additif ci-dessus règle les deux : `nnue_logit` n'est pas
+une couche à entraîner, juste une valeur précalculée par position —
+zéro nouvelle brique PyTorch côté NNUE, et le CNN a un seul objectif
+isolé (prédire le résidu), sans jamais pouvoir être "dilué" par une
+autre branche dans un MLP partagé.
+
+## Ce qui change dans le pipeline d'entraînement
+
+- **Précalcul de `nnue_logit`** par position, une fois, pas à chaque
+  step. Deux options d'implémentation :
+  - Intégrer l'inférence NNUE directement dans le chargeur C++
+    (`plane_batch.cpp`), en réutilisant le code NNUE déjà présent
+    dans le moteur — zéro overhead de communication inter-process,
+    et le moteur fait déjà des millions d'évals/seconde en
+    recherche réelle donc le coût est négligeable comparé au reste
+    du pipeline.
+  - Alternative plus rapide à mettre en place mais plus lente à
+    l'exécution : passer par le binaire UCI existant (déjà mesuré à
+    ~50k pos/s), en cache/precompute avant l'entraînement plutôt
+    qu'en ligne.
+  - Recommandation : la première option (intégration directe dans le
+    chargeur C++) si le volume de données à traiter rend le calcul
+    en ligne trop lent, sinon la seconde suffit pour un premier
+    prototype.
+- **Cible d'entraînement inchangée** — toujours le blend lambda
+  score-Stockfish/résultat-réel existant. Le modèle apprend `trunk +
+  psqt + nnue_logit ≈ target`, donc implicitement `trunk + psqt ≈
+  target - nnue_logit` — un résidu, sans qu'on ait besoin de
+  reformuler la loss.
+- **`nnue_logit` doit être sur la même échelle logit que le reste**
+  — nécessite de reprendre la conversion `sigmoid(nnue_cp / scale)`
+  avec un `scale` calibré pour la NNUE (voir la calibration
+  cross-validée déjà utilisée dans `per_position_analysis.py` — on a
+  déjà les outils, pas de nouveau travail de calibration à inventer).
 
 ## Ce qui est réutilisé sans changement (déjà validé dans le projet)
 
-- Skip PSQT linéaire séparé, hors du MLP (évite de mélanger un signal
-  linéaire propre dans une transformation non-linéaire).
-- 8 buckets de phase (au lieu de 4), alignés sur la granularité NNUE.
-- Plans d'attaque décomposés par type de pièce + distance au roi
-  (plans validés par ablation sur v3 — cf. discussion sur la
-  décomposition, gain net à chaque granularité testée).
+- Le trunk v1 (8 blocs × 96 canaux, SE, plans d'attaque décomposés
+  par type de pièce + distance au roi) comme point de départ — voir
+  la section taille ci-dessous pour la question ouverte.
+- Skip PSQT linéaire séparé (celui du CNN, indépendant du PSQT NNUE).
+- 8 buckets de phase, alignés sur la granularité NNUE.
 - Optimisations d'entraînement déjà en place (bf16, `torch.compile`,
   `cudnn.benchmark`, TF32).
 
-## Risque identifié et mitigation prévue
-
-**Risque** : avec un accès direct aux features de l'accumulateur
-(déjà très prédictives) dans le MLP final, l'entraînement pourrait
-apprendre à quasiment ignorer la branche CNN — chemin de gradient
-plus facile via l'accumulateur, sous-utilisation du trunk. C'est
-exactement le phénomène qu'on a déjà mesuré pour le skip PSQT dans le
-CNN autonome (contribution modeste, trunk dominant) — risque
-symétrique ici, mais avec l'accumulateur comme composant dominant au
-lieu du trunk.
-
-**Mitigation envisagée** : ajouter une loss auxiliaire qui force la
-sortie du trunk seul (avant fusion) à être prédictive indépendamment,
-garantissant qu'il apprend un signal utile avant même la fusion,
-plutôt que de compter sur le MLP final pour l'y forcer après coup.
-
-## Coût d'ingénierie
-
-Contrairement aux CNN autonomes (v1-v4), entraîner cette architecture
-demande une **réplique PyTorch différentiable de l'accumulateur
-NNUE** (pas seulement le binaire C++ d'inférence quantifié utilisé
-jusqu'ici pour les comparaisons) — chargée avec les poids de
-`v3.nnue`, en float, gelée, mais différentiable pour laisser le
-gradient passer jusqu'au trunk pendant l'entraînement conjoint.
-Probablement à construire à partir des classes du submodule
-`nnue-pytorch` déjà vendoré, plutôt que réimplémenter à partir de
-zéro.
-
 ## Taille du trunk : point à valider empiriquement, pas à deviner
 
-Discussion ouverte : dans ce contexte (le trunk n'a plus qu'un
-résidu à capturer, une tâche plus facile qu'être un évaluateur
-autonome complet), une taille inférieure à v1 (8×96) pourrait
-suffire — mais le signal résiduel identifié comme utile (positions
-quiètes, nuances spatiales fines type plans d'attaque décomposés)
-n'est pas nécessairement "simple". Décision : garder v1 (8×96) comme
-point de départ pragmatique, et tester une réduction (ex: 3-4 blocs)
-comme première ablation une fois l'architecture fonctionnelle,
-plutôt que de présupposer la bonne taille.
+Dans ce contexte (le trunk n'a plus qu'un résidu à capturer, une
+tâche plus facile qu'être un évaluateur autonome complet), une taille
+inférieure à v1 (8×96) pourrait suffire — mais le signal résiduel
+identifié comme utile (positions quiètes, nuances spatiales fines
+type plans d'attaque décomposés) n'est pas nécessairement "simple".
+Décision : garder v1 (8×96) comme point de départ pragmatique, et
+tester une réduction (ex: 3-4 blocs) comme première ablation une fois
+l'architecture fonctionnelle, plutôt que de présupposer la bonne
+taille.
+
+## Déploiement — ce que ça change pour l'usage final
+
+À l'inférence, il faut toujours calculer `score_NNUE` (rapide,
+incrémental, déjà fait par le moteur) **et** `correction_CNN` (lent,
+cf. les benchmarks MPS — ~100-800 pos/s selon la taille du trunk).
+Le design reste donc contraint par la même conclusion que precedemment
+établie : la correction CNN n'est praticable qu'en asynchrone/batché
+(ex: réévaluation de la PV ou des feuilles de quiescence), pas comme
+remplacement de l'éval synchrone à chaque nœud — ce doc ne change pas
+ce constat, juste la façon dont le signal CNN est appris.
