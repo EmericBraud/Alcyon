@@ -1,6 +1,7 @@
 #include "plane_batch_stream.h"
 
 #include <functional>
+#include <utility>
 
 #include "plane_batch.h"
 
@@ -27,8 +28,10 @@ PlaneBatchStreamImpl::PlaneBatchStreamImpl(int concurrency,
                                             int batch_size,
                                             bool cyclic,
                                             int val_percent,
-                                            bool is_validation)
+                                            bool is_validation,
+                                            std::string nnue_path)
     : m_batch_size(batch_size),
+      m_nnue_path(std::move(nnue_path)),
       m_stream(training_data::open_sfen_input_file_parallel(
           concurrency,
           filenames,
@@ -48,7 +51,7 @@ PlaneBatch* PlaneBatchStreamImpl::next() {
     }
 
     if (entries.empty()) return nullptr;
-    return new PlaneBatch(entries);
+    return new PlaneBatch(entries, m_nnue_path);
 }
 
 PlaneBatchStream::PlaneBatchStream(int concurrency,
@@ -57,8 +60,9 @@ PlaneBatchStream::PlaneBatchStream(int concurrency,
                                     bool cyclic,
                                     int val_percent,
                                     bool is_validation,
+                                    std::string nnue_path,
                                     int queue_capacity)
-    : m_impl(concurrency, filenames, batch_size, cyclic, val_percent, is_validation),
+    : m_impl(concurrency, filenames, batch_size, cyclic, val_percent, is_validation, std::move(nnue_path)),
       m_capacity(static_cast<std::size_t>(queue_capacity)) {
     m_worker = std::thread(&PlaneBatchStream::worker_loop, this);
 }

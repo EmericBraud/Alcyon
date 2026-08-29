@@ -34,6 +34,7 @@ class PlaneBatchCView(ctypes.Structure):
         ("score", ctypes.POINTER(ctypes.c_float)),
         ("result", ctypes.POINTER(ctypes.c_float)),
         ("piece_count", ctypes.POINTER(ctypes.c_int)),
+        ("nnue_score", ctypes.POINTER(ctypes.c_float)),
         ("handle", ctypes.c_void_p),
     ]
 
@@ -49,6 +50,9 @@ class PlaneBatchCView(ctypes.Structure):
         piece_count_cpu = torch.from_numpy(
             np.ctypeslib.as_array(self.piece_count, shape=(size,))
         )
+        nnue_score_cpu = torch.from_numpy(
+            np.ctypeslib.as_array(self.nnue_score, shape=(size,))
+        )
 
         planes = _pin_and_move(planes_cpu, device, use_pinned_memory).view(
             size, NUM_PLANES, BOARD_SIZE, BOARD_SIZE
@@ -58,8 +62,9 @@ class PlaneBatchCView(ctypes.Structure):
         piece_count = _pin_and_move(
             piece_count_cpu.to(dtype=torch.int64), device, use_pinned_memory
         ).view(size)
+        nnue_score = _pin_and_move(nnue_score_cpu, device, use_pinned_memory).view(size, 1)
 
-        return planes, score, result, piece_count
+        return planes, score, result, piece_count, nnue_score
 
 
 class CPlaneDataLoaderAPI:
@@ -107,6 +112,7 @@ class CPlaneDataLoaderAPI:
             ctypes.c_bool,
             ctypes.c_int,
             ctypes.c_bool,
+            ctypes.c_char_p,
         ]
 
         # void destroy_plane_batch_stream(PlaneBatchCStream* stream)
@@ -119,6 +125,18 @@ class CPlaneDataLoaderAPI:
         # void destroy_plane_batch(PlaneBatchCView view)
         self.dll.destroy_plane_batch.argtypes = [PlaneBatchCView]
 
+
+# chess26's own engine code (linked in for NNUE eval, see nnue_bridge.cpp)
+# resolves its data files (magic-bitboard tables, NNUE weights when no
+# explicit path is given) via CHESS26_DATA_DIR, defaulting to
+# "<executable dir>/data" when unset — which resolves to the *Python*
+# interpreter's directory when this library is loaded via ctypes, not
+# the repo. Point it at the real data/ directory unless the caller has
+# already set it explicitly.
+os.environ.setdefault(
+    "CHESS26_DATA_DIR",
+    os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "data")),
+)
 
 try:
     c_lib = CPlaneDataLoaderAPI()

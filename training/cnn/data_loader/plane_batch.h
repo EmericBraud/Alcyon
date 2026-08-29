@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "chess.h"
@@ -74,7 +75,10 @@ enum PlaneIndex : int {
 // public-field-block layout of SparseBatch/FenBatch in nnue-pytorch so
 // the ctypes wrapper on the Python side follows the same pattern.
 struct PlaneBatch final {
-    explicit PlaneBatch(const std::vector<binpack::TrainingDataEntry>& entries);
+    // nnue_path: path to the .nnue weight file used to fill nnue_score
+    // below (see nnue_bridge.h) — chess26's own NNUE, evaluated once per
+    // position, non-incrementally.
+    PlaneBatch(const std::vector<binpack::TrainingDataEntry>& entries, const std::string& nnue_path);
     ~PlaneBatch();
 
     PlaneBatch(const PlaneBatch&) = delete;
@@ -102,8 +106,16 @@ struct PlaneBatch final {
     // they're always exactly 2 and carry no phase information.
     int* piece_count;
 
+    // size. chess26's own NNUE static evaluation, from the side-to-move's
+    // perspective (see nnue_bridge.h) — a precomputed, non-incremental
+    // score used by v5's residual-correction training (see
+    // docs/gpu-async-eval/v5-hybrid-nnue-cnn.md). Not yet converted to a
+    // logit — that conversion (with its calibrated scale) happens on the
+    // Python side, same as `score` above.
+    float* nnue_score;
+
 private:
-    void fill_entry(int i, const binpack::TrainingDataEntry& e);
+    void fill_entry(int i, const binpack::TrainingDataEntry& e, const std::string& nnue_path);
 };
 
 // Deterministic 64-bit hash of a position, independent of thread/

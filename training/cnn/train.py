@@ -24,6 +24,7 @@ import torch.nn.functional as F
 
 from data_loader import PlaneBatchDataset
 from model import ChessCNN
+from nnue_calibration import NnueCalibration
 
 # Scale used to convert a raw Stockfish score into a win probability
 # via sigmoid(score / SCORE_SCALE). Same family/order of magnitude as
@@ -56,7 +57,7 @@ def blended_target(score: torch.Tensor, result: torch.Tensor, lambda_: float) ->
 
 
 @torch.no_grad()
-def evaluate(model, val_iter, device, num_batches, lambda_, autocast_dtype):
+def evaluate(model, val_iter, device, num_batches, lambda_, autocast_dtype, nnue_calibration):
     """Runs num_batches from val_iter and returns the mean blended-target loss.
 
     lambda_ is fixed at the current training step's value so the
@@ -66,15 +67,16 @@ def evaluate(model, val_iter, device, num_batches, lambda_, autocast_dtype):
     model.eval()
     total_loss = 0.0
     for _ in range(num_batches):
-        planes, score, result, piece_count = next(val_iter)
+        planes, score, result, piece_count, nnue_score = next(val_iter)
         planes = planes.to(device)
         score = score.to(device).squeeze(-1)
         result = result.to(device).squeeze(-1)
         piece_count = piece_count.to(device)
+        nnue_logit = nnue_calibration(nnue_score.to(device).squeeze(-1))
 
         target = blended_target(score, result, lambda_)
         with torch.autocast(device_type=device.type, dtype=autocast_dtype, enabled=autocast_dtype is not None):
-            logits = model(planes, piece_count)
+            logits = model(planes, piece_count, nnue_logit)
             loss = F.binary_cross_entropy_with_logits(logits, target)
         total_loss += loss.item()
     model.train()
@@ -141,6 +143,26 @@ def main():
         "further annealing beyond the floor already reached).",
     )
     parser.add_argument(
+        "--nnue-path",
+        required=True,
+        help="Path to the .nnue weight file used as the frozen baseline "
+        "for v5's residual-correction training (see model.py, "
+        "docs/gpu-async-eval/v5-hybrid-nnue-cnn.md). Evaluated once per "
+        "position by the C++ loader (nnue_bridge.cpp), not incrementally.",
+    )
+    parser.add_argument(
+        "--nnue-calibration",
+        required=True,
+        help="Path to the JSON calibration curve (see "
+        "eval_compare/calibrate_nnue_scale.py) mapping raw NNUE "
+        "centipawn scores to logits, on the same scale as the rest of "
+        "the lambda-blended target. A single scalar scale is NOT "
+        "enough here -- the raw-NNUE-to-target relationship is "
+        "measurably non-linear (magnitude-dependent), and the CNN "
+        "trunk can't correct that itself (it never sees nnue_score as "
+        "an input) -- see calibrate_nnue_scale.py's module docstring.",
+    )
+    parser.add_argument(
         "--cpu-threads",
         type=int,
         default=8,
@@ -162,6 +184,15 @@ def main():
     # fixed-shape workload like this one.
     torch.backends.cudnn.benchmark = True
 
+    # TF32 on Ampere+/Blackwell tensor cores speeds up any fp32 matmul
+    # not already covered by the bf16 autocast below (BatchNorm stats,
+    # the SE-block's small Linear layers under autocast's fp32-preferred
+    # ops, etc.) — reduced mantissa precision, same dynamic range as
+    # fp32, standard free win for training (not for scientific/exact
+    # fp32 workloads, but well within tolerance for gradient descent).
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
     use_hash_split = args.val_binpack is None and args.val_percent > 0
     if args.val_binpack is None and args.val_percent <= 0:
         print(
@@ -177,6 +208,8 @@ def main():
         raise SystemExit("--extend-steps requires --resume-from")
 
     device = torch.device(args.device)
+    nnue_calibration = NnueCalibration(args.nnue_calibration).to(device)
+    print(f"loaded NNUE calibration curve: {args.nnue_calibration}", flush=True)
     print("building model...", flush=True)
     model = ChessCNN().to(device)
     num_params = sum(p.numel() for p in model.parameters())
@@ -259,6 +292,7 @@ def main():
         num_workers=args.num_workers,
         val_percent=args.val_percent if use_hash_split else 0,
         is_validation=False,
+        nnue_path=args.nnue_path,
     )
     data_iter = iter(dataset)
 
@@ -269,6 +303,7 @@ def main():
             batch_size=args.val_batch_size,
             cyclic=True,  # cyclic so a short/small val set never raises StopIteration mid-run
             num_workers=1,
+            nnue_path=args.nnue_path,
         )
         val_iter = iter(val_dataset)
     elif use_hash_split:
@@ -279,6 +314,7 @@ def main():
             num_workers=1,
             val_percent=args.val_percent,
             is_validation=True,
+            nnue_path=args.nnue_path,
         )
         val_iter = iter(val_dataset)
 
@@ -291,11 +327,16 @@ def main():
     t_last_log = t_start
 
     for step in range(start_step, args.steps):
-        planes, score, result, piece_count = next(data_iter)
+        planes, score, result, piece_count, nnue_score = next(data_iter)
         planes = planes.to(device)
         score = score.to(device).squeeze(-1)
         result = result.to(device).squeeze(-1)
         piece_count = piece_count.to(device)
+        # nnue_score is a precomputed constant from the loader (chess26's
+        # own NNUE, evaluated once per position) -- never has requires_grad,
+        # so no explicit .detach() is needed for it to act as a frozen
+        # additive term in the model (see model.py's forward()).
+        nnue_logit = nnue_calibration(nnue_score.to(device).squeeze(-1))
 
         lambda_ = args.lambda_end if extending else lambda_schedule(
             step, args.steps, args.lambda_start, args.lambda_end
@@ -303,7 +344,7 @@ def main():
         target = blended_target(score, result, lambda_)
 
         with torch.autocast(device_type=device.type, dtype=autocast_dtype, enabled=autocast_dtype is not None):
-            logits = train_model(planes, piece_count)
+            logits = train_model(planes, piece_count, nnue_logit)
             loss = F.binary_cross_entropy_with_logits(logits, target)
 
         optimizer.zero_grad()
@@ -335,20 +376,34 @@ def main():
             t_last_log = now
 
         if val_iter is not None and (step + 1) % args.val_every == 0:
-            val_loss = evaluate(train_model, val_iter, device, args.val_batches, lambda_, autocast_dtype)
+            val_loss = evaluate(
+                train_model, val_iter, device, args.val_batches, lambda_, autocast_dtype, nnue_calibration
+            )
             print(f"step {step + 1}/{args.steps}  val_loss={val_loss:.4f}", flush=True)
 
         if (step + 1) % args.checkpoint_every == 0:
             path = os.path.join(args.checkpoint_dir, f"chesscnn_step{step + 1}.pt")
             torch.save(
-                {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "step": step + 1},
+                {
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "step": step + 1,
+                    "nnue_path": args.nnue_path,
+                    "nnue_calibration": args.nnue_calibration,
+                },
                 path,
             )
             print(f"checkpoint saved: {path}", flush=True)
 
     final_path = os.path.join(args.checkpoint_dir, "chesscnn_final.pt")
     torch.save(
-        {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "step": args.steps},
+        {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "step": args.steps,
+            "nnue_path": args.nnue_path,
+            "nnue_calibration": args.nnue_calibration,
+        },
         final_path,
     )
     print(f"training done, final checkpoint: {final_path}", flush=True)

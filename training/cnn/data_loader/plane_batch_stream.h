@@ -24,7 +24,8 @@ public:
                           int batch_size,
                           bool cyclic,
                           int val_percent,
-                          bool is_validation);
+                          bool is_validation,
+                          std::string nnue_path);
 
     // Returns nullptr once the underlying stream is exhausted and not
     // cyclic. Caller owns the returned batch.
@@ -32,6 +33,7 @@ public:
 
 private:
     int m_batch_size;
+    std::string m_nnue_path;
     std::unique_ptr<training_data::BasicSfenInputStream> m_stream;
 };
 
@@ -66,6 +68,7 @@ public:
                       bool cyclic,
                       int val_percent = 0,
                       bool is_validation = false,
+                      std::string nnue_path = "",
                       int queue_capacity = 4);
     ~PlaneBatchStream();
 
