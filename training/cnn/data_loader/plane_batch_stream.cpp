@@ -29,7 +29,9 @@ PlaneBatchStreamImpl::PlaneBatchStreamImpl(int concurrency,
                                             bool cyclic,
                                             int val_percent,
                                             bool is_validation,
-                                            std::string nnue_path)
+                                            std::string nnue_path,
+                                            int rank,
+                                            int world_size)
     : m_batch_size(batch_size),
       m_nnue_path(std::move(nnue_path)),
       m_stream(training_data::open_sfen_input_file_parallel(
@@ -37,8 +39,8 @@ PlaneBatchStreamImpl::PlaneBatchStreamImpl(int concurrency,
           filenames,
           cyclic,
           make_split_predicate(val_percent, is_validation),
-          /*rank=*/0,
-          /*world_size=*/1)) {}
+          rank,
+          world_size)) {}
 
 PlaneBatch* PlaneBatchStreamImpl::next() {
     std::vector<binpack::TrainingDataEntry> entries;
@@ -61,8 +63,11 @@ PlaneBatchStream::PlaneBatchStream(int concurrency,
                                     int val_percent,
                                     bool is_validation,
                                     std::string nnue_path,
+                                    int rank,
+                                    int world_size,
                                     int queue_capacity)
-    : m_impl(concurrency, filenames, batch_size, cyclic, val_percent, is_validation, std::move(nnue_path)),
+    : m_impl(concurrency, filenames, batch_size, cyclic, val_percent, is_validation, std::move(nnue_path),
+             rank, world_size),
       m_capacity(static_cast<std::size_t>(queue_capacity)) {
     m_worker = std::thread(&PlaneBatchStream::worker_loop, this);
 }

@@ -113,6 +113,8 @@ class CPlaneDataLoaderAPI:
             ctypes.c_int,
             ctypes.c_bool,
             ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_int,
         ]
 
         # void destroy_plane_batch_stream(PlaneBatchCStream* stream)
