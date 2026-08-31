@@ -114,6 +114,16 @@ struct SearchWorker
     std::string get_pv_line_with_root(Move root_move, int depth);
     int negamax_with_aspiration(int depth, int last_score);
 
+    // Called once per completed iterative-deepening depth, by EVERY
+    // worker (not just thread 0) -- walks this worker's own PV to its
+    // leaf and submits it (plus its top gpu_eval::kNumCandidateMoves
+    // replies, ranked with this worker's OWN heuristic tables so it
+    // benefits from continuation history/killers like real search
+    // move ordering would) to the GPU-eval queue. No-op, one atomic
+    // load, when gpu_eval::enabled is false. See
+    // src/engine/eval/gpu/gpu_queue.hpp.
+    void maybe_submit_pv_leaf_to_gpu(int depth);
+
     inline VBoard &get_board()
     {
         return board;
