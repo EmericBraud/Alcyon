@@ -55,7 +55,10 @@ def load_model(ckpt_path, device):
     is_v5 = "psqt.conv.weight" not in state_dict
 
     if is_v5:
-        model = ChessCNN()
+        channels = state_dict["stem_conv.weight"].shape[0]
+        num_planes = state_dict["stem_conv.weight"].shape[1]
+        num_blocks = len({k.split(".")[1] for k in state_dict if k.startswith("blocks.")})
+        model = ChessCNN(channels=channels, num_blocks=num_blocks, num_planes=num_planes)
     else:
         channels = state_dict["stem_conv.weight"].shape[0]
         num_planes = state_dict["stem_conv.weight"].shape[1]

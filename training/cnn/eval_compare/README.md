@@ -1,5 +1,25 @@
 # Eval comparison: CNN vs NNUE vs Stockfish
 
+## results_log.csv — the source of truth for every correlation number
+
+**Convention: every WDL/score-recherché correlation measurement quoted
+anywhere (chat, docs, commit messages) MUST be appended as a row to
+`results_log.csv` in this directory, and read from there when citing a
+past number — never from memory.** This exists because re-typing
+numbers from memory across a long session is exactly how silent
+transcription errors creep in.
+
+Row fields: `date, model, checkpoint_step, architecture, params,
+num_positions, device, num_workers, nnue_score_corr, nnue_wdl_corr,
+model_score_corr, model_wdl_corr, notes`. `num_workers` matters —
+see `eval_compare_sampling_noise` in project memory: with
+`num_workers > 1` the sample is non-deterministic across runs, so two
+measurements of the "same" checkpoint can legitimately differ by
++/-0.005-0.01 purely from sampling. Always prefer `num_workers=1`
+(the default) for numbers meant to be compared across time; note the
+sample size too, since a smaller `--num-positions` widens that same
+noise band.
+
 `compare_checkpoints.py` measures how well the CNN checkpoints predict
 Stockfish's own **static** eval (no search), on `wac.epd` — 299
 positions from the classic "Win At Chess" test suite (source:

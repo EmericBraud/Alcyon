@@ -164,6 +164,10 @@ def main():
         "trunk can't correct that itself (it never sees nnue_score as "
         "an input) -- see calibrate_nnue_scale.py's module docstring.",
     )
+    parser.add_argument("--channels", type=int, default=96,
+                         help="trunk width (v1/v5 default 96, v3 was 160, v4 was 224)")
+    parser.add_argument("--num-blocks", type=int, default=8,
+                         help="trunk depth (v1/v5 default 8, v3 was 14, v4 was 20)")
     parser.add_argument(
         "--cpu-threads",
         type=int,
@@ -245,7 +249,7 @@ def main():
     # checkpointing and optimizer/grad-clip below all operate on this one, not
     # on the DDP wrapper (below) built around it, so checkpoints stay in the
     # same non-prefixed format whether or not this run is distributed.
-    model = ChessCNN().to(device)
+    model = ChessCNN(channels=args.channels, num_blocks=args.num_blocks).to(device)
     num_params = sum(p.numel() for p in model.parameters())
     log(f"model ready: {num_params:,} params on {device}")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
