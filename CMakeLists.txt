@@ -14,6 +14,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # --- 2. OPTIONS ET FLAGS ---
 option(ENABLE_GUI "Build with GUI support" OFF)
 option(BUILD_TESTING "Build unit tests" ON)
+option(ENABLE_GPU_EVAL "Enable the native GPU (Metal) CNN eval queue -- see src/engine/eval/gpu/" OFF)
 
 include(CheckCXXCompilerFlag)
 include(CheckIPOSupported)
@@ -40,6 +41,38 @@ find_package(Threads REQUIRED)
 # --- 3. SOURCES ---
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 list(FILTER SOURCES EXCLUDE REGEX "main.cpp")
+
+if(ENABLE_GPU_EVAL)
+    if(NOT APPLE)
+        message(FATAL_ERROR "ENABLE_GPU_EVAL currently only supports Apple/Metal")
+    endif()
+    # metal_backend.mm (Objective-C++, ARC) needs Apple Clang specifically
+    # -- GCC's Objective-C++ support doesn't accept -fobjc-arc at all
+    # (tested: Homebrew g++ rejects it outright). The REST of chess_core
+    # can't switch to Apple Clang either way: accumulator_layer.hpp uses
+    # GCC's <experimental/simd> extension, which doesn't exist in Apple
+    # Clang's libc++. So this forces the OBJCXX compiler ONLY (leaving
+    # CMAKE_CXX_COMPILER, and everything else, as the user configured it)
+    # -- meaning metal_backend.mm's object file is linked in from a
+    # different C++ toolchain/standard library than the rest of the
+    # binary. That's only safe because the boundary between them
+    # (gpu_backend.hpp) is a plain extern "C" POD-only interface -- see
+    # that header's comment before changing it.
+    if(NOT DEFINED CMAKE_OBJCXX_COMPILER)
+        find_program(APPLE_CLANGXX_FOR_GPU_EVAL clang++ PATHS /usr/bin NO_DEFAULT_PATH)
+        if(NOT APPLE_CLANGXX_FOR_GPU_EVAL)
+            message(FATAL_ERROR "ENABLE_GPU_EVAL needs Apple Clang for metal_backend.mm -- /usr/bin/clang++ not found")
+        endif()
+        set(CMAKE_OBJCXX_COMPILER "${APPLE_CLANGXX_FOR_GPU_EVAL}")
+    endif()
+    enable_language(OBJCXX)
+    if(NOT CMAKE_OBJCXX_COMPILER_ID STREQUAL "AppleClang")
+        message(FATAL_ERROR "ENABLE_GPU_EVAL's OBJCXX compiler must be Apple Clang (got ${CMAKE_OBJCXX_COMPILER_ID}) -- "
+                             "reconfigure with -DCMAKE_OBJCXX_COMPILER=/usr/bin/clang++")
+    endif()
+    # metal_backend.mm (Objective-C++) replaces the plain-C++ no-op stub.
+    list(FILTER SOURCES EXCLUDE REGEX "src/engine/eval/gpu/gpu_backend_stub\\.cpp")
+endif()
 
 if(NOT ENABLE_GUI)
     list(FILTER SOURCES EXCLUDE REGEX "src/interface/gui\\.cpp")
@@ -97,6 +130,38 @@ endif()
 if(ENABLE_NNUE_EVAL)
     target_compile_definitions(chess_core PUBLIC NNUE_EVAL)
     target_compile_definitions(chess26 PRIVATE NNUE_EVAL)
+endif()
+
+if(ENABLE_GPU_EVAL)
+    target_sources(chess_core PRIVATE src/engine/eval/gpu/metal_backend.mm)
+    set_source_files_properties(src/engine/eval/gpu/metal_backend.mm PROPERTIES
+        COMPILE_FLAGS "-fobjc-arc"
+        LANGUAGE OBJCXX
+    )
+    target_compile_definitions(chess_core PUBLIC CHESS26_GPU_EVAL_METAL)
+    target_compile_definitions(chess26 PRIVATE CHESS26_GPU_EVAL_METAL)
+
+    find_library(METAL_FRAMEWORK Metal REQUIRED)
+    find_library(MPS_FRAMEWORK MetalPerformanceShaders REQUIRED)
+    find_library(MPS_GRAPH_FRAMEWORK MetalPerformanceShadersGraph REQUIRED)
+    find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+    # chess26 pulls chess_core's object files via $<TARGET_OBJECTS:...>,
+    # not a target_link_libraries(chess26 ... chess_core) link -- usage
+    # requirements (PUBLIC link libraries, compile definitions) attached
+    # to an OBJECT library do NOT propagate through TARGET_OBJECTS, so
+    # these frameworks (and CHESS26_GPU_EVAL_METAL above) must be added
+    # to chess26 explicitly too, same as Threads::Threads already is.
+    # metal_backend.mm's OWN internal std:: usage (std::ifstream, std::
+    # vector, ...) needs libc++ (Apple Clang's default), while the rest
+    # of the binary is built with whatever standard library the
+    # project's normal compiler defaults to (typically libstdc++ for
+    # GCC) -- both runtime libraries coexist fine in one binary since
+    # their C++ symbols are mangled under different inline namespaces
+    # (libc++'s std::__1:: vs libstdc++'s std::__cxx11::/plain std::),
+    # so there's no symbol collision; only the extern "C" boundary
+    # (gpu_backend.hpp) needs to (and does) stay POD-only.
+    target_link_libraries(chess_core PUBLIC ${METAL_FRAMEWORK} ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK} ${FOUNDATION_FRAMEWORK} c++)
+    target_link_libraries(chess26 PRIVATE ${METAL_FRAMEWORK} ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK} ${FOUNDATION_FRAMEWORK} c++)
 endif()
 
 if(ENABLE_GUI)

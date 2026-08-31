@@ -14,6 +14,8 @@
 
 #include "core/board/zobrist.hpp"
 #include "engine/eval/book.hpp"
+#include "engine/eval/gpu/gpu_backend.hpp"
+#include "engine/eval/gpu/gpu_queue.hpp"
 #include "engine/engine_manager.hpp"
 #include "engine/config/config.hpp"
 
@@ -263,6 +265,30 @@ class UCI
             logs::debug << "info string Hash table cleared" << std::endl;
             handled = true;
         }
+        else if (name == "gpueval ")
+        {
+            const bool on = (value == "true ");
+            if (on)
+            {
+                if (!gpu_eval::GpuBackend::instance().is_ready())
+                {
+                    const std::string weights_path = file::get_data_path("gpu/v3_weights.bin");
+                    if (!gpu_eval::shared_gpu_queue().start(weights_path))
+                    {
+                        logs::uci << "info string error: gpueval weights failed to load, staying disabled" << std::endl;
+                        gpu_eval::enabled.store(false, std::memory_order_relaxed);
+                        handled = true;
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                gpu_eval::shared_gpu_queue().stop();
+            }
+            gpu_eval::enabled.store(on, std::memory_order_relaxed);
+            handled = true;
+        }
 
         if (!handled && !name.empty())
         {
@@ -446,6 +472,7 @@ public:
                 logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
                 logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl; //@TODO
                 logs::uci << "option name Ponder type check default " << (ponder_enabled ? "true" : "false") << std::endl;
+                logs::uci << "option name gpueval type check default false" << std::endl;
 
 #ifdef SPSA_TUNING
                 for (auto int_option : int_options)
@@ -499,6 +526,7 @@ public:
             }
             else if (token == "quit")
             {
+                gpu_eval::shared_gpu_queue().stop();
                 break;
             }
 #ifdef CHESS26_HAS_GUI

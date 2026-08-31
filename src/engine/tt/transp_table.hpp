@@ -5,6 +5,7 @@
 #include "common/cpu.hpp"
 #include "core/move/move.hpp"
 #include "engine/config/config.hpp"
+#include "engine/eval/gpu/gpu_tt.hpp"
 
 enum TTFlag : std::uint8_t
 {
@@ -196,6 +197,20 @@ public:
 
             int score = score_from_tt(s, ply);
             flag = static_cast<TTFlag>(f & 0x03);
+
+            // GPU-eval score override (see docs/gpu-async-eval/architecture.md
+            // and src/engine/eval/gpu/gpu_tt.hpp): a non-blocking read of the
+            // small separate GPU-score cache, keyed by the same zobrist key.
+            // When present, it REPLACES the main TT's stored score outright
+            // (not a blend) -- a no-op (one lockless read of an empty/miss
+            // entry) whenever gpu_eval is disabled or this position was never
+            // submitted to the GPU queue.
+            int16_t gpu_score;
+            std::uint8_t gpu_depth, gpu_age;
+            if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age))
+            {
+                score = gpu_score;
+            }
 
             if (flag == TT_EXACT)
             {
