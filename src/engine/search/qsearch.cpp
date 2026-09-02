@@ -12,7 +12,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     int tt_score;
     TTFlag flag;
     Move tt_move = 0;
-    if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move, flag))
+    if (shared_tt.probe<Us>(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move, flag, board))
         return tt_score;
 
     bool in_check = board.is_king_attacked<Us>();

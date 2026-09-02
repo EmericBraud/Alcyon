@@ -129,7 +129,7 @@ namespace search
             TTFlag ttf;
             int tts;
             Move ttm;
-            if (worker.get_tt().probe(worker.board.get_hash(), depth, ply, -engine_constants::eval::Inf, engine_constants::eval::Inf, tts, ttm, ttf))
+            if (worker.get_tt().probe<Us>(worker.board.get_hash(), depth, ply, -engine_constants::eval::Inf, engine_constants::eval::Inf, tts, ttm, ttf, worker.board))
             {
                 if (ttf == TT_EXACT || ttf == TT_ALPHA)
                 {
@@ -266,7 +266,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     {
         TTFlag flag;
         int tt_score;
-        bool tt_hit = shared_tt.probe(board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move, flag);
+        bool tt_hit = shared_tt.probe<Us>(board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move, flag, board);
         if (tt_move != excluded_move && search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
             return tt_score;
 

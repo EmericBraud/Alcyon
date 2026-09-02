@@ -6,6 +6,36 @@
 #include "core/move/move.hpp"
 #include "engine/config/config.hpp"
 #include "engine/eval/gpu/gpu_tt.hpp"
+#include "engine/eval/pos_eval.hpp"
+#include "engine/eval/virtual_board.hpp"
+
+// Consultative use of a GPU-computed score: classify a score against the
+// current alpha-beta window (would it cause a fail-high, a fail-low, or
+// stay inside the window?) and only trust the GPU override when its
+// classification AGREES with the position's own NNUE eval -- see
+// docs/gpu-async-eval/v5-hybrid-nnue-cnn.md's "risque: la correction peut
+// pousser dans le mauvais sens" section, which explicitly recommended a
+// consultative (not absolute) integration instead of blindly substituting
+// scores. When the two models disagree on the cutoff decision (one wants
+// to cut and the other doesn't, or both want to cut but in opposite
+// directions), that disagreement is itself the signal: this position's
+// static evaluation is contested, so it's worth spending real search on
+// instead of shortcutting with either model's unverified opinion.
+enum class TTCutDecision : std::uint8_t
+{
+    Low,     // score <= alpha: this eval would fail low
+    Neutral, // alpha < score < beta: stays inside the window
+    High     // score >= beta: this eval would fail high
+};
+
+inline TTCutDecision classify_cut_decision(int score, int alpha, int beta)
+{
+    if (score <= alpha)
+        return TTCutDecision::Low;
+    if (score >= beta)
+        return TTCutDecision::High;
+    return TTCutDecision::Neutral;
+}
 
 enum TTFlag : std::uint8_t
 {
@@ -172,7 +202,8 @@ public:
             bucket.entries[replace_idx].save(key, move, (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age);
     }
 
-    bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move, TTFlag &flag)
+    template <Color Us>
+    bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move, TTFlag &flag, const VBoard &board)
     {
         TTBucket &bucket = table[key & index_mask];
         bool found_move = false;
@@ -212,8 +243,15 @@ public:
             if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age) &&
                 gpu_age == gpu_eval::shared_gpu_tt().current_age())
             {
-                score = gpu_score;
-                gpu_eval::shared_gpu_tt().record_useful_hit();
+                const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
+                if (classify_cut_decision(nnue_score, alpha, beta) == classify_cut_decision(gpu_score, alpha, beta))
+                {
+                    score = gpu_score;
+                    gpu_eval::shared_gpu_tt().record_useful_hit();
+                }
+                // Disagreement: leave `score` as the main TT's own
+                // (real-search) value -- the GPU's opinion is discarded
+                // for this probe, not force-applied.
             }
 
             if (flag == TT_EXACT)
@@ -257,11 +295,24 @@ public:
             if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age) &&
                 gpu_age == gpu_eval::shared_gpu_tt().current_age())
             {
-                best_move = found_move ? best_move : Move(0);
-                flag = TT_EXACT;
-                gpu_eval::shared_gpu_tt().record_useful_hit();
-                return_score = score_from_tt(gpu_score, ply);
-                return true;
+                // Consultative check (see the class-level comment on
+                // classify_cut_decision above): only short-circuit the
+                // real search here if the position's own NNUE eval
+                // agrees with the GPU score on the cutoff decision. A
+                // disagreement means this position is contested --
+                // exactly the case worth spending a real search on
+                // instead of trusting either model's unverified score,
+                // so this just falls through to `return false` below,
+                // letting negamax's normal move loop run for real.
+                const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
+                if (classify_cut_decision(nnue_score, alpha, beta) == classify_cut_decision(gpu_score, alpha, beta))
+                {
+                    best_move = found_move ? best_move : Move(0);
+                    flag = TT_EXACT;
+                    gpu_eval::shared_gpu_tt().record_useful_hit();
+                    return_score = score_from_tt(gpu_score, ply);
+                    return true;
+                }
             }
         }
 
