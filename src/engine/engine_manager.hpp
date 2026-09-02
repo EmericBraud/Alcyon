@@ -110,6 +110,7 @@ public:
             search_thread.join();
         }
         tt.next_generation();
+        gpu_eval::shared_gpu_tt().next_generation();
 
         stop_search.store(false, std::memory_order_relaxed);
         stop_requested.store(false, std::memory_order_relaxed);
@@ -149,6 +150,7 @@ public:
         time_limit = time_ms;
         start_time = std::chrono::steady_clock::now();
         tt.next_generation();
+        gpu_eval::shared_gpu_tt().next_generation();
 
         // 2. Création d'un worker unique (pas besoin de multithread pour un simple eval)
         SearchWorker worker(*this, main_board, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
@@ -186,6 +188,7 @@ public:
         time_limit.store(time_ms, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
         tt.next_generation();
+        gpu_eval::shared_gpu_tt().next_generation();
 
         SearchWorker worker(*this, position, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
 
@@ -238,6 +241,7 @@ public:
 
         time_limit.store(std::numeric_limits<int>::max() / 2, std::memory_order_relaxed);
         tt.next_generation();
+        gpu_eval::shared_gpu_tt().next_generation();
 
         SearchWorker worker(*this, position, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
 

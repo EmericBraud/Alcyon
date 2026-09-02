@@ -43,6 +43,13 @@ public:
 
     void next_generation() { current_age_ = static_cast<std::uint8_t>(current_age_ + 1); }
 
+    // For freshness checks at the call site (see transp_table.hpp's
+    // probe()) -- a GPU score computed for a previous search root (an
+    // earlier move played, or an earlier `go`) is stale and must not be
+    // trusted, even if the zobrist key happens to still match (possible
+    // via transposition into a position last visited several moves ago).
+    std::uint8_t current_age() const { return current_age_; }
+
     // depth: the search depth (plies) at which this position was captured
     // as a PV leaf -- used only as a freshness/replacement hint, no bound
     // semantics (this is a static eval cache, not a search result).

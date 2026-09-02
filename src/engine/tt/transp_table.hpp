@@ -198,16 +198,19 @@ public:
             int score = score_from_tt(s, ply);
             flag = static_cast<TTFlag>(f & 0x03);
 
-            // GPU-eval score override (see docs/gpu-async-eval/architecture.md
-            // and src/engine/eval/gpu/gpu_tt.hpp): a non-blocking read of the
-            // small separate GPU-score cache, keyed by the same zobrist key.
-            // When present, it REPLACES the main TT's stored score outright
-            // (not a blend) -- a no-op (one lockless read of an empty/miss
-            // entry) whenever gpu_eval is disabled or this position was never
-            // submitted to the GPU queue.
+            // GPU-eval score override for a position the main TT ALSO
+            // already has an entry for (typically a transposition into a
+            // position seen elsewhere in the tree) -- see the independent
+            // gpu_tt-only check below the loop for the primary case
+            // (a brand-new frontier node with no main-TT entry at all,
+            // e.g. a PV-leaf child freshly precomputed by the GPU queue --
+            // see docs/gpu-async-eval/architecture.md). Non-blocking read
+            // of a small separate score cache; a no-op (miss) whenever
+            // gpu_eval is disabled or this position was never submitted.
             int16_t gpu_score;
             std::uint8_t gpu_depth, gpu_age;
-            if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age))
+            if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age) &&
+                gpu_age == gpu_eval::shared_gpu_tt().current_age())
             {
                 score = gpu_score;
             }
@@ -225,6 +228,37 @@ public:
             if (flag == TT_BETA && score >= beta)
             {
                 return_score = score;
+                return true;
+            }
+        }
+
+        // Independent gpu_tt check -- the primary case: a brand-new node
+        // (no main-TT entry at all yet, so the loop above never ran the
+        // override) that the GPU queue precomputed a score for while it
+        // was still just a candidate reply off a previous iteration's PV
+        // leaf (see SearchWorker::maybe_submit_pv_leaf_to_gpu). That's a
+        // frontier node, reached with a small remaining `depth` budget
+        // (iterative deepening only grows the root depth by 1 per
+        // iteration) -- gate on `depth <= 1` to keep it that way: without
+        // this, an unrelated deep interior node (small remaining-depth
+        // requests aside) that happens to TRANSPOSE into the same zobrist
+        // key would let a single CNN static eval silently substitute for
+        // an arbitrarily deep real search there, which is a real blunder
+        // risk (see docs/gpu-async-eval/v5-hybrid-nnue-cnn.md's "risque:
+        // la correction peut pousser dans le mauvais sens" discussion).
+        // Also gated by generation: a stale hit from a previous search
+        // root (an earlier move played, or an earlier `go`) must not be
+        // trusted even if the key still matches.
+        if (depth <= 1)
+        {
+            int16_t gpu_score;
+            std::uint8_t gpu_depth, gpu_age;
+            if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age) &&
+                gpu_age == gpu_eval::shared_gpu_tt().current_age())
+            {
+                best_move = found_move ? best_move : Move(0);
+                flag = TT_EXACT;
+                return_score = score_from_tt(gpu_score, ply);
                 return true;
             }
         }
