@@ -1,1 +1,2 @@
 *.nnue filter=lfs diff=lfs merge=lfs -text
+data/gpu/*.bin filter=lfs diff=lfs merge=lfs -text
