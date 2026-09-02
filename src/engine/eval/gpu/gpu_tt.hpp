@@ -49,6 +49,8 @@ public:
         current_age_ = static_cast<std::uint8_t>(current_age_ + 1);
         stores_.store(0, std::memory_order_relaxed);
         useful_hits_.store(0, std::memory_order_relaxed);
+        redundant_stores_.store(0, std::memory_order_relaxed);
+        collisions_.store(0, std::memory_order_relaxed);
     }
 
     // For freshness checks at the call site (see transp_table.hpp's
@@ -63,6 +65,23 @@ public:
     // semantics (this is a static eval cache, not a search result).
     void store(std::uint64_t key, std::int16_t score_cp, std::uint8_t depth) {
         Entry &slot = table_[key & index_mask_];
+
+        // Measurement only (single-writer thread -- the GPU-prep thread
+        // is the only caller of store(), so this read-before-write is
+        // race-free): was this slot already occupied, and if so, by the
+        // SAME position (a redundant recompute -- the GPU thread just
+        // redid work for a position it had already scored) or a
+        // DIFFERENT one (a real hash-slot collision, aliased out)?
+        const std::uint64_t existing_key_xor = slot.key.load(std::memory_order_relaxed);
+        const std::uint64_t existing_data = slot.data.load(std::memory_order_relaxed);
+        if (existing_key_xor != 0 || existing_data != 0) {
+            if ((existing_key_xor ^ existing_data) == key) {
+                redundant_stores_.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                collisions_.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+
         const std::uint64_t packed = pack(key, score_cp, depth, current_age_);
         // Store data before key so a torn read (data half-written) is
         // caught by the XOR check in probe(), same trick as TTEntry.
@@ -91,6 +110,22 @@ public:
 
     std::uint64_t stores() const { return stores_.load(std::memory_order_relaxed); }
     std::uint64_t useful_hits() const { return useful_hits_.load(std::memory_order_relaxed); }
+    std::uint64_t redundant_stores() const { return redundant_stores_.load(std::memory_order_relaxed); }
+    std::uint64_t collisions() const { return collisions_.load(std::memory_order_relaxed); }
+
+    // Fraction of stores() that overwrote a DIFFERENT position's slot
+    // (real hash aliasing, capacity pressure) vs. a matching one
+    // (recomputed the same position -- see redundant_stores()).
+    double collision_rate_percent() const {
+        const std::uint64_t s = stores();
+        return s == 0 ? 0.0 : (100.0 * static_cast<double>(collisions()) / static_cast<double>(s));
+    }
+    double redundant_rate_percent() const {
+        const std::uint64_t s = stores();
+        return s == 0 ? 0.0 : (100.0 * static_cast<double>(redundant_stores()) / static_cast<double>(s));
+    }
+
+    std::size_t capacity() const { return capacity_; }
 
     // Of the positions the GPU thread computed and stored (this search),
     // what fraction were ever actually consulted by TranspositionTable::
@@ -125,6 +160,8 @@ private:
     std::uint8_t current_age_ = 0;
     std::atomic<std::uint64_t> stores_{0};
     std::atomic<std::uint64_t> useful_hits_{0};
+    std::atomic<std::uint64_t> redundant_stores_{0};
+    std::atomic<std::uint64_t> collisions_{0};
 };
 
 // One shared instance, mirroring TranspositionTable's ownership pattern
