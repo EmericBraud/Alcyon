@@ -137,6 +137,41 @@ void GpuQueue::run() {
                 }
                 scratch.play(move);
 
+                // Skip re-encoding + re-inferring a candidate whose score
+                // is already fresh in the GPU TT (same key, current
+                // generation) -- measured (via GpuTT::redundant_stores())
+                // at ~60-70% of all candidates in a typical search, since
+                // neighboring PV-leaf submissions often share the same
+                // downstream child positions. Checking here (before
+                // encode_planes_v3, the actual compute-heavy step) avoids
+                // that wasted work instead of just detecting it after the
+                // fact in store().
+                std::int16_t existing_score;
+                std::uint8_t existing_depth, existing_age;
+                const std::uint64_t child_key = scratch.get_hash();
+                if (shared_gpu_tt().probe(child_key, existing_score, existing_depth, existing_age) &&
+                    existing_age == shared_gpu_tt().current_age()) {
+                    scratch.unplay(move);
+                    continue;
+                }
+
+                // Also dedupe against candidates already added to THIS
+                // batch (from this or an earlier drained task) -- these
+                // can't be caught by the probe() above since nothing gets
+                // store()'d until after the whole batch's infer_batch()
+                // call returns, below.
+                bool duplicate_in_batch = false;
+                for (int j = 0; j < batch_size; ++j) {
+                    if (child_keys[j] == child_key) {
+                        duplicate_in_batch = true;
+                        break;
+                    }
+                }
+                if (duplicate_in_batch) {
+                    scratch.unplay(move);
+                    continue;
+                }
+
                 const GpuPosition child = GpuPosition::from_board(scratch);
                 encode_planes_v3(child, planes_batch[batch_size]);
                 // Debug aid: set CHESS26_GPU_DEBUG_DUMP_PLANES=/path/to/file to

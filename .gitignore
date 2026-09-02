@@ -25,3 +25,4 @@ src/.DS_Store
 
 __pycache__/
 *.pyc
+config.json

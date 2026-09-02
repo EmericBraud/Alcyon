@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <expected>
 #include <iostream>
 #include <vector>
@@ -528,7 +529,47 @@ public:
             {
                 logs::uci << "info string gpuevalstats stores=" << gpu_eval::shared_gpu_tt().stores()
                           << " useful_hits=" << gpu_eval::shared_gpu_tt().useful_hits()
-                          << " ratio=" << gpu_eval::shared_gpu_tt().usage_ratio_percent() << "%" << std::endl;
+                          << " ratio=" << gpu_eval::shared_gpu_tt().usage_ratio_percent() << "%"
+                          << " redundant=" << gpu_eval::shared_gpu_tt().redundant_stores()
+                          << " redundant_rate=" << gpu_eval::shared_gpu_tt().redundant_rate_percent() << "%"
+                          << " collisions=" << gpu_eval::shared_gpu_tt().collisions()
+                          << " collision_rate=" << gpu_eval::shared_gpu_tt().collision_rate_percent() << "%"
+                          << " capacity=" << gpu_eval::shared_gpu_tt().capacity() << std::endl;
+            }
+            else if (token == "gpubench")
+            {
+                // Raw GpuBackend::infer_batch() throughput, isolated from
+                // search/encoding overhead -- dummy zero-filled planes,
+                // repeated iterations per batch size to amortize timer
+                // and dispatch overhead. Requires "setoption name gpueval
+                // value true" first (weights must already be loaded).
+                if (!gpu_eval::GpuBackend::instance().is_ready())
+                {
+                    logs::uci << "info string error: gpubench requires gpueval enabled first" << std::endl;
+                }
+                else
+                {
+                    static const int kBatchSizes[] = {1, 5, 8, 16, 32, 40, 64, 128, 256};
+                    static float planes[256 * gpu_eval::kNumPlanesV3 * gpu_eval::kPlaneSize];
+                    static int piece_counts[256];
+                    static std::int32_t scores[256];
+                    std::fill(std::begin(piece_counts), std::end(piece_counts), 8);
+
+                    for (int bs : kBatchSizes)
+                    {
+                        constexpr int kIters = 100;
+                        const auto t0 = std::chrono::steady_clock::now();
+                        for (int it = 0; it < kIters; ++it)
+                            gpu_eval::GpuBackend::instance().infer_batch(planes, piece_counts, bs, scores);
+                        const auto t1 = std::chrono::steady_clock::now();
+                        const double secs = std::chrono::duration<double>(t1 - t0).count();
+                        const double calls_per_sec = kIters / secs;
+                        const double positions_per_sec = calls_per_sec * bs;
+                        logs::uci << "info string gpubench batch=" << bs
+                                  << " ms_per_call=" << (secs * 1000.0 / kIters)
+                                  << " positions_per_sec=" << static_cast<long long>(positions_per_sec) << std::endl;
+                    }
+                }
             }
             else if (token == "quit")
             {
