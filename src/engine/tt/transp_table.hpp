@@ -249,9 +249,15 @@ public:
                     score = gpu_score;
                     gpu_eval::shared_gpu_tt().record_useful_hit();
                 }
-                // Disagreement: leave `score` as the main TT's own
-                // (real-search) value -- the GPU's opinion is discarded
-                // for this probe, not force-applied.
+                else
+                {
+                    // Disagreement: leave `score` as the main TT's own
+                    // (real-search) value -- the GPU's opinion is
+                    // discarded for this probe, not force-applied. Still
+                    // real value extracted (see record_disagreement_hit's
+                    // doc), not wasted work.
+                    gpu_eval::shared_gpu_tt().record_disagreement_hit();
+                }
             }
 
             if (flag == TT_EXACT)
@@ -313,6 +319,11 @@ public:
                     return_score = score_from_tt(gpu_score, ply);
                     return true;
                 }
+                // Disagreement: real value too (flagged a contested
+                // position), just not a shortcut -- see
+                // record_disagreement_hit's doc. Falls through to
+                // `return false` below, letting the real move loop run.
+                gpu_eval::shared_gpu_tt().record_disagreement_hit();
             }
         }
 

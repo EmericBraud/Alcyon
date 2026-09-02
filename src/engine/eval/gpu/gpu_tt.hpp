@@ -49,6 +49,7 @@ public:
         current_age_ = static_cast<std::uint8_t>(current_age_ + 1);
         stores_.store(0, std::memory_order_relaxed);
         useful_hits_.store(0, std::memory_order_relaxed);
+        disagreement_hits_.store(0, std::memory_order_relaxed);
         redundant_stores_.store(0, std::memory_order_relaxed);
         collisions_.store(0, std::memory_order_relaxed);
     }
@@ -108,8 +109,20 @@ public:
     // usage_ratio_percent()'s doc below for what this measures.
     void record_useful_hit() { useful_hits_.fetch_add(1, std::memory_order_relaxed); }
 
+    // Call whenever a fresh gpu_tt hit is found but NNUE and the GPU
+    // score disagree on the cutoff decision (see transp_table.hpp's
+    // classify_cut_decision-based check) -- the override is skipped and
+    // a real search happens instead, but this is NOT wasted work: the
+    // disagreement itself is the value here (it caught a contested
+    // position and avoided trusting either model's unverified score).
+    // Separate from useful_hits() (a trusted shortcut) since they're
+    // both "useful" in different ways -- only a stored position that's
+    // NEVER hit again by any probe() is truly wasted GPU-thread work.
+    void record_disagreement_hit() { disagreement_hits_.fetch_add(1, std::memory_order_relaxed); }
+
     std::uint64_t stores() const { return stores_.load(std::memory_order_relaxed); }
     std::uint64_t useful_hits() const { return useful_hits_.load(std::memory_order_relaxed); }
+    std::uint64_t disagreement_hits() const { return disagreement_hits_.load(std::memory_order_relaxed); }
     std::uint64_t redundant_stores() const { return redundant_stores_.load(std::memory_order_relaxed); }
     std::uint64_t collisions() const { return collisions_.load(std::memory_order_relaxed); }
 
@@ -128,17 +141,30 @@ public:
     std::size_t capacity() const { return capacity_; }
 
     // Of the positions the GPU thread computed and stored (this search),
-    // what fraction were ever actually consulted by TranspositionTable::
-    // probe() and used to produce a result (not just "the key still
-    // happened to match on some later probe() call that DIDN'T end up
-    // using it", e.g. a deep-remaining-depth probe past the depth<=1
-    // gate) -- i.e. how much of the GPU thread's work was wasted vs.
-    // genuinely useful for search. NOT the same as a cache hit rate:
-    // a single computed position could be probed (and used) many times
-    // by different workers/nodes, so this can exceed 100%.
+    // what fraction were TRUSTED -- NNUE and the GPU score agreed on the
+    // cutoff decision, so the override actually shortcut a real search
+    // (see transp_table.hpp's classify_cut_decision-based check). This is
+    // narrower than "was the store useful at all" (see
+    // total_value_ratio_percent() below, which also counts disagreement
+    // hits): a disagreement is real value too, just not a shortcut. NOT
+    // a cache hit rate: a single computed position could be probed (and
+    // trusted) many times by different workers/nodes, so this can
+    // exceed 100%.
     double usage_ratio_percent() const {
         const std::uint64_t s = stores();
         return s == 0 ? 0.0 : (100.0 * static_cast<double>(useful_hits()) / static_cast<double>(s));
+    }
+
+    // Broader than usage_ratio_percent(): counts BOTH trusted overrides
+    // (useful_hits) AND disagreements (disagreement_hits) as value
+    // extracted from a stored position -- a disagreement still did
+    // something useful (flagged a contested position, triggered a real
+    // search instead of trusting an unverified score), it just isn't a
+    // compute-saving shortcut. Only a store that's never hit again by
+    // any probe() at all is genuinely wasted GPU-thread work.
+    double total_value_ratio_percent() const {
+        const std::uint64_t s = stores();
+        return s == 0 ? 0.0 : (100.0 * static_cast<double>(useful_hits() + disagreement_hits()) / static_cast<double>(s));
     }
 
 private:
@@ -160,6 +186,7 @@ private:
     std::uint8_t current_age_ = 0;
     std::atomic<std::uint64_t> stores_{0};
     std::atomic<std::uint64_t> useful_hits_{0};
+    std::atomic<std::uint64_t> disagreement_hits_{0};
     std::atomic<std::uint64_t> redundant_stores_{0};
     std::atomic<std::uint64_t> collisions_{0};
 };
