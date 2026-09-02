@@ -114,15 +114,37 @@ struct SearchWorker
     std::string get_pv_line_with_root(Move root_move, int depth);
     int negamax_with_aspiration(int depth, int last_score);
 
-    // Called once per completed iterative-deepening depth, by EVERY
-    // worker (not just thread 0) -- walks this worker's own PV to its
-    // leaf and submits it (plus its top gpu_eval::kNumCandidateMoves
-    // replies, ranked with this worker's OWN heuristic tables so it
-    // benefits from continuation history/killers like real search
-    // move ordering would) to the GPU-eval queue. No-op, one atomic
-    // load, when gpu_eval::enabled is false. See
+    // Walks this worker's own PV (starting from pv_root, played on this
+    // worker's own board -- which the caller must guarantee is currently
+    // AT THE ROOT) down to its leaf and submits it (plus its top
+    // gpu_eval::kNumCandidateMoves replies, ranked with this worker's OWN
+    // heuristic tables so it benefits from continuation history/killers
+    // like real search move ordering would) to the GPU-eval queue. No-op,
+    // one atomic load, when gpu_eval::enabled is false. See
     // src/engine/eval/gpu/gpu_queue.hpp.
-    void maybe_submit_pv_leaf_to_gpu(int depth);
+    //
+    // Called two ways:
+    //  - Unthrottled, once per completed iterative-deepening depth, by
+    //    EVERY worker (not just thread 0) -- see iterative_deepening().
+    //    Off the search hot path (called between depths, not per node).
+    //  - Throttled (see maybe_submit_pv_leaf_to_gpu_throttled below),
+    //    from negamax's ply==0 root-move loop every time the root's best
+    //    move improves -- board is ALSO guaranteed back at the root there
+    //    (play/unplay already balanced for the move just tried), so this
+    //    is safe to call from there too, and captures root PV changes
+    //    that happen mid-depth (aspiration re-searches, later root moves
+    //    beating earlier ones) that the once-per-depth call alone misses
+    //    entirely -- particularly relevant at long time controls, where
+    //    a single depth can run for seconds and see several such changes.
+    void maybe_submit_pv_leaf_to_gpu(Move pv_root, int depth);
+
+    // Hot-path wrapper: gated by gpu_eval::kMinDepthForMidSearchSubmit
+    // only (skip shallow nodes -- root moves improve too often there to
+    // be worth the move-gen + scoring cost on every one), on top of
+    // maybe_submit_pv_leaf_to_gpu's own gpu_eval::enabled check. No
+    // node-count throttle: measured to be safe (GpuQueue::push() drops
+    // silently on a full/contended queue, so worst case is more drops).
+    void maybe_submit_pv_leaf_to_gpu_throttled(Move pv_root, int depth);
 
     inline VBoard &get_board()
     {

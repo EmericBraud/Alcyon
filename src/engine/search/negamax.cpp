@@ -425,6 +425,20 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             {
                 alpha = score;
             }
+
+            // The root's best-known move just changed -- board is back
+            // at the root here (board.unplay<Us>(m) already ran above),
+            // same precondition as the once-per-depth call from
+            // iterative_deepening(), but this fires mid-depth, on every
+            // improvement, not just once the whole depth (including any
+            // aspiration re-searches) has finished. See gpu_config.hpp's
+            // kMinDepthForMidSearchSubmit/kMinNodesBetweenGpuSubmits for
+            // why this needs throttling and the once-per-depth call
+            // doesn't.
+            if (ply == 0)
+            {
+                maybe_submit_pv_leaf_to_gpu_throttled(m, depth);
+            }
         }
     }
     if (ply == 0)

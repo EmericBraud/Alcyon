@@ -213,6 +213,7 @@ public:
                 gpu_age == gpu_eval::shared_gpu_tt().current_age())
             {
                 score = gpu_score;
+                gpu_eval::shared_gpu_tt().record_useful_hit();
             }
 
             if (flag == TT_EXACT)
@@ -258,6 +259,7 @@ public:
             {
                 best_move = found_move ? best_move : Move(0);
                 flag = TT_EXACT;
+                gpu_eval::shared_gpu_tt().record_useful_hit();
                 return_score = score_from_tt(gpu_score, ply);
                 return true;
             }
