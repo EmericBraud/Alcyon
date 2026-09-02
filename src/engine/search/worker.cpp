@@ -177,12 +177,11 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
     return pv_line;
 }
 
-void SearchWorker::maybe_submit_pv_leaf_to_gpu(int depth)
+void SearchWorker::maybe_submit_pv_leaf_to_gpu(Move pv_root, int depth)
 {
     if (!gpu_eval::enabled.load(std::memory_order_relaxed))
         return;
 
-    const Move pv_root = best_root_move.get_value() != 0 ? best_root_move : out_move;
     if (pv_root.get_value() == 0)
         return;
     if (!board.is_move_pseudo_legal(pv_root) || !board.is_move_legal(pv_root))
@@ -194,11 +193,24 @@ void SearchWorker::maybe_submit_pv_leaf_to_gpu(int depth)
     // this doesn't need. `board` is back at the root here (negamax_
     // with_aspiration has just returned), same precondition as the
     // reporting call sites in iterative_deepening().
-    std::vector<Move> moves_to_unplay;
-    std::vector<uint64_t> visited_hashes;
+    //
+    // IMPORTANT: use Board::play/unplay explicitly (the core-board layer),
+    // NOT VBoard::play/unplay -- the latter also updates the NNUE
+    // accumulator (or HCE eval_state), which this walk has no use for
+    // (nothing here calls evaluate()) and would be a pure wasted cost on
+    // the search hot path. Bitboards/zobrist/side-to-move are all this
+    // needs, same as gpu_queue.cpp's separate `Board scratch`.
+    // Fixed capacity: pv_root plus up to 10 more plies (the loop below
+    // is bounded by std::min(depth - 1, 10)), so 11 is an exact bound --
+    // no runtime allocation on this hot path.
+    constexpr int kMaxPvWalkPlies = 11;
+    std::array<Move, kMaxPvWalkPlies> moves_to_unplay;
+    std::array<uint64_t, kMaxPvWalkPlies - 1> visited_hashes;
+    int num_moves_to_unplay = 0;
+    int num_visited_hashes = 0;
 
-    board.play(pv_root);
-    moves_to_unplay.push_back(pv_root);
+    board.Board::play(pv_root);
+    moves_to_unplay[num_moves_to_unplay++] = pv_root;
 
     for (int i = 0; i < std::min(depth - 1, 10); ++i)
     {
@@ -213,8 +225,8 @@ void SearchWorker::maybe_submit_pv_leaf_to_gpu(int depth)
 
         uint64_t h = board.get_hash();
         bool cycle_detected = false;
-        for (uint64_t v : visited_hashes)
-            if (v == h)
+        for (int v = 0; v < num_visited_hashes; ++v)
+            if (visited_hashes[v] == h)
             {
                 cycle_detected = true;
                 break;
@@ -222,9 +234,9 @@ void SearchWorker::maybe_submit_pv_leaf_to_gpu(int depth)
         if (cycle_detected)
             break;
 
-        visited_hashes.push_back(h);
-        board.play(m);
-        moves_to_unplay.push_back(m);
+        visited_hashes[num_visited_hashes++] = h;
+        board.Board::play(m);
+        moves_to_unplay[num_moves_to_unplay++] = m;
     }
 
     // `board` is now at the PV leaf -- rank replies with this worker's
@@ -253,8 +265,19 @@ void SearchWorker::maybe_submit_pv_leaf_to_gpu(int depth)
 
     gpu_eval::shared_gpu_queue().push(task);
 
-    for (int i = static_cast<int>(moves_to_unplay.size()) - 1; i >= 0; --i)
-        board.unplay(moves_to_unplay[i]);
+    for (int i = num_moves_to_unplay - 1; i >= 0; --i)
+        board.Board::unplay(moves_to_unplay[i]);
+}
+
+void SearchWorker::maybe_submit_pv_leaf_to_gpu_throttled(Move pv_root, int depth)
+{
+    if (depth < gpu_eval::kMinDepthForMidSearchSubmit)
+        return;
+    // Node-count throttle removed (test: does dropping it cause queue
+    // overflow / GPU-thread starvation / measurable NPS regression?).
+    // GpuQueue::push() still drops silently on a full/contended queue,
+    // so this is safe to try -- worst case is more drops, not corruption.
+    maybe_submit_pv_leaf_to_gpu(pv_root, depth);
 }
 
 int SearchWorker::negamax_with_aspiration(int depth, int last_score)
@@ -350,7 +373,7 @@ void SearchWorker::iterative_deepening()
         // worker, not just thread_id == 0 (which only handles UCI
         // "info" reporting below), gets a chance to submit its own PV
         // leaf to the GPU-eval queue.
-        maybe_submit_pv_leaf_to_gpu(depth);
+        maybe_submit_pv_leaf_to_gpu(best_root_move.get_value() != 0 ? best_root_move : out_move, depth);
         if (shared_stop.load(std::memory_order_relaxed))
         {
             if (thread_id == 0)

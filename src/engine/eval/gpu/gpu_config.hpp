@@ -29,6 +29,29 @@ inline std::atomic<bool> enabled{false};
 // -size buffers below don't need runtime resizing.
 inline constexpr int kNumCandidateMoves = 5;
 
+// Root-move-improvement submissions (see negamax.cpp's ply==0 loop and
+// SearchWorker::maybe_submit_pv_leaf_to_gpu_throttled) happen on the
+// search hot path, unlike the once-per-completed-depth call from
+// iterative_deepening() (off the hot path, always unthrottled) -- so
+// they're gated by a minimum depth (skip shallow nodes, where the
+// root's best move changes often and cheaply, not worth the move-gen +
+// scoring cost). A node-count throttle was tried and removed after
+// measurement showed it wasn't needed: GpuQueue::push() already drops
+// silently on a full/contended queue, so bursty submissions just get
+// dropped rather than causing unbounded cost.
+inline constexpr int kMinDepthForMidSearchSubmit = 6;
+
+// How many queued PV-leaf tasks the GPU thread drains and encodes
+// together before firing a single GpuBackend::infer_batch() call (see
+// GpuQueue::run(), gpu_queue.cpp). A small network like this one is
+// dominated by MPSGraph's per-call launch overhead rather than raw
+// compute, so batching several tasks' candidates into one Metal call
+// amortizes that overhead instead of paying it once per 5-candidate
+// task. kMaxBatchPositions bounds the fixed-size encoding buffers (no
+// runtime allocation on this thread's hot loop).
+inline constexpr int kMaxDrainTasksPerBatch = 8;
+inline constexpr int kMaxBatchPositions = kMaxDrainTasksPerBatch * kNumCandidateMoves;
+
 // Fixed-capacity ring buffer for pending GPU-eval tasks (see gpu_queue.hpp).
 // Must be a power of two (index masking, no modulo). One task per
 // worker-iteration PV leaf, so this only needs to cover "a few pending

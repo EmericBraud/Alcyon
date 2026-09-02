@@ -524,6 +524,12 @@ public:
             {
                 run_eval(is);
             }
+            else if (token == "gpuevalstats")
+            {
+                logs::uci << "info string gpuevalstats stores=" << gpu_eval::shared_gpu_tt().stores()
+                          << " useful_hits=" << gpu_eval::shared_gpu_tt().useful_hits()
+                          << " ratio=" << gpu_eval::shared_gpu_tt().usage_ratio_percent() << "%" << std::endl;
+            }
             else if (token == "quit")
             {
                 gpu_eval::shared_gpu_queue().stop();

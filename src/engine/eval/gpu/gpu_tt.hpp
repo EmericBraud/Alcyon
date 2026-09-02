@@ -41,7 +41,15 @@ public:
         }
     }
 
-    void next_generation() { current_age_ = static_cast<std::uint8_t>(current_age_ + 1); }
+    // Resets the "how many computed positions actually got used" counters
+    // (see stores()/useful_hits()/usage_ratio_percent() below) alongside
+    // the generation bump, so they're scoped to "since the last `go`",
+    // matching what that ratio is actually meant to answer.
+    void next_generation() {
+        current_age_ = static_cast<std::uint8_t>(current_age_ + 1);
+        stores_.store(0, std::memory_order_relaxed);
+        useful_hits_.store(0, std::memory_order_relaxed);
+    }
 
     // For freshness checks at the call site (see transp_table.hpp's
     // probe()) -- a GPU score computed for a previous search root (an
@@ -60,6 +68,7 @@ public:
         // caught by the XOR check in probe(), same trick as TTEntry.
         slot.data.store(packed, std::memory_order_relaxed);
         slot.key.store(key ^ packed, std::memory_order_release);
+        stores_.fetch_add(1, std::memory_order_relaxed);
     }
 
     bool probe(std::uint64_t key, std::int16_t &out_score, std::uint8_t &out_depth, std::uint8_t &out_age) const {
@@ -73,6 +82,28 @@ public:
         out_depth = static_cast<std::uint8_t>((packed >> 16) & 0xFF);
         out_age = static_cast<std::uint8_t>((packed >> 24) & 0xFF);
         return true;
+    }
+
+    // Call from transp_table.hpp's probe() whenever a fresh (age-matching)
+    // gpu_tt hit actually gets used to produce a returned score -- see
+    // usage_ratio_percent()'s doc below for what this measures.
+    void record_useful_hit() { useful_hits_.fetch_add(1, std::memory_order_relaxed); }
+
+    std::uint64_t stores() const { return stores_.load(std::memory_order_relaxed); }
+    std::uint64_t useful_hits() const { return useful_hits_.load(std::memory_order_relaxed); }
+
+    // Of the positions the GPU thread computed and stored (this search),
+    // what fraction were ever actually consulted by TranspositionTable::
+    // probe() and used to produce a result (not just "the key still
+    // happened to match on some later probe() call that DIDN'T end up
+    // using it", e.g. a deep-remaining-depth probe past the depth<=1
+    // gate) -- i.e. how much of the GPU thread's work was wasted vs.
+    // genuinely useful for search. NOT the same as a cache hit rate:
+    // a single computed position could be probed (and used) many times
+    // by different workers/nodes, so this can exceed 100%.
+    double usage_ratio_percent() const {
+        const std::uint64_t s = stores();
+        return s == 0 ? 0.0 : (100.0 * static_cast<double>(useful_hits()) / static_cast<double>(s));
     }
 
 private:
@@ -92,6 +123,8 @@ private:
     std::size_t capacity_ = 0;
     std::size_t index_mask_ = 0;
     std::uint8_t current_age_ = 0;
+    std::atomic<std::uint64_t> stores_{0};
+    std::atomic<std::uint64_t> useful_hits_{0};
 };
 
 // One shared instance, mirroring TranspositionTable's ownership pattern
