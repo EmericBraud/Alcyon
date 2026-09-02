@@ -269,6 +269,21 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         bool tt_hit = shared_tt.probe(board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move, flag);
         if (tt_move != excluded_move && search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
             return tt_score;
+
+        // A TT hit here (that didn't already return above) is PROVEN to
+        // recur: this exact position was already reached via a different
+        // move order/search path. That makes it a much better bet for
+        // "will this be looked at again" than an arbitrary leaf -- unlike
+        // a near-alpha qsearch leaf (tried and discarded: measured at
+        // ~4% useful_hits, most such leaves are refuted branches
+        // alpha-beta walks away from and never revisits), a transposed
+        // position's odds of being probed again only grow as iterative
+        // deepening keeps re-walking the same shallow prefixes at
+        // increasing depth. Gated by depth so this doesn't fire on every
+        // trivially-shallow transposition (extremely frequent, least
+        // valuable per position).
+        if (tt_hit && depth >= gpu_eval::kMinDepthForTranspositionSubmit)
+            maybe_submit_transposition_to_gpu(depth);
     }
 
     if (search::should_qsearch(depth, ply, in_check))

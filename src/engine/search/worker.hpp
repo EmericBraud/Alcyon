@@ -146,6 +146,26 @@ struct SearchWorker
     // silently on a full/contended queue, so worst case is more drops).
     void maybe_submit_pv_leaf_to_gpu_throttled(Move pv_root, int depth);
 
+    // Shared tail end of the PV-leaf submission: assumes `board` is
+    // ALREADY at the position to submit (caller's responsibility to get
+    // there and unwind afterwards) -- ranks legal replies with this
+    // worker's own heuristics and pushes a GpuTask. Used by both
+    // maybe_submit_pv_leaf_to_gpu (after its PV walk) and
+    // maybe_submit_transposition_to_gpu (below, no walk needed).
+    void submit_current_position_to_gpu(int depth);
+
+    // Called from negamax right after a TT probe that hit (see
+    // negamax.cpp) -- `board` is already the position that just proved
+    // to BE a transposition (reached via a different move order/search
+    // path before). That's a much better bet for "will this be looked at
+    // again" than an arbitrary leaf: a near-fail-low qsearch leaf was
+    // tried and measured at ~4% useful_hits (most are refuted branches
+    // alpha-beta abandons for good), while a transposed position's odds
+    // of recurring only grow as iterative deepening re-walks the same
+    // shallow prefixes at increasing depth. Gated by
+    // gpu_eval::kMinDepthForTranspositionSubmit at the call site.
+    void maybe_submit_transposition_to_gpu(int depth);
+
     inline VBoard &get_board()
     {
         return board;

@@ -41,6 +41,17 @@ inline constexpr int kNumCandidateMoves = 5;
 // dropped rather than causing unbounded cost.
 inline constexpr int kMinDepthForMidSearchSubmit = 6;
 
+// Transposition submissions (see negamax.cpp's TT-probe branch and
+// SearchWorker::maybe_submit_transposition_to_gpu): a TT hit proves the
+// position was already reached via a different move order/search path,
+// making it a much better bet for "will this be looked at again" than
+// an arbitrary leaf (tried first: a near-alpha qsearch leaf, measured at
+// ~4% useful_hits -- most are refuted branches alpha-beta abandons for
+// good and never revisits). Gated by depth so this doesn't fire on
+// every trivially-shallow transposition (extremely frequent, least
+// valuable per position individually).
+inline constexpr int kMinDepthForTranspositionSubmit = 4;
+
 // How many queued PV-leaf tasks the GPU thread drains and encodes
 // together before firing a single GpuBackend::infer_batch() call (see
 // GpuQueue::run(), gpu_queue.cpp). A small network like this one is
