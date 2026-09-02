@@ -18,6 +18,7 @@ data/tuning_epd
 
 data/tuning_output
 py_scripts/
+external/
 
 compile_commands.json
 profile.txt

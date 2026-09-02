@@ -1,9 +1,10 @@
+#include "see.hpp"
 #include "engine/search/worker.hpp"
 
 #include "core/move/generator/move_generator.hpp"
 
 template <Color Side>
-int SearchWorker::see(int sq, Piece target, Piece attacker, int from_sq) const
+int compute_see(const Board &board, int sq, Piece target, Piece attacker, int from_sq)
 {
     int value[32];
     int d = 0;
@@ -48,6 +49,15 @@ int SearchWorker::see(int sq, Piece target, Piece attacker, int from_sq) const
     }
 
     return value[0];
+}
+
+template int compute_see<WHITE>(const Board &board, int sq, Piece target, Piece attacker, int from_sq);
+template int compute_see<BLACK>(const Board &board, int sq, Piece target, Piece attacker, int from_sq);
+
+template <Color Side>
+int SearchWorker::see(int sq, Piece target, Piece attacker, int from_sq) const
+{
+    return compute_see<Side>(board, sq, target, attacker, from_sq);
 }
 
 template int SearchWorker::see<WHITE>(int sq, Piece target, Piece attacker, int from_sq) const;

@@ -10,6 +10,7 @@
 #include "worker.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 
 template <Color Us>
 int SearchWorker::score_move(const Move &move, const Move &tt_move, int ply, const Move &prev_move) const
@@ -239,10 +240,21 @@ void SearchWorker::maybe_submit_pv_leaf_to_gpu(Move pv_root, int depth)
         moves_to_unplay[num_moves_to_unplay++] = m;
     }
 
-    // `board` is now at the PV leaf -- rank replies with this worker's
-    // own heuristic tables (history/killers/continuation history),
-    // per gpu_eval::kNumCandidateMoves, same one-shot scorer + partial
-    // selection idiom as engine_manager.hpp's root move-scoring path.
+    // `board` is now at the PV leaf.
+    submit_current_position_to_gpu(depth);
+
+    for (int i = num_moves_to_unplay - 1; i >= 0; --i)
+        board.Board::unplay(moves_to_unplay[i]);
+}
+
+void SearchWorker::submit_current_position_to_gpu(int depth)
+{
+    // Assumes `board` is ALREADY at the position to submit -- callers are
+    // responsible for getting there (and back) themselves; this just
+    // ranks replies with this worker's own heuristic tables (history/
+    // killers/continuation history), per gpu_eval::kNumCandidateMoves,
+    // same one-shot scorer + partial selection idiom as engine_manager.
+    // hpp's root move-scoring path, and pushes the task.
     MoveList list;
     MoveGen::generate_legal_moves(board, list);
     if (board.get_side_to_move() == WHITE)
@@ -264,9 +276,18 @@ void SearchWorker::maybe_submit_pv_leaf_to_gpu(Move pv_root, int depth)
         task.candidate_moves[i] = list.pick_best_move(i);
 
     gpu_eval::shared_gpu_queue().push(task);
+}
 
-    for (int i = num_moves_to_unplay - 1; i >= 0; --i)
-        board.Board::unplay(moves_to_unplay[i]);
+void SearchWorker::maybe_submit_transposition_to_gpu(int depth)
+{
+    // Called from negamax right after a TT probe that hit -- `board` is
+    // already the transposed position, no PV walk needed (unlike
+    // maybe_submit_pv_leaf_to_gpu). Depth gating happens at the call
+    // site (gpu_eval::kMinDepthForTranspositionSubmit); this only checks
+    // the master on/off switch.
+    if (!gpu_eval::enabled.load(std::memory_order_relaxed))
+        return;
+    submit_current_position_to_gpu(depth);
 }
 
 void SearchWorker::maybe_submit_pv_leaf_to_gpu_throttled(Move pv_root, int depth)
