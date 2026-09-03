@@ -531,6 +531,7 @@ public:
                           << " useful_hits=" << gpu_eval::shared_gpu_tt().useful_hits()
                           << " ratio=" << gpu_eval::shared_gpu_tt().usage_ratio_percent() << "%"
                           << " disagreement_hits=" << gpu_eval::shared_gpu_tt().disagreement_hits()
+                          << " neutral_agreement_rejected=" << gpu_eval::shared_gpu_tt().neutral_agreement_rejected()
                           << " total_value_ratio=" << gpu_eval::shared_gpu_tt().total_value_ratio_percent() << "%"
                           << " redundant=" << gpu_eval::shared_gpu_tt().redundant_stores()
                           << " redundant_rate=" << gpu_eval::shared_gpu_tt().redundant_rate_percent() << "%"

@@ -50,6 +50,7 @@ public:
         stores_.store(0, std::memory_order_relaxed);
         useful_hits_.store(0, std::memory_order_relaxed);
         disagreement_hits_.store(0, std::memory_order_relaxed);
+        neutral_agreement_rejected_.store(0, std::memory_order_relaxed);
         redundant_stores_.store(0, std::memory_order_relaxed);
         collisions_.store(0, std::memory_order_relaxed);
     }
@@ -120,9 +121,21 @@ public:
     // NEVER hit again by any probe() is truly wasted GPU-thread work.
     void record_disagreement_hit() { disagreement_hits_.fetch_add(1, std::memory_order_relaxed); }
 
+    // Call whenever NNUE and the GPU score both classify a position as
+    // TTCutDecision::Neutral (neither wants to cut) but disagree in
+    // magnitude by more than gpu_eval::kNeutralAgreementMaxGapCp -- see
+    // transp_table.hpp's should_trust_gpu_score(). This is the specific
+    // case the "asymmetric" trust rule added on top of plain
+    // classification agreement (docs/gpu-async-eval/
+    // consultative-eval-measurements.md section 6): measures how often
+    // that extra gate actually fires in practice, since a case that
+    // never fires isn't worth validating with a full match.
+    void record_neutral_agreement_rejected() { neutral_agreement_rejected_.fetch_add(1, std::memory_order_relaxed); }
+
     std::uint64_t stores() const { return stores_.load(std::memory_order_relaxed); }
     std::uint64_t useful_hits() const { return useful_hits_.load(std::memory_order_relaxed); }
     std::uint64_t disagreement_hits() const { return disagreement_hits_.load(std::memory_order_relaxed); }
+    std::uint64_t neutral_agreement_rejected() const { return neutral_agreement_rejected_.load(std::memory_order_relaxed); }
     std::uint64_t redundant_stores() const { return redundant_stores_.load(std::memory_order_relaxed); }
     std::uint64_t collisions() const { return collisions_.load(std::memory_order_relaxed); }
 
@@ -187,6 +200,7 @@ private:
     std::atomic<std::uint64_t> stores_{0};
     std::atomic<std::uint64_t> useful_hits_{0};
     std::atomic<std::uint64_t> disagreement_hits_{0};
+    std::atomic<std::uint64_t> neutral_agreement_rejected_{0};
     std::atomic<std::uint64_t> redundant_stores_{0};
     std::atomic<std::uint64_t> collisions_{0};
 };

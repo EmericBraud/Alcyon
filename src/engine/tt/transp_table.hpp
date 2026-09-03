@@ -38,6 +38,19 @@ inline TTCutDecision classify_cut_decision(int score, int alpha, int beta)
     return TTCutDecision::Neutral;
 }
 
+// Outcome of should_trust_gpu_score() below -- split into three cases
+// (not just trust/don't) so callers can distinguish "the models
+// actively disagree on direction" from "they agree on Neutral but the
+// magnitude gate rejected it", the latter being the NEW behavior this
+// enum exists to measure the real-world impact of (see
+// GpuTT::record_neutral_agreement_rejected() and gpuevalstats).
+enum class TTTrustVerdict : std::uint8_t
+{
+    Trust,                // agree, and (if Neutral) close enough in magnitude
+    DirectionDisagreement, // classifications differ outright
+    NeutralGapTooLarge,   // both Neutral, but |nnue - gpu| > kNeutralAgreementMaxGapCp
+};
+
 // Refines plain classification agreement with an asymmetric rule: a
 // CUTOFF (both Low, or both High) only needs the right DIRECTION to be
 // correct -- alpha-beta pruning discards the branch either way, so the
@@ -53,15 +66,16 @@ inline TTCutDecision classify_cut_decision(int score, int alpha, int beta)
 // be close in magnitude (see kNeutralAgreementMaxGapCp) before trusting
 // either one. See docs/gpu-async-eval/consultative-eval-measurements.md
 // section 6 for the reasoning and the measurements behind it.
-inline bool should_trust_gpu_score(int nnue_score, int gpu_score, int alpha, int beta)
+inline TTTrustVerdict should_trust_gpu_score(int nnue_score, int gpu_score, int alpha, int beta)
 {
     const TTCutDecision nnue_decision = classify_cut_decision(nnue_score, alpha, beta);
     const TTCutDecision gpu_decision = classify_cut_decision(gpu_score, alpha, beta);
     if (nnue_decision != gpu_decision)
-        return false;
-    if (nnue_decision == TTCutDecision::Neutral)
-        return std::abs(nnue_score - gpu_score) <= gpu_eval::kNeutralAgreementMaxGapCp;
-    return true;
+        return TTTrustVerdict::DirectionDisagreement;
+    if (nnue_decision == TTCutDecision::Neutral &&
+        std::abs(nnue_score - gpu_score) > gpu_eval::kNeutralAgreementMaxGapCp)
+        return TTTrustVerdict::NeutralGapTooLarge;
+    return TTTrustVerdict::Trust;
 }
 
 enum TTFlag : std::uint8_t
@@ -271,19 +285,29 @@ public:
                 gpu_age == gpu_eval::shared_gpu_tt().current_age())
             {
                 const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
-                if (should_trust_gpu_score(nnue_score, gpu_score, alpha, beta))
+                switch (should_trust_gpu_score(nnue_score, gpu_score, alpha, beta))
                 {
+                case TTTrustVerdict::Trust:
                     score = gpu_score;
                     gpu_eval::shared_gpu_tt().record_useful_hit();
-                }
-                else
-                {
+                    break;
+                case TTTrustVerdict::NeutralGapTooLarge:
+                    // Both agree "don't cut" but disagree enough in
+                    // magnitude to reject trusting either score (see
+                    // kNeutralAgreementMaxGapCp's doc) -- tracked
+                    // separately from a direction disagreement to
+                    // measure how often this specific gate actually
+                    // fires (see GpuTT::neutral_agreement_rejected()).
+                    gpu_eval::shared_gpu_tt().record_neutral_agreement_rejected();
+                    break;
+                case TTTrustVerdict::DirectionDisagreement:
                     // Disagreement: leave `score` as the main TT's own
                     // (real-search) value -- the GPU's opinion is
                     // discarded for this probe, not force-applied. Still
                     // real value extracted (see record_disagreement_hit's
                     // doc), not wasted work.
                     gpu_eval::shared_gpu_tt().record_disagreement_hit();
+                    break;
                 }
             }
 
@@ -338,7 +362,8 @@ public:
                 // so this just falls through to `return false` below,
                 // letting negamax's normal move loop run for real.
                 const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
-                if (should_trust_gpu_score(nnue_score, gpu_score, alpha, beta))
+                const TTTrustVerdict verdict = should_trust_gpu_score(nnue_score, gpu_score, alpha, beta);
+                if (verdict == TTTrustVerdict::Trust)
                 {
                     best_move = found_move ? best_move : Move(0);
                     flag = TT_EXACT;
@@ -346,11 +371,14 @@ public:
                     return_score = score_from_tt(gpu_score, ply);
                     return true;
                 }
-                // Disagreement: real value too (flagged a contested
-                // position), just not a shortcut -- see
+                // Disagreement (either kind): real value too (flagged a
+                // contested position), just not a shortcut -- see
                 // record_disagreement_hit's doc. Falls through to
                 // `return false` below, letting the real move loop run.
-                gpu_eval::shared_gpu_tt().record_disagreement_hit();
+                if (verdict == TTTrustVerdict::NeutralGapTooLarge)
+                    gpu_eval::shared_gpu_tt().record_neutral_agreement_rejected();
+                else
+                    gpu_eval::shared_gpu_tt().record_disagreement_hit();
             }
         }
 
