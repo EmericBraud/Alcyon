@@ -1,5 +1,6 @@
 #include "gpu_queue.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -147,6 +148,67 @@ void quietify(VBoard &board, Move *out_moves, int &out_num_moves) {
     }
 }
 
+int eval_relative_dispatch(const VBoard &board, int alpha, int beta) {
+    return board.get_side_to_move() == WHITE
+        ? Eval::eval_relative<WHITE>(board, alpha, beta)
+        : Eval::eval_relative<BLACK>(board, alpha, beta);
+}
+
+// Self-contained fixed-depth minimax (full legal moves, not just
+// captures -- unlike quietify_qsearch) used ONLY to resolve a NNUE/CNN
+// disagreement on the GPU-prep thread itself, BEFORE storing a score --
+// see the doc comment at its call site in run() for why this belongs
+// here instead of on the search hot path (docs/gpu-async-eval/
+// consultative-eval-measurements.md, "moving disagreement resolution to
+// the GPU thread"). No TT, no history heuristics, no killers -- simpler
+// and slower per node than the main search's negamax, which is fine
+// here (this thread has slack); alpha/beta is a heuristic window
+// bracketing the two disagreeing scores (see run()), not a real
+// PVS-derived bound, so it still gets real pruning without needing to
+// know any real caller's window (this thread doesn't have one).
+template <Color Us>
+int resolve_disagreement(VBoard &board, int alpha, int beta, int depth, int ply) {
+    if (depth <= 0) {
+        Move unused;
+        return quietify_qsearch<Us>(board, alpha, beta, ply, unused);
+    }
+
+    const bool in_check = board.is_king_attacked<Us>();
+    MoveList list;
+    MoveGen::generate_legal_moves<Us>(board, list);
+
+    for (int i = 0; i < list.count; ++i) {
+        const Move &m = list[i];
+        const bool is_capture = m.get_to_piece() != NO_PIECE || m.get_flags() == Move::EN_PASSANT_CAP;
+        list.scores[i] = is_capture
+            ? 1'000'000 + engine_constants::eval::MvvLvaTable[m.get_flags() == Move::EN_PASSANT_CAP ? PAWN : m.get_to_piece()][m.get_from_piece()]
+            : 0;
+    }
+
+    int best_score = -engine_constants::eval::Inf;
+    for (int i = 0; i < list.count; ++i) {
+        Move &m = list.pick_best_move(i);
+        board.template play<Us>(m);
+        const int score = -resolve_disagreement<!Us>(board, -beta, -alpha, depth - 1, ply + 1);
+        board.template unplay<Us>(m);
+
+        if (score > best_score) {
+            best_score = score;
+        }
+        if (score > alpha) {
+            alpha = score;
+        }
+        if (alpha >= beta) {
+            break;
+        }
+    }
+
+    if (list.count == 0) {
+        return in_check ? -engine_constants::eval::MateScore + ply : 0;
+    }
+    return best_score;
+}
+
 } // namespace
 
 bool GpuQueue::push(const GpuTask &task) {
@@ -226,6 +288,11 @@ void GpuQueue::run() {
     // unlike the main thread's 8MB) -- a plain stack-local VBoard here
     // blew the GPU thread's stack immediately on construction (SIGBUS).
     static VBoard scratch;
+    // Separate from `scratch` -- by the time a disagreement is resolved
+    // (after the whole batch's infer_batch() call), `scratch` has moved
+    // on to other candidates/tasks, so resolution reloads the settled
+    // position from its own saved GpuPosition snapshot into this board.
+    static VBoard resolve_board;
     Move quiet_moves[kQuietifyMaxPlies];
     int quiet_num_moves = 0;
 
@@ -238,6 +305,15 @@ void GpuQueue::run() {
     static std::uint64_t child_keys[kMaxBatchPositions];
     static std::uint8_t child_depths[kMaxBatchPositions];
     static std::int32_t scores[kMaxBatchPositions];
+    // NNUE eval of the settled position, captured at encode time (while
+    // `scratch` is still live there) -- compared against the CNN's score
+    // after inference to decide whether to trust it outright or resolve
+    // the disagreement with a real search (see run()'s post-inference
+    // loop below).
+    static int nnue_cps[kMaxBatchPositions];
+    // Saved so a disagreement can be resolved after the batch inference
+    // call, once `scratch` has already moved on -- see resolve_board.
+    static GpuPosition resolved_positions[kMaxBatchPositions];
 
     while (running_.load(std::memory_order_relaxed)) {
         int batch_size = 0;
@@ -318,6 +394,11 @@ void GpuQueue::run() {
                     piece_counts[batch_size] = non_king_piece_count(child);
                     child_keys[batch_size] = child.zobrist_key;
                     child_depths[batch_size] = task->depth;
+                    // Captured now, while `scratch` is still live at the
+                    // settled position -- see nnue_cps/resolved_positions'
+                    // doc above.
+                    nnue_cps[batch_size] = eval_relative_dispatch(scratch, -engine_constants::eval::Inf, engine_constants::eval::Inf);
+                    resolved_positions[batch_size] = child;
                     ++batch_size;
                 }
 
@@ -335,8 +416,35 @@ void GpuQueue::run() {
 
         GpuBackend::instance().infer_batch(&planes_batch[0][0][0], piece_counts, batch_size, scores);
 
+        // Compare NNUE vs CNN and, on agreement, store the CNN score
+        // directly -- OR, on disagreement, resolve it with a real bounded
+        // search RIGHT HERE, on this (mostly idle) thread, and store that
+        // instead. This is the whole point of moving the check here: the
+        // main search threads used to do this same comparison (and, on
+        // disagreement, a bounded search extension) on their own hot
+        // path -- measured to net LOSE ~23 Elo in a real match, because
+        // that cost competed for the SAME fixed time budget as the rest
+        // of the search tree (see docs/gpu-async-eval/
+        // consultative-eval-measurements.md). Doing it here instead means
+        // the main search threads go back to trusting any fresh GPU-tt
+        // score unconditionally (cheap, no extra eval, no extension) --
+        // all the verification cost is paid for by a thread that was
+        // otherwise idle, not by the search's own time budget.
         for (int i = 0; i < batch_size; ++i) {
-            shared_gpu_tt().store(child_keys[i], static_cast<std::int16_t>(scores[i]), child_depths[i]);
+            int final_score = scores[i];
+            if (std::abs(nnue_cps[i] - scores[i]) <= kNeutralAgreementMaxGapCp) {
+                shared_gpu_tt().record_agreement();
+            } else {
+                const int lo = std::min(nnue_cps[i], scores[i]) - kNeutralAgreementMaxGapCp;
+                const int hi = std::max(nnue_cps[i], scores[i]) + kNeutralAgreementMaxGapCp;
+                if (resolve_board.load_fen(resolved_positions[i].to_fen())) {
+                    final_score = resolve_board.get_side_to_move() == WHITE
+                        ? resolve_disagreement<WHITE>(resolve_board, lo, hi, kDisagreementExtensionPlies, 0)
+                        : resolve_disagreement<BLACK>(resolve_board, lo, hi, kDisagreementExtensionPlies, 0);
+                }
+                shared_gpu_tt().record_resolved_disagreement();
+            }
+            shared_gpu_tt().store(child_keys[i], static_cast<std::int16_t>(final_score), child_depths[i]);
         }
     }
 }
