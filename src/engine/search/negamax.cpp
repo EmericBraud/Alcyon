@@ -287,7 +287,44 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     }
 
     if (search::should_qsearch(depth, ply, in_check))
+    {
+        // Consult the GPU tt directly here, right before dropping into
+        // qsearch -- this is the frontier-node case (no main-TT entry
+        // for this key yet, e.g. a PV-leaf child freshly precomputed by
+        // the GPU queue). Trusting the GPU score outright when it
+        // agrees with NNUE is a free O(1) shortcut; on disagreement,
+        // rather than discarding the GPU's opinion and paying for a
+        // plain qsearch anyway (measured to net lose vs just trusting
+        // the score, see gpu_eval::kDisagreementExtensionPlies's doc),
+        // resolve it with a bounded real search instead.
+        if (gpu_eval::enabled.load(std::memory_order_relaxed))
+        {
+            int16_t gpu_score;
+            std::uint8_t gpu_depth, gpu_age;
+            if (gpu_eval::shared_gpu_tt().probe(board.get_hash(), gpu_score, gpu_depth, gpu_age) &&
+                gpu_age == gpu_eval::shared_gpu_tt().current_age())
+            {
+                const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
+                const TTTrustVerdict verdict = should_trust_gpu_score(nnue_score, gpu_score, alpha, beta);
+                if (verdict == TTTrustVerdict::Trust)
+                {
+                    gpu_eval::shared_gpu_tt().record_useful_hit();
+                    int score = gpu_score;
+                    if (score > engine_constants::eval::MateScore - 256)
+                        score -= ply;
+                    else if (score < -engine_constants::eval::MateScore + 256)
+                        score += ply;
+                    return score;
+                }
+                if (verdict == TTTrustVerdict::NeutralGapTooLarge)
+                    gpu_eval::shared_gpu_tt().record_neutral_agreement_rejected();
+                else
+                    gpu_eval::shared_gpu_tt().record_disagreement_hit();
+                return negamax<Us>(gpu_eval::kDisagreementExtensionPlies, alpha, beta, ply, true);
+            }
+        }
         return qsearch<Us>(alpha, beta, ply);
+    }
 
     if (search::reverse_futility_pruning<Us>(board, depth, ply, in_check, is_pv, beta))
         return beta;
