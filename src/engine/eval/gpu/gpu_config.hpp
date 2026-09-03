@@ -54,6 +54,19 @@ inline constexpr int kMinDepthForMidSearchSubmit = 6;
 // further tuning against that same methodology, not a derived optimum.
 inline constexpr int kNeutralAgreementMaxGapCp = 50;
 
+// On disagreement (see negamax.cpp's should_qsearch branch), instead of
+// dropping the GPU score entirely and falling back to a plain qsearch
+// (measured to net LOSE on a WAC tactical sample vs simply trusting the
+// GPU score -- see docs/gpu-async-eval/consultative-eval-measurements.md
+// section 6/7: spending real search time to "double-check" a contested
+// but already-computed position traded away budget from elsewhere in
+// the tree for no measured benefit), search a few plies deeper right
+// there instead of an unbounded qsearch-only resolution -- a bounded,
+// predictable cost that actually resolves the disagreement with real
+// search rather than just discarding the GPU's (imprecise but free)
+// opinion for nothing.
+inline constexpr int kDisagreementExtensionPlies = 3;
+
 // Transposition submissions (see negamax.cpp's TT-probe branch and
 // SearchWorker::maybe_submit_transposition_to_gpu): a TT hit proves the
 // position was already reached via a different move order/search path,

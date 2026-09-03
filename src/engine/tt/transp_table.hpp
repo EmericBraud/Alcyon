@@ -328,60 +328,17 @@ public:
             }
         }
 
-        // Independent gpu_tt check -- the primary case: a brand-new node
-        // (no main-TT entry at all yet, so the loop above never ran the
-        // override) that the GPU queue precomputed a score for while it
-        // was still just a candidate reply off a previous iteration's PV
-        // leaf (see SearchWorker::maybe_submit_pv_leaf_to_gpu). That's a
-        // frontier node, reached with a small remaining `depth` budget
-        // (iterative deepening only grows the root depth by 1 per
-        // iteration) -- gate on `depth <= 1` to keep it that way: without
-        // this, an unrelated deep interior node (small remaining-depth
-        // requests aside) that happens to TRANSPOSE into the same zobrist
-        // key would let a single CNN static eval silently substitute for
-        // an arbitrarily deep real search there, which is a real blunder
-        // risk (see docs/gpu-async-eval/v5-hybrid-nnue-cnn.md's "risque:
-        // la correction peut pousser dans le mauvais sens" discussion).
-        // Also gated by generation: a stale hit from a previous search
-        // root (an earlier move played, or an earlier `go`) must not be
-        // trusted even if the key still matches.
-        if (depth <= 1)
-        {
-            int16_t gpu_score;
-            std::uint8_t gpu_depth, gpu_age;
-            if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age) &&
-                gpu_age == gpu_eval::shared_gpu_tt().current_age())
-            {
-                // Consultative check (see the class-level comment on
-                // classify_cut_decision above): only short-circuit the
-                // real search here if the position's own NNUE eval
-                // agrees with the GPU score on the cutoff decision. A
-                // disagreement means this position is contested --
-                // exactly the case worth spending a real search on
-                // instead of trusting either model's unverified score,
-                // so this just falls through to `return false` below,
-                // letting negamax's normal move loop run for real.
-                const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
-                const TTTrustVerdict verdict = should_trust_gpu_score(nnue_score, gpu_score, alpha, beta);
-                if (verdict == TTTrustVerdict::Trust)
-                {
-                    best_move = found_move ? best_move : Move(0);
-                    flag = TT_EXACT;
-                    gpu_eval::shared_gpu_tt().record_useful_hit();
-                    return_score = score_from_tt(gpu_score, ply);
-                    return true;
-                }
-                // Disagreement (either kind): real value too (flagged a
-                // contested position), just not a shortcut -- see
-                // record_disagreement_hit's doc. Falls through to
-                // `return false` below, letting the real move loop run.
-                if (verdict == TTTrustVerdict::NeutralGapTooLarge)
-                    gpu_eval::shared_gpu_tt().record_neutral_agreement_rejected();
-                else
-                    gpu_eval::shared_gpu_tt().record_disagreement_hit();
-            }
-        }
-
+        // NOTE: the brand-new-node case (no main-TT entry at all, e.g. a
+        // PV-leaf child freshly precomputed by the GPU queue) used to be
+        // handled here too, with the same trust-or-nothing logic as
+        // above. Moved to negamax.cpp's should_qsearch branch instead --
+        // that call site can recurse back into negamax() with a bounded
+        // extra-depth search on disagreement (see
+        // gpu_eval::kDisagreementExtensionPlies), which this method
+        // cannot do (a TT probe has no business calling back into the
+        // search). See docs/gpu-async-eval/consultative-eval-measurements.md
+        // section 6 for why a plain reject-and-drop-to-qsearch measured
+        // worse than trusting the (imprecise but free) GPU score there.
         return false;
     }
 
