@@ -41,30 +41,26 @@ inline constexpr int kNumCandidateMoves = 5;
 // dropped rather than causing unbounded cost.
 inline constexpr int kMinDepthForMidSearchSubmit = 6;
 
-// Only used when NNUE and the GPU score both classify a position as
-// TTCutDecision::Neutral (neither wants to cut) -- see transp_table.
-// hpp's should_trust_gpu_score(). Unlike a cutoff, which only needs
-// agreement on DIRECTION (see that function's doc for why), a Neutral
-// verdict can have its exact score value returned/used further up the
-// tree, so the two models additionally need to be close in magnitude,
-// not just agree on "don't cut", before that score is trusted.
-// training/cnn/eval_compare/v3_vs_v6_error_prediction.py measured that
-// |nnue_cp - v3_cp| predicts NNUE's real error well (AUC 0.84 on the
-// worst-20% positions) -- this threshold is a starting point pending
-// further tuning against that same methodology, not a derived optimum.
+// How close NNUE and the CNN score need to be (in cp) to count as
+// "agreeing" -- checked on the GPU-prep thread itself, BEFORE storing a
+// score (see gpu_queue.cpp's run()), not on the search hot path. This
+// used to gate a live comparison inside transp_table.hpp's probe() (an
+// extra NNUE eval + a search extension on disagreement, on the search
+// thread) -- measured to net LOSE ~23 Elo in a real match, because that
+// cost competed with the rest of the search tree for the same time
+// budget. Moved here instead: the GPU thread is mostly idle (see
+// gpubench-measured headroom), so it can absorb this cost for free,
+// leaving the search thread's probe() a cheap, unconditional trust
+// again. See docs/gpu-async-eval/consultative-eval-measurements.md.
 inline constexpr int kNeutralAgreementMaxGapCp = 50;
 
-// On disagreement (see negamax.cpp's should_qsearch branch), instead of
-// dropping the GPU score entirely and falling back to a plain qsearch
-// (measured to net LOSE on a WAC tactical sample vs simply trusting the
-// GPU score -- see docs/gpu-async-eval/consultative-eval-measurements.md
-// section 6/7: spending real search time to "double-check" a contested
-// but already-computed position traded away budget from elsewhere in
-// the tree for no measured benefit), search a few plies deeper right
-// there instead of an unbounded qsearch-only resolution -- a bounded,
-// predictable cost that actually resolves the disagreement with real
-// search rather than just discarding the GPU's (imprecise but free)
-// opinion for nothing.
+// On disagreement (gap > kNeutralAgreementMaxGapCp), the GPU-prep
+// thread resolves it with a bounded real search of its own (see
+// gpu_queue.cpp's resolve_disagreement()) instead of storing either
+// model's contested static score -- a few plies, not unbounded, to keep
+// this thread's own cost predictable. Also mostly off the search hot
+// path (this thread has slack), unlike the identically-named mechanism
+// this constant used to gate directly inside negamax.cpp.
 inline constexpr int kDisagreementExtensionPlies = 3;
 
 // Transposition submissions (see negamax.cpp's TT-probe branch and

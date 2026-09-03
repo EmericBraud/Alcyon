@@ -1,5 +1,4 @@
 #include "engine/tt/transp_table.hpp"
-#include "engine/eval/virtual_board.hpp"
 #include "gtest/gtest.h"
 
 class TTTest : public ::testing::Test
@@ -11,7 +10,6 @@ protected:
 };
 TEST_F(TTTest, MateScoreConsistency)
 {
-    VBoard board;
     TranspositionTable tt;
     tt.resize(1);
     uint64_t key = 12345ULL;
@@ -26,7 +24,7 @@ TEST_F(TTTest, MateScoreConsistency)
     Move m = 0;
     TTFlag flag;
     // On sonde à la racine (ply 0)
-    bool hit = tt.probe<WHITE>(key, 10, 0, -1000000, 1000000, retrieved_score, m, flag, board);
+    bool hit = tt.probe(key, 10, 0, -1000000, 1000000, retrieved_score, m, flag);
 
     ASSERT_TRUE(hit);
 
@@ -38,7 +36,6 @@ TEST_F(TTTest, MateScoreConsistency)
 }
 TEST_F(TTTest, DepthReplacement)
 {
-    VBoard board;
     TranspositionTable tt;
     tt.resize(1);
     uint64_t key = 0xABC;
@@ -52,12 +49,11 @@ TEST_F(TTTest, DepthReplacement)
     int score;
     Move m = 0;
     TTFlag flag;
-    tt.probe<WHITE>(key, 5, 0, -engine_constants::eval::Inf, engine_constants::eval::Inf, score, m, flag, board);
+    tt.probe(key, 5, 0, -engine_constants::eval::Inf, engine_constants::eval::Inf, score, m, flag);
     ASSERT_EQ(score, 100); // La profondeur 5 doit avoir été conservée car 5 > 3
 }
 TEST_F(TTTest, AlphaBetaCuts)
 {
-    VBoard board;
     TranspositionTable tt;
     tt.resize(1);
     uint64_t key = 0x1;
@@ -71,7 +67,7 @@ TEST_F(TTTest, AlphaBetaCuts)
     // Test 1 : Fenêtre [60, 80].
     // Comme 50 <= 60, on sait que cette branche ne peut pas améliorer Alpha.
     // C'est un HIT, et le score retourné doit être <= Alpha.
-    bool hit = tt.probe<WHITE>(key, 10, 0, 60, 80, score, m, flag, board);
+    bool hit = tt.probe(key, 10, 0, 60, 80, score, m, flag);
     ASSERT_TRUE(hit);
     ASSERT_LE(score, 60); // On vérifie que le score ne dépasse pas alpha
     ASSERT_EQ(score, 50); // En réalité, il doit retourner la valeur exacte stockée
@@ -80,6 +76,6 @@ TEST_F(TTTest, AlphaBetaCuts)
     // On sait que score <= 50. Est-ce que le score est <= 30 ? On ne sait pas.
     // Est-ce que le score est >= 40 ? On ne sait pas (il pourrait être 35).
     // On ne peut pas couper. hit doit être FALSE.
-    hit = tt.probe<WHITE>(key, 10, 0, 30, 40, score, m, flag, board);
+    hit = tt.probe(key, 10, 0, 30, 40, score, m, flag);
     ASSERT_FALSE(hit);
 }

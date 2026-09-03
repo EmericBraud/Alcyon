@@ -7,76 +7,17 @@
 #include "core/move/move.hpp"
 #include "engine/config/config.hpp"
 #include "engine/eval/gpu/gpu_tt.hpp"
-#include "engine/eval/pos_eval.hpp"
-#include "engine/eval/virtual_board.hpp"
 
-// Consultative use of a GPU-computed score: classify a score against the
-// current alpha-beta window (would it cause a fail-high, a fail-low, or
-// stay inside the window?) and only trust the GPU override when its
-// classification AGREES with the position's own NNUE eval -- see
-// docs/gpu-async-eval/v5-hybrid-nnue-cnn.md's "risque: la correction peut
-// pousser dans le mauvais sens" section, which explicitly recommended a
-// consultative (not absolute) integration instead of blindly substituting
-// scores. When the two models disagree on the cutoff decision (one wants
-// to cut and the other doesn't, or both want to cut but in opposite
-// directions), that disagreement is itself the signal: this position's
-// static evaluation is contested, so it's worth spending real search on
-// instead of shortcutting with either model's unverified opinion.
-enum class TTCutDecision : std::uint8_t
-{
-    Low,     // score <= alpha: this eval would fail low
-    Neutral, // alpha < score < beta: stays inside the window
-    High     // score >= beta: this eval would fail high
-};
-
-inline TTCutDecision classify_cut_decision(int score, int alpha, int beta)
-{
-    if (score <= alpha)
-        return TTCutDecision::Low;
-    if (score >= beta)
-        return TTCutDecision::High;
-    return TTCutDecision::Neutral;
-}
-
-// Outcome of should_trust_gpu_score() below -- split into three cases
-// (not just trust/don't) so callers can distinguish "the models
-// actively disagree on direction" from "they agree on Neutral but the
-// magnitude gate rejected it", the latter being the NEW behavior this
-// enum exists to measure the real-world impact of (see
-// GpuTT::record_neutral_agreement_rejected() and gpuevalstats).
-enum class TTTrustVerdict : std::uint8_t
-{
-    Trust,                // agree, and (if Neutral) close enough in magnitude
-    DirectionDisagreement, // classifications differ outright
-    NeutralGapTooLarge,   // both Neutral, but |nnue - gpu| > kNeutralAgreementMaxGapCp
-};
-
-// Refines plain classification agreement with an asymmetric rule: a
-// CUTOFF (both Low, or both High) only needs the right DIRECTION to be
-// correct -- alpha-beta pruning discards the branch either way, so the
-// exact magnitude never affects the search result once both models
-// agree it should be cut (measured: v3's disagreement magnitude with
-// NNUE is a strong predictor of NNUE's real error, AUC 0.84 on cp-scale
-// ground truth -- see training/cnn/eval_compare/
-// v3_vs_v6_error_prediction.py -- but that precision doesn't matter
-// here since the cut happens regardless). A NEUTRAL/NEUTRAL agreement
-// is different: neither model wants to cut, so the returned score can
-// itself propagate further up the tree (PV, comparisons at the parent)
-// -- there, "same direction" isn't enough, the two scores also need to
-// be close in magnitude (see kNeutralAgreementMaxGapCp) before trusting
-// either one. See docs/gpu-async-eval/consultative-eval-measurements.md
-// section 6 for the reasoning and the measurements behind it.
-inline TTTrustVerdict should_trust_gpu_score(int nnue_score, int gpu_score, int alpha, int beta)
-{
-    const TTCutDecision nnue_decision = classify_cut_decision(nnue_score, alpha, beta);
-    const TTCutDecision gpu_decision = classify_cut_decision(gpu_score, alpha, beta);
-    if (nnue_decision != gpu_decision)
-        return TTTrustVerdict::DirectionDisagreement;
-    if (nnue_decision == TTCutDecision::Neutral &&
-        std::abs(nnue_score - gpu_score) > gpu_eval::kNeutralAgreementMaxGapCp)
-        return TTTrustVerdict::NeutralGapTooLarge;
-    return TTTrustVerdict::Trust;
-}
+// NOTE: this used to classify the GPU score against the current
+// alpha-beta window and only trust it when it agreed with a live NNUE
+// eval computed right here (classify_cut_decision/should_trust_gpu_score,
+// removed) -- moved to the GPU-prep thread itself instead (see
+// gpu_queue.cpp's run()), which already has NNUE's opinion for free
+// (the settled position's own eval_state) and can resolve a
+// disagreement with a bounded search WITHOUT costing the search
+// thread's own time budget. Doing the same check here, live, on every
+// probe() call was measured to net LOSE ~23 Elo in a real match: see
+// docs/gpu-async-eval/consultative-eval-measurements.md.
 
 enum TTFlag : std::uint8_t
 {
@@ -243,8 +184,7 @@ public:
             bucket.entries[replace_idx].save(key, move, (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age);
     }
 
-    template <Color Us>
-    bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move, TTFlag &flag, const VBoard &board)
+    bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move, TTFlag &flag)
     {
         TTBucket &bucket = table[key & index_mask];
         bool found_move = false;
@@ -279,36 +219,26 @@ public:
             // see docs/gpu-async-eval/architecture.md). Non-blocking read
             // of a small separate score cache; a no-op (miss) whenever
             // gpu_eval is disabled or this position was never submitted.
+            //
+            // Trusted UNCONDITIONALLY: the GPU-prep thread itself already
+            // compares this score against NNUE before storing it (agreeing
+            // outright, or resolving a disagreement with its own bounded
+            // search -- see gpu_queue.cpp's run()), so by the time it
+            // lands here it's already vetted. Comparing AGAIN here (an
+            // extra NNUE eval, plus a bounded search extension on
+            // disagreement) used to run on this search thread and was
+            // measured to net LOSE ~23 Elo in a real match: that cost
+            // competed with the rest of the search tree for the same time
+            // budget. Moving the verification to the (otherwise idle)
+            // GPU-prep thread keeps this probe cheap again. See
+            // docs/gpu-async-eval/consultative-eval-measurements.md.
             int16_t gpu_score;
             std::uint8_t gpu_depth, gpu_age;
             if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age) &&
                 gpu_age == gpu_eval::shared_gpu_tt().current_age())
             {
-                const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
-                switch (should_trust_gpu_score(nnue_score, gpu_score, alpha, beta))
-                {
-                case TTTrustVerdict::Trust:
-                    score = gpu_score;
-                    gpu_eval::shared_gpu_tt().record_useful_hit();
-                    break;
-                case TTTrustVerdict::NeutralGapTooLarge:
-                    // Both agree "don't cut" but disagree enough in
-                    // magnitude to reject trusting either score (see
-                    // kNeutralAgreementMaxGapCp's doc) -- tracked
-                    // separately from a direction disagreement to
-                    // measure how often this specific gate actually
-                    // fires (see GpuTT::neutral_agreement_rejected()).
-                    gpu_eval::shared_gpu_tt().record_neutral_agreement_rejected();
-                    break;
-                case TTTrustVerdict::DirectionDisagreement:
-                    // Disagreement: leave `score` as the main TT's own
-                    // (real-search) value -- the GPU's opinion is
-                    // discarded for this probe, not force-applied. Still
-                    // real value extracted (see record_disagreement_hit's
-                    // doc), not wasted work.
-                    gpu_eval::shared_gpu_tt().record_disagreement_hit();
-                    break;
-                }
+                score = gpu_score;
+                gpu_eval::shared_gpu_tt().record_useful_hit();
             }
 
             if (flag == TT_EXACT)

@@ -209,5 +209,105 @@ actuel (accord de classification 3-zones) pour la décision de couper —
 mais dans le cas `Neutral`/`Neutral`, appliquer en plus le critère
 d'ampleur continue (`|nnue - v3| > seuil`, validé section 5 avec
 AUC=0.84) pour décider si le score est fiable ou si une recherche
-réelle reste nécessaire. Pas encore implémenté à la fin de cette
-session.
+réelle reste nécessaire.
+
+## 7. Implémentation v1 du raffinement : rejet + qsearch (jamais commitée telle quelle)
+
+Première implémentation : sur `Neutral`/`Neutral` avec écart > 50cp,
+rejeter le score GPU et laisser `negamax` retomber dans son
+comportement par défaut (`qsearch` classique). Testé sur WAC (60 puis
+150 positions supplémentaires, 800ms/coup) contre la version qui fait
+toujours confiance :
+
+- **28/210 positions changent de coup selon la version (~13.3%)** —
+  effet réel, pas anecdotique.
+- Décodage manuel des cas lisibles : **3 victoires pour le rejet, 5-6
+  pour la confiance aveugle** — le rejet perd légèrement, alors que la
+  théorie (couper direction seulement, précision seulement sur
+  Neutral) semblait solide.
+
+**Pourquoi ce résultat contre-intuitif** : rejeter ne fait qu'annuler
+le raccourci gratuit et payer le prix plein d'une vraie recherche à cet
+endroit — sous un budget de temps fixe (`movetime`), cette dépense est
+retirée du reste de l'arbre, sans garantie de retour. Sur WAC (positions
+tactiques choisies pour être informatives), ça se justifie; sur des
+positions de partie normale (majoritairement calmes), beaucoup moins.
+Confirmé aussi par la non-monotonicité connue des moteurs d'échecs :
+un ordre de recherche légèrement différent à un nœud peut faire dévier
+le résultat ailleurs (historique/killers/TT), sans lien de cause à
+effet direct avec "plus de recherche = mieux".
+
+## 8. Implémentation v2 : extension bornée de 3 plis au lieu du rejet
+
+Au lieu d'abandonner et de laisser `qsearch` s'exécuter, en cas de
+désaccord `negamax.cpp` relance `negamax<Us>(kDisagreementExtensionPlies=3,
+alpha, beta, ply, true)` — une vraie recherche bornée et prévisible,
+pas un rejet sec. Retesté sur les mêmes 210 positions WAC :
+
+- **17/210 diffèrent (8.1%, en baisse par rapport à 13.3%)**.
+- Décodage manuel : **6 victoires pour l'extension, 1 pour la
+  confiance aveugle** — net renversement par rapport à v1.
+
+**Mais le vrai test (match complet, 300 parties GPU vs NoGPU, 10+0.1,
+via `py_scripts/gpu_match_tui.py`) a donné un résultat négatif net :**
+
+```
+Elo: -23.20 +/- 18.16   LOS: 0.60%   DrawRatio: 64.00%
+```
+
+Statistiquement significatif (intervalle [-41.4, -5.0], ne contient pas
+0) : la version GPU **perd ~23 Elo**, malgré la nette victoire sur WAC.
+
+**Diagnostic** : WAC est un banc tactique, pas représentatif d'une
+partie réelle — les positions y sont choisies précisément pour rendre
+le désaccord NNUE/CNN informatif. En partie réelle, la majorité des
+positions sont calmes, où le désaccord est un signal plus faible/plus
+bruité (cf. section 6's test à marge étroite, déjà mitigé). Le coût de
+l'extension (une vraie recherche de 3 plis, sur le thread de
+recherche, à chaque désaccord — mesuré à 10-32 fois par recherche de
+8s) s'accumule sur toute une partie et dépasse le gain, même s'il paie
+sur un échantillon tactique concentré.
+
+## 9. Implémentation v3 (retenue) : déplacer toute la vérification sur le thread GPU
+
+Constat du problème : tout le coût de la v2 (calcul NNUE de comparaison
++ extension de recherche) tombait sur les **threads de recherche**
+(CPU, budget partagé avec le reste de l'arbre), alors que le thread
+GPU-eval reste largement idle (voir section 1). Le principe retenu :
+**tout déplacer sur le thread idle, remettre le côté recherche à une
+confiance inconditionnelle** (comme avant toute la complexité
+consultative).
+
+Implémentation (`gpu_queue.cpp`) :
+- Après `infer_batch()`, pour chaque position : calcul de l'éval NNUE
+  sur la position déjà "quiet-ifiée" (`scratch` a déjà un état d'éval à
+  jour, coût marginal — comparable à ce que fait déjà `quietify_qsearch`
+  en interne).
+- **Accord** (écart ≤ `kNeutralAgreementMaxGapCp`) → stocke le score CNN
+  tel quel (`record_agreement()`).
+- **Désaccord** → résout avec une vraie recherche bornée
+  (`resolve_disagreement<Us>`, minimax complet à profondeur
+  `kDisagreementExtensionPlies=3`, fenêtre `[min(nnue,cnn)-50,
+  max(nnue,cnn)+50]` pour un élagage alpha-bêta réel malgré l'absence de
+  fenêtre "réelle" côté appelant) — stocke le score résolu
+  (`record_resolved_disagreement()`).
+- Côté recherche (`transp_table.hpp`, `negamax.cpp`) : retour à la
+  confiance inconditionnelle d'un hit frais dans la GPU TT — plus
+  aucun calcul NNUE ni extension sur le chemin chaud. `probe()` a
+  perdu son paramètre `board`/template `Us`, redevenu la version
+  simple d'avant tout le mécanisme consultatif.
+
+**Risque identifié avant implémentation (à juste titre)** : le thread
+GPU ne peut pas paralléliser une recherche de résolution comme il
+paralllélise l'inférence par batch — c'est du calcul séquentiel par
+position. Mesuré après implémentation : **`resolved_disagreement_rate`
+~68-74%** — le thread passe la majorité de son temps à résoudre des
+désaccords, pas juste à faire de l'inférence. Le débit de stores reste
+comparable à avant (~265-311/8s), et le NPS des threads de recherche
+n'a montré aucune régression mesurable (2.75-3.22M avec et sans GPU,
+écart dans le bruit habituel ~5-8%) — donc le thread GPU absorbe bien
+ce travail sans affecter les threads de recherche, mais il n'est plus
+vraiment "idle" pour autant. **Pas encore testé en match complet** à la
+fin de cette session — c'est la prochaine étape logique pour vérifier
+si ce déplacement de coût corrige effectivement le -23 Elo mesuré en
+section 8.
