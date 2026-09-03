@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 
 #include "common/cpu.hpp"
@@ -35,6 +36,32 @@ inline TTCutDecision classify_cut_decision(int score, int alpha, int beta)
     if (score >= beta)
         return TTCutDecision::High;
     return TTCutDecision::Neutral;
+}
+
+// Refines plain classification agreement with an asymmetric rule: a
+// CUTOFF (both Low, or both High) only needs the right DIRECTION to be
+// correct -- alpha-beta pruning discards the branch either way, so the
+// exact magnitude never affects the search result once both models
+// agree it should be cut (measured: v3's disagreement magnitude with
+// NNUE is a strong predictor of NNUE's real error, AUC 0.84 on cp-scale
+// ground truth -- see training/cnn/eval_compare/
+// v3_vs_v6_error_prediction.py -- but that precision doesn't matter
+// here since the cut happens regardless). A NEUTRAL/NEUTRAL agreement
+// is different: neither model wants to cut, so the returned score can
+// itself propagate further up the tree (PV, comparisons at the parent)
+// -- there, "same direction" isn't enough, the two scores also need to
+// be close in magnitude (see kNeutralAgreementMaxGapCp) before trusting
+// either one. See docs/gpu-async-eval/consultative-eval-measurements.md
+// section 6 for the reasoning and the measurements behind it.
+inline bool should_trust_gpu_score(int nnue_score, int gpu_score, int alpha, int beta)
+{
+    const TTCutDecision nnue_decision = classify_cut_decision(nnue_score, alpha, beta);
+    const TTCutDecision gpu_decision = classify_cut_decision(gpu_score, alpha, beta);
+    if (nnue_decision != gpu_decision)
+        return false;
+    if (nnue_decision == TTCutDecision::Neutral)
+        return std::abs(nnue_score - gpu_score) <= gpu_eval::kNeutralAgreementMaxGapCp;
+    return true;
 }
 
 enum TTFlag : std::uint8_t
@@ -244,7 +271,7 @@ public:
                 gpu_age == gpu_eval::shared_gpu_tt().current_age())
             {
                 const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
-                if (classify_cut_decision(nnue_score, alpha, beta) == classify_cut_decision(gpu_score, alpha, beta))
+                if (should_trust_gpu_score(nnue_score, gpu_score, alpha, beta))
                 {
                     score = gpu_score;
                     gpu_eval::shared_gpu_tt().record_useful_hit();
@@ -311,7 +338,7 @@ public:
                 // so this just falls through to `return false` below,
                 // letting negamax's normal move loop run for real.
                 const int nnue_score = Eval::eval_relative<Us>(board, alpha, beta);
-                if (classify_cut_decision(nnue_score, alpha, beta) == classify_cut_decision(gpu_score, alpha, beta))
+                if (should_trust_gpu_score(nnue_score, gpu_score, alpha, beta))
                 {
                     best_move = found_move ? best_move : Move(0);
                     flag = TT_EXACT;

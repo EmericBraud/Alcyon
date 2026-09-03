@@ -41,6 +41,19 @@ inline constexpr int kNumCandidateMoves = 5;
 // dropped rather than causing unbounded cost.
 inline constexpr int kMinDepthForMidSearchSubmit = 6;
 
+// Only used when NNUE and the GPU score both classify a position as
+// TTCutDecision::Neutral (neither wants to cut) -- see transp_table.
+// hpp's should_trust_gpu_score(). Unlike a cutoff, which only needs
+// agreement on DIRECTION (see that function's doc for why), a Neutral
+// verdict can have its exact score value returned/used further up the
+// tree, so the two models additionally need to be close in magnitude,
+// not just agree on "don't cut", before that score is trusted.
+// training/cnn/eval_compare/v3_vs_v6_error_prediction.py measured that
+// |nnue_cp - v3_cp| predicts NNUE's real error well (AUC 0.84 on the
+// worst-20% positions) -- this threshold is a starting point pending
+// further tuning against that same methodology, not a derived optimum.
+inline constexpr int kNeutralAgreementMaxGapCp = 50;
+
 // Transposition submissions (see negamax.cpp's TT-probe branch and
 // SearchWorker::maybe_submit_transposition_to_gpu): a TT hit proves the
 // position was already reached via a different move order/search path,
