@@ -533,6 +533,9 @@ public:
                           << " agreements=" << gpu_eval::shared_gpu_tt().agreements()
                           << " resolved_disagreements=" << gpu_eval::shared_gpu_tt().resolved_disagreements()
                           << " resolved_disagreement_rate=" << gpu_eval::shared_gpu_tt().resolved_disagreement_rate_percent() << "%"
+                          << " gpu_thread_busy=" << gpu_eval::shared_gpu_tt().gpu_thread_busy_percent() << "%"
+                          << " resolve_avg_nodes=" << gpu_eval::shared_gpu_tt().resolve_avg_nodes()
+                          << " resolve_avg_value_added=" << gpu_eval::shared_gpu_tt().resolve_avg_value_added_cp() << "cp"
                           << " redundant=" << gpu_eval::shared_gpu_tt().redundant_stores()
                           << " redundant_rate=" << gpu_eval::shared_gpu_tt().redundant_rate_percent() << "%"
                           << " collisions=" << gpu_eval::shared_gpu_tt().collisions()

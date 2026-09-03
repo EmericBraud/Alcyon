@@ -53,6 +53,11 @@ public:
         resolved_disagreements_.store(0, std::memory_order_relaxed);
         redundant_stores_.store(0, std::memory_order_relaxed);
         collisions_.store(0, std::memory_order_relaxed);
+        busy_ns_.store(0, std::memory_order_relaxed);
+        idle_ns_.store(0, std::memory_order_relaxed);
+        resolve_node_total_.store(0, std::memory_order_relaxed);
+        resolve_call_count_.store(0, std::memory_order_relaxed);
+        resolve_value_added_total_cp_.store(0, std::memory_order_relaxed);
     }
 
     // For freshness checks at the call site (see transp_table.hpp's
@@ -130,6 +135,44 @@ public:
     // would otherwise have to double-check itself.
     void record_resolved_disagreement() { resolved_disagreements_.fetch_add(1, std::memory_order_relaxed); }
 
+    // Wall-clock accounting for GpuQueue::run()'s main loop -- call once
+    // per loop iteration with how long the "real work" (drain + quietify
+    // + encode + infer_batch + agree-or-resolve + store) took, or how
+    // long the idle sleep_for() wait took when the queue was empty.
+    // Together these answer "how saturated is the GPU-prep thread" --
+    // see gpu_thread_busy_percent().
+    void record_busy_ns(std::uint64_t ns) { busy_ns_.fetch_add(ns, std::memory_order_relaxed); }
+    void record_idle_ns(std::uint64_t ns) { idle_ns_.fetch_add(ns, std::memory_order_relaxed); }
+
+    double gpu_thread_busy_percent() const {
+        const std::uint64_t busy = busy_ns_.load(std::memory_order_relaxed);
+        const std::uint64_t idle = idle_ns_.load(std::memory_order_relaxed);
+        const std::uint64_t total = busy + idle;
+        return total == 0 ? 0.0 : (100.0 * static_cast<double>(busy) / static_cast<double>(total));
+    }
+
+    // Call once per resolve_disagreement() call (gpu_queue.cpp) with how
+    // many nodes that bounded search visited, and how far its final
+    // score ended up from the closer of the two disagreeing inputs
+    // (NNUE's eval, the CNN's raw score) -- a resolution whose answer
+    // lands right on top of one of the two inputs added little new
+    // information; one that lands somewhere else entirely (a real
+    // alpha-beta verdict neither static model had) is doing real work.
+    void record_resolve_search(long long nodes, int value_added_cp) {
+        resolve_node_total_.fetch_add(static_cast<std::uint64_t>(nodes), std::memory_order_relaxed);
+        resolve_call_count_.fetch_add(1, std::memory_order_relaxed);
+        resolve_value_added_total_cp_.fetch_add(static_cast<std::uint64_t>(value_added_cp), std::memory_order_relaxed);
+    }
+
+    double resolve_avg_nodes() const {
+        const std::uint64_t calls = resolve_call_count_.load(std::memory_order_relaxed);
+        return calls == 0 ? 0.0 : static_cast<double>(resolve_node_total_.load(std::memory_order_relaxed)) / static_cast<double>(calls);
+    }
+    double resolve_avg_value_added_cp() const {
+        const std::uint64_t calls = resolve_call_count_.load(std::memory_order_relaxed);
+        return calls == 0 ? 0.0 : static_cast<double>(resolve_value_added_total_cp_.load(std::memory_order_relaxed)) / static_cast<double>(calls);
+    }
+
     std::uint64_t stores() const { return stores_.load(std::memory_order_relaxed); }
     std::uint64_t useful_hits() const { return useful_hits_.load(std::memory_order_relaxed); }
     std::uint64_t agreements() const { return agreements_.load(std::memory_order_relaxed); }
@@ -198,6 +241,11 @@ private:
     std::atomic<std::uint64_t> useful_hits_{0};
     std::atomic<std::uint64_t> agreements_{0};
     std::atomic<std::uint64_t> resolved_disagreements_{0};
+    std::atomic<std::uint64_t> busy_ns_{0};
+    std::atomic<std::uint64_t> idle_ns_{0};
+    std::atomic<std::uint64_t> resolve_node_total_{0};
+    std::atomic<std::uint64_t> resolve_call_count_{0};
+    std::atomic<std::uint64_t> resolve_value_added_total_cp_{0};
     std::atomic<std::uint64_t> redundant_stores_{0};
     std::atomic<std::uint64_t> collisions_{0};
 };

@@ -166,8 +166,15 @@ int eval_relative_dispatch(const VBoard &board, int alpha, int beta) {
 // bracketing the two disagreeing scores (see run()), not a real
 // PVS-derived bound, so it still gets real pruning without needing to
 // know any real caller's window (this thread doesn't have one).
+// Single-writer (the GPU-prep thread is the only caller of
+// resolve_disagreement()), reset by the caller right before each
+// top-level call -- see GpuTT::record_resolve_search()'s doc for what
+// this measures.
+long long g_resolve_disagreement_nodes = 0;
+
 template <Color Us>
 int resolve_disagreement(VBoard &board, int alpha, int beta, int depth, int ply) {
+    ++g_resolve_disagreement_nodes;
     if (depth <= 0) {
         Move unused;
         return quietify_qsearch<Us>(board, alpha, beta, ply, unused);
@@ -316,6 +323,12 @@ void GpuQueue::run() {
     static GpuPosition resolved_positions[kMaxBatchPositions];
 
     while (running_.load(std::memory_order_relaxed)) {
+        // Wall-clock accounting for GpuTT::gpu_thread_busy_percent() --
+        // covers this whole iteration (drain + quietify + encode +
+        // infer_batch + agree-or-resolve + store), recorded as "busy"
+        // below, or as "idle" if the queue was empty and this iteration
+        // was just the sleep_for() wait.
+        const auto iter_start = std::chrono::steady_clock::now();
         int batch_size = 0;
 
         // Drain up to kMaxDrainTasksPerBatch queued tasks (or until the
@@ -411,6 +424,8 @@ void GpuQueue::run() {
 
         if (batch_size == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            const auto idle_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - iter_start).count();
+            shared_gpu_tt().record_idle_ns(static_cast<std::uint64_t>(idle_ns));
             continue;
         }
 
@@ -437,15 +452,28 @@ void GpuQueue::run() {
             } else {
                 const int lo = std::min(nnue_cps[i], scores[i]) - kNeutralAgreementMaxGapCp;
                 const int hi = std::max(nnue_cps[i], scores[i]) + kNeutralAgreementMaxGapCp;
+                g_resolve_disagreement_nodes = 0;
                 if (resolve_board.load_fen(resolved_positions[i].to_fen())) {
                     final_score = resolve_board.get_side_to_move() == WHITE
                         ? resolve_disagreement<WHITE>(resolve_board, lo, hi, kDisagreementExtensionPlies, 0)
                         : resolve_disagreement<BLACK>(resolve_board, lo, hi, kDisagreementExtensionPlies, 0);
                 }
                 shared_gpu_tt().record_resolved_disagreement();
+                // "Value added": how far the resolved verdict landed from
+                // the CLOSER of the two disagreeing static guesses -- 0
+                // would mean the search just rubber-stamped one of them
+                // (no new information), a large value means real-search
+                // pruning found something neither static model saw. See
+                // GpuTT::record_resolve_search()'s doc.
+                const int dist_to_nnue = std::abs(final_score - nnue_cps[i]);
+                const int dist_to_cnn = std::abs(final_score - scores[i]);
+                shared_gpu_tt().record_resolve_search(g_resolve_disagreement_nodes, std::min(dist_to_nnue, dist_to_cnn));
             }
             shared_gpu_tt().store(child_keys[i], static_cast<std::int16_t>(final_score), child_depths[i]);
         }
+
+        const auto busy_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - iter_start).count();
+        shared_gpu_tt().record_busy_ns(static_cast<std::uint64_t>(busy_ns));
     }
 }
 
