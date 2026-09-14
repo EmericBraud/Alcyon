@@ -311,3 +311,95 @@ vraiment "idle" pour autant. **Pas encore testé en match complet** à la
 fin de cette session — c'est la prochaine étape logique pour vérifier
 si ce déplacement de coût corrige effectivement le -23 Elo mesuré en
 section 8.
+
+## 10. Résultat du match v3, et l'erreur de protocole qui a faussé toutes les mesures de la section 9
+
+**Match v3 (300 parties, 10+0.1) : -1.72 ± 28.06 Elo à 203 parties**, soit
+rigoureusement rien — cohérent avec le 0.00 ± 28.9 observé à mi-parcours.
+Arrêté avant la fin : la revue de code menée en parallèle a montré que le
+sous-système était, à l'exécution, quasiment inexistant.
+
+**Erreur de protocole.** Toutes les mesures `gpuevalstats` prises en
+envoyant `uci / setoption / position / go / gpuevalstats / quit` d'un seul
+bloc dans un pipe sont **invalides**. `go` est non-bloquant dans ce moteur :
+`quit` est consommé immédiatement, `shared_gpu_queue().stop()` s'exécute, et
+le thread GPU sort de sa boucle avant sa première itération. C'est ce qui
+donnait `gpu_thread_busy ≈ 48%` en section 9 (« il reste de la marge ») —
+un artefact. Protocole correct : `sleep` entre `go` et `gpuevalstats`, puis
+entre `gpuevalstats` et `quit`.
+
+### Mesure réelle (3 s, 10 threads, milieu de partie)
+
+```
+nodes 13 205 504   nps 4 443 305
+stores=178  useful_hits=18  ratio=10.1%
+gpu_thread_busy=99.92%
+resolved_disagreement_rate=52.8%  resolve_avg_nodes=1920
+push: 334 tentatives, 54 droppées (16%)
+```
+
+**18 scores GPU consommés sur 13,2 M nœuds** — 0,00014 % de l'arbre. Le
+résultat Elo ~0 ne dit pas « la feature est neutre », il dit « la feature
+n'existe pas à l'exécution ». Et le thread était saturé à 99,9 % pour
+produire ça : ~90 % de son horloge en calcul scalaire CPU (quietify +
+NNUE + résolution), ~10 % en inférence. Le device Metal tournait à ~1,4 %
+de sa capacité (60 pos/s contre 4300 pos/s mesurées par `gpubench`).
+
+### Quatre causes, toutes corrigées
+
+1. **Mauvaise clé.** Le score était stocké sous le hash de la position
+   *après* `quietify()`. Or la recherche sonde le hash du nœud candidat.
+   Rien n'était jamais stocké pour la position que quelqu'un demandait.
+   Corrigé : clé prise avant `quietify()`, score renégocié en signe selon
+   la parité du nombre de plis joués.
+
+2. **Aucun consommateur là où ces positions sont atteintes.** Les enfants
+   d'une feuille de PV sont atteints *dans* `qsearch`, qui ne sondait
+   jamais la GPU TT. Consommé comme stand-pat de `qsearch` maintenant —
+   c'est la même nature de grandeur (la valeur stockée est quiescée),
+   calculée hors thread de recherche. Pas de sémantique de borne attachée.
+
+3. **Offset de calibration.** Mesuré sur quatre recherches (pente,
+   intercept, corrélation ajoutés à `gpuevalstats`) : le CNN suit NNUE de
+   très près — **pente ~1.0, corrélation 0.90-0.94** — mais se tient
+   **~165 cp plus optimiste** pour le trait. Ce n'est pas une erreur
+   d'échelle, c'est un offset constant. Corrigé par `kCnnToNnueOffsetCp`
+   appliqué au store ; `cnn_to_nnue_intercept` passe de -137..-196 cp à
+   -73..+60 cp.
+
+4. **La résolution de désaccord était auto-destructrice.** Elle mangeait
+   ~90 % du thread et remplaçait, pour >50 % des positions, le score CNN
+   par un minimax 3 plis sans TT ni history — une version dégradée de ce
+   que la recherche principale fait déjà. Supprimée. Le désaccord reste
+   *mesuré* (`record_cnn_vs_nnue`), plus jamais *agi*.
+
+Supprimé au passage : l'override GPU dans `TranspositionTable::probe()`.
+Il appliquait le flag de borne de l'entrée TT (`TT_ALPHA` = « la vraie
+valeur est ≤ au score stocké ») à un score statique substitué que ce flag
+n'a jamais certifié → coupures injustifiées. Et l'entrée qu'il écrasait
+contenait déjà un résultat de recherche d'au moins la profondeur demandée,
+strictement meilleur qu'une éval statique.
+
+### Après correction (6 s, 10 threads, 4 positions)
+
+| position | `useful_hits` avant | après | ratio | `busy` |
+|---|---|---|---|---|
+| milieu 1 | 1   | 34  | 7.0 %   | 95.8 % |
+| milieu 2 | 12  | 19  | 4.4 %   | 94.5 % |
+| finale   | 3   | 356 | 115.6 % | 77.9 % |
+| Kiwipete | 8   | 181 | 94.3 %  | 79.8 % |
+
+NPS inchangé dans le bruit (médianes 4.68M sans / 4.84M avec, 5 runs
+entrelacés) malgré la sonde ajoutée sur le chemin chaud de `qsearch`.
+
+### Ce qui reste à décider
+
+- **Le thread de préparation reste le goulot** (78-96 % occupé *sans* la
+  résolution). Ce n'est plus l'inférence ni les gates de soumission :
+  c'est `quietify` + l'éval NNUE + l'encodage des plans. Élargir les
+  gates n'augmentera pas le débit tant que ce coût n'est pas réduit.
+- **Corrélation 0.91 entre CNN et NNUE** une fois l'offset retiré : le CNN
+  explique ~83 % de la variance de l'éval que le moteur calcule déjà
+  gratuitement. Le gain accessible vit dans les 17 % restants — il peut
+  être positif comme négatif. C'est la borne haute réaliste de tout ce
+  mécanisme, et elle est basse.
