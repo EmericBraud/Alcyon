@@ -41,27 +41,34 @@ inline constexpr int kNumCandidateMoves = 5;
 // dropped rather than causing unbounded cost.
 inline constexpr int kMinDepthForMidSearchSubmit = 6;
 
-// How close NNUE and the CNN score need to be (in cp) to count as
-// "agreeing" -- checked on the GPU-prep thread itself, BEFORE storing a
-// score (see gpu_queue.cpp's run()), not on the search hot path. This
-// used to gate a live comparison inside transp_table.hpp's probe() (an
-// extra NNUE eval + a search extension on disagreement, on the search
-// thread) -- measured to net LOSE ~23 Elo in a real match, because that
-// cost competed with the rest of the search tree for the same time
-// budget. Moved here instead: the GPU thread is mostly idle (see
-// gpubench-measured headroom), so it can absorb this cost for free,
-// leaving the search thread's probe() a cheap, unconditional trust
-// again. See docs/gpu-async-eval/consultative-eval-measurements.md.
+// How far apart (in cp) NNUE and the CNN have to be before the two count
+// as "disagreeing" on a position. MEASUREMENT ONLY now (see GpuTT::
+// record_cnn_vs_nnue) -- nothing in the engine acts on the verdict.
+//
+// Two mechanisms built on this were tried and both removed after
+// measurement: gating the score on the search thread (an extra NNUE eval
+// + a bounded search extension per disagreement, net -23 Elo over 300
+// games -- it competed with the rest of the tree for the same time
+// budget), then resolving it on the GPU-prep thread instead (no search
+// cost, but it ate ~90% of that thread's wall clock and replaced the CNN
+// score with a worse 3-ply search on >50% of positions). See
+// docs/gpu-async-eval/consultative-eval-measurements.md.
 inline constexpr int kNeutralAgreementMaxGapCp = 50;
 
-// On disagreement (gap > kNeutralAgreementMaxGapCp), the GPU-prep
-// thread resolves it with a bounded real search of its own (see
-// gpu_queue.cpp's resolve_disagreement()) instead of storing either
-// model's contested static score -- a few plies, not unbounded, to keep
-// this thread's own cost predictable. Also mostly off the search hot
-// path (this thread has slack), unlike the identically-named mechanism
-// this constant used to gate directly inside negamax.cpp.
-inline constexpr int kDisagreementExtensionPlies = 3;
+// Added to every CNN score before it is stored, to put it on the same
+// scale as the search's own eval. Measured (GpuTT::cnn_to_nnue_slope/
+// _intercept_cp/_correlation over four middlegame + endgame searches):
+// the CNN tracks NNUE closely -- slope ~1.0, correlation 0.90-0.94 --
+// but sits a CONSTANT ~165cp more optimistic for the side to move on the
+// settled positions this subsystem scores. Left uncorrected, every
+// stored score injects that optimism straight into the search.
+//
+// ponytail: one global constant, fitted across four positions
+// (per-position intercepts -137..-196cp). If the residual matters, refit
+// per phase bucket (the model already has four of them, see
+// metal_backend.mm) -- cnn_to_nnue_intercept_cp() reading near 0 is the
+// check that this value is still right.
+inline constexpr int kCnnToNnueOffsetCp = -165;
 
 // Transposition submissions (see negamax.cpp's TT-probe branch and
 // SearchWorker::maybe_submit_transposition_to_gpu): a TT hit proves the

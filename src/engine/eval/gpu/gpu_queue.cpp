@@ -154,67 +154,16 @@ int eval_relative_dispatch(const VBoard &board, int alpha, int beta) {
         : Eval::eval_relative<BLACK>(board, alpha, beta);
 }
 
-// Self-contained fixed-depth minimax (full legal moves, not just
-// captures -- unlike quietify_qsearch) used ONLY to resolve a NNUE/CNN
-// disagreement on the GPU-prep thread itself, BEFORE storing a score --
-// see the doc comment at its call site in run() for why this belongs
-// here instead of on the search hot path (docs/gpu-async-eval/
-// consultative-eval-measurements.md, "moving disagreement resolution to
-// the GPU thread"). No TT, no history heuristics, no killers -- simpler
-// and slower per node than the main search's negamax, which is fine
-// here (this thread has slack); alpha/beta is a heuristic window
-// bracketing the two disagreeing scores (see run()), not a real
-// PVS-derived bound, so it still gets real pruning without needing to
-// know any real caller's window (this thread doesn't have one).
-// Single-writer (the GPU-prep thread is the only caller of
-// resolve_disagreement()), reset by the caller right before each
-// top-level call -- see GpuTT::record_resolve_search()'s doc for what
-// this measures.
-long long g_resolve_disagreement_nodes = 0;
-
-template <Color Us>
-int resolve_disagreement(VBoard &board, int alpha, int beta, int depth, int ply) {
-    ++g_resolve_disagreement_nodes;
-    if (depth <= 0) {
-        Move unused;
-        return quietify_qsearch<Us>(board, alpha, beta, ply, unused);
-    }
-
-    const bool in_check = board.is_king_attacked<Us>();
-    MoveList list;
-    MoveGen::generate_legal_moves<Us>(board, list);
-
-    for (int i = 0; i < list.count; ++i) {
-        const Move &m = list[i];
-        const bool is_capture = m.get_to_piece() != NO_PIECE || m.get_flags() == Move::EN_PASSANT_CAP;
-        list.scores[i] = is_capture
-            ? 1'000'000 + engine_constants::eval::MvvLvaTable[m.get_flags() == Move::EN_PASSANT_CAP ? PAWN : m.get_to_piece()][m.get_from_piece()]
-            : 0;
-    }
-
-    int best_score = -engine_constants::eval::Inf;
-    for (int i = 0; i < list.count; ++i) {
-        Move &m = list.pick_best_move(i);
-        board.template play<Us>(m);
-        const int score = -resolve_disagreement<!Us>(board, -beta, -alpha, depth - 1, ply + 1);
-        board.template unplay<Us>(m);
-
-        if (score > best_score) {
-            best_score = score;
-        }
-        if (score > alpha) {
-            alpha = score;
-        }
-        if (alpha >= beta) {
-            break;
-        }
-    }
-
-    if (list.count == 0) {
-        return in_check ? -engine_constants::eval::MateScore + ply : 0;
-    }
-    return best_score;
-}
+// NOTE: a bounded minimax (resolve_disagreement()) used to run HERE, on
+// this thread, whenever NNUE and the CNN disagreed -- storing its verdict
+// instead of the CNN's score. Removed after measurement: it consumed
+// ~90% of this thread's wall clock (~1900 nodes per call, on >50% of all
+// candidates), capping GPU throughput at ~60 positions/s against a device
+// that does 4300/s -- AND, for every position it touched, it replaced the
+// CNN score with a TT-less, history-less 3-ply search, i.e. a strictly
+// worse version of what the main search already does. The disagreement is
+// still MEASURED (see GpuTT::record_cnn_vs_nnue) but no longer acted on.
+// See docs/gpu-async-eval/consultative-eval-measurements.md.
 
 } // namespace
 
@@ -295,11 +244,6 @@ void GpuQueue::run() {
     // unlike the main thread's 8MB) -- a plain stack-local VBoard here
     // blew the GPU thread's stack immediately on construction (SIGBUS).
     static VBoard scratch;
-    // Separate from `scratch` -- by the time a disagreement is resolved
-    // (after the whole batch's infer_batch() call), `scratch` has moved
-    // on to other candidates/tasks, so resolution reloads the settled
-    // position from its own saved GpuPosition snapshot into this board.
-    static VBoard resolve_board;
     Move quiet_moves[kQuietifyMaxPlies];
     int quiet_num_moves = 0;
 
@@ -314,13 +258,16 @@ void GpuQueue::run() {
     static std::int32_t scores[kMaxBatchPositions];
     // NNUE eval of the settled position, captured at encode time (while
     // `scratch` is still live there) -- compared against the CNN's score
-    // after inference to decide whether to trust it outright or resolve
-    // the disagreement with a real search (see run()'s post-inference
-    // loop below).
+    // after inference purely to MEASURE how far the two models are apart
+    // (see GpuTT::record_cnn_vs_nnue); nothing is acted on.
     static int nnue_cps[kMaxBatchPositions];
-    // Saved so a disagreement can be resolved after the batch inference
-    // call, once `scratch` has already moved on -- see resolve_board.
-    static GpuPosition resolved_positions[kMaxBatchPositions];
+    // +1 / -1: the CNN scores the SETTLED position, but the score is
+    // stored under the UNSETTLED candidate's key (that's the position the
+    // search actually probes -- see the store loop below). An odd number
+    // of quietify plies flips the side to move between the two, so the
+    // relative score has to be negated to stay relative to the key's own
+    // side to move.
+    static int score_signs[kMaxBatchPositions];
 
     while (running_.load(std::memory_order_relaxed)) {
         // Wall-clock accounting for GpuTT::gpu_thread_busy_percent() --
@@ -353,12 +300,25 @@ void GpuQueue::run() {
                 }
                 scratch.play(move);
 
+                // THE key this score gets stored under: the candidate
+                // position itself, captured BEFORE quietify() moves the
+                // board on. That's the position the main search will
+                // actually probe (transp_table.hpp's probe(), negamax's
+                // should_qsearch branch -- both look up the node's own
+                // hash). Keying on the post-quietify descendant instead,
+                // as this used to, meant nothing was ever stored for the
+                // position anyone asked about: measured at 18 useful hits
+                // across a 13M-node search, i.e. the whole subsystem was
+                // invisible to the search. See docs/gpu-async-eval/
+                // consultative-eval-measurements.md.
+                const std::uint64_t child_key = scratch.get_hash();
+
                 // Settle the position before encoding it -- a static CNN
                 // eval on a "loud" position (mid-exchange, in check) is
                 // exactly the horizon-effect problem qsearch exists to
-                // avoid in the main search. This thread is mostly idle
-                // (see gpubench-measured headroom), so it can afford the
-                // extra plies.
+                // avoid in the main search. What gets stored is therefore
+                // a precomputed qsearch-style value for child_key, with
+                // the CNN standing in for the leaf eval.
                 quietify(scratch, quiet_moves, quiet_num_moves);
 
                 // Skip re-encoding + re-inferring a candidate whose score
@@ -369,11 +329,10 @@ void GpuQueue::run() {
                 // downstream child positions. Checking here (before
                 // encode_planes_v3, the actual compute-heavy step) avoids
                 // that wasted work instead of just detecting it after the
-                // fact in store(). Checked against the SETTLED position's
-                // key, since that's what actually gets stored below.
+                // fact in store(). Checked against child_key, since
+                // that's what actually gets stored below.
                 std::int16_t existing_score;
                 std::uint8_t existing_depth, existing_age;
-                const std::uint64_t child_key = scratch.get_hash();
                 bool skip = shared_gpu_tt().probe(child_key, existing_score, existing_depth, existing_age) &&
                             existing_age == shared_gpu_tt().current_age();
 
@@ -405,13 +364,12 @@ void GpuQueue::run() {
                         fen_out << child.to_fen() << " piece_count=" << non_king_piece_count(child);
                     }
                     piece_counts[batch_size] = non_king_piece_count(child);
-                    child_keys[batch_size] = child.zobrist_key;
+                    child_keys[batch_size] = child_key;
                     child_depths[batch_size] = task->depth;
+                    score_signs[batch_size] = (quiet_num_moves % 2 == 0) ? 1 : -1;
                     // Captured now, while `scratch` is still live at the
-                    // settled position -- see nnue_cps/resolved_positions'
-                    // doc above.
+                    // settled position -- see nnue_cps' doc above.
                     nnue_cps[batch_size] = eval_relative_dispatch(scratch, -engine_constants::eval::Inf, engine_constants::eval::Inf);
-                    resolved_positions[batch_size] = child;
                     ++batch_size;
                 }
 
@@ -431,45 +389,17 @@ void GpuQueue::run() {
 
         GpuBackend::instance().infer_batch(&planes_batch[0][0][0], piece_counts, batch_size, scores);
 
-        // Compare NNUE vs CNN and, on agreement, store the CNN score
-        // directly -- OR, on disagreement, resolve it with a real bounded
-        // search RIGHT HERE, on this (mostly idle) thread, and store that
-        // instead. This is the whole point of moving the check here: the
-        // main search threads used to do this same comparison (and, on
-        // disagreement, a bounded search extension) on their own hot
-        // path -- measured to net LOSE ~23 Elo in a real match, because
-        // that cost competed for the SAME fixed time budget as the rest
-        // of the search tree (see docs/gpu-async-eval/
-        // consultative-eval-measurements.md). Doing it here instead means
-        // the main search threads go back to trusting any fresh GPU-tt
-        // score unconditionally (cheap, no extra eval, no extension) --
-        // all the verification cost is paid for by a thread that was
-        // otherwise idle, not by the search's own time budget.
+        // Store the CNN score as-is, re-signed for the key's side to move
+        // (see score_signs). The NNUE comparison is measurement only now
+        // -- see record_cnn_vs_nnue() and the removed resolve_disagreement
+        // note at the top of this file.
         for (int i = 0; i < batch_size; ++i) {
-            int final_score = scores[i];
-            if (std::abs(nnue_cps[i] - scores[i]) <= kNeutralAgreementMaxGapCp) {
-                shared_gpu_tt().record_agreement();
-            } else {
-                const int lo = std::min(nnue_cps[i], scores[i]) - kNeutralAgreementMaxGapCp;
-                const int hi = std::max(nnue_cps[i], scores[i]) + kNeutralAgreementMaxGapCp;
-                g_resolve_disagreement_nodes = 0;
-                if (resolve_board.load_fen(resolved_positions[i].to_fen())) {
-                    final_score = resolve_board.get_side_to_move() == WHITE
-                        ? resolve_disagreement<WHITE>(resolve_board, lo, hi, kDisagreementExtensionPlies, 0)
-                        : resolve_disagreement<BLACK>(resolve_board, lo, hi, kDisagreementExtensionPlies, 0);
-                }
-                shared_gpu_tt().record_resolved_disagreement();
-                // "Value added": how far the resolved verdict landed from
-                // the CLOSER of the two disagreeing static guesses -- 0
-                // would mean the search just rubber-stamped one of them
-                // (no new information), a large value means real-search
-                // pruning found something neither static model saw. See
-                // GpuTT::record_resolve_search()'s doc.
-                const int dist_to_nnue = std::abs(final_score - nnue_cps[i]);
-                const int dist_to_cnn = std::abs(final_score - scores[i]);
-                shared_gpu_tt().record_resolve_search(g_resolve_disagreement_nodes, std::min(dist_to_nnue, dist_to_cnn));
-            }
-            shared_gpu_tt().store(child_keys[i], static_cast<std::int16_t>(final_score), child_depths[i]);
+            // Offset applied in the SETTLED position's frame (that's where
+            // it was measured, and where nnue_cps[i] lives), before the
+            // sign flip that moves the score into the stored key's frame.
+            const int cnn_cp = scores[i] + kCnnToNnueOffsetCp;
+            shared_gpu_tt().record_cnn_vs_nnue(cnn_cp, nnue_cps[i]);
+            shared_gpu_tt().store(child_keys[i], static_cast<std::int16_t>(score_signs[i] * cnn_cp), child_depths[i]);
         }
 
         const auto busy_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - iter_start).count();

@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>
+#include <cmath>
 #include <memory>
 
 #include "gpu_config.hpp"
@@ -50,14 +52,18 @@ public:
         stores_.store(0, std::memory_order_relaxed);
         useful_hits_.store(0, std::memory_order_relaxed);
         agreements_.store(0, std::memory_order_relaxed);
-        resolved_disagreements_.store(0, std::memory_order_relaxed);
+        disagreements_.store(0, std::memory_order_relaxed);
+        cnn_minus_nnue_total_.store(0, std::memory_order_relaxed);
+        cnn_total_.store(0, std::memory_order_relaxed);
+        nnue_total_.store(0, std::memory_order_relaxed);
+        cnn_sq_total_.store(0, std::memory_order_relaxed);
+        nnue_sq_total_.store(0, std::memory_order_relaxed);
+        cnn_nnue_total_.store(0, std::memory_order_relaxed);
+        cnn_vs_nnue_samples_.store(0, std::memory_order_relaxed);
         redundant_stores_.store(0, std::memory_order_relaxed);
         collisions_.store(0, std::memory_order_relaxed);
         busy_ns_.store(0, std::memory_order_relaxed);
         idle_ns_.store(0, std::memory_order_relaxed);
-        resolve_node_total_.store(0, std::memory_order_relaxed);
-        resolve_call_count_.store(0, std::memory_order_relaxed);
-        resolve_value_added_total_cp_.store(0, std::memory_order_relaxed);
     }
 
     // For freshness checks at the call site (see transp_table.hpp's
@@ -115,25 +121,54 @@ public:
     // usage_ratio_percent()'s doc below for what this measures.
     void record_useful_hit() { useful_hits_.fetch_add(1, std::memory_order_relaxed); }
 
-    // Call from GpuQueue::run() (the GPU-prep thread itself) whenever
-    // NNUE and the CNN score agree (within kNeutralAgreementMaxGapCp) on
-    // a freshly-computed position -- the CNN score is stored as-is, no
-    // extra work needed. See record_resolved_disagreement() for the
-    // other case. Both happen BEFORE store(), entirely on this thread --
-    // moved here (from the search hot path, where it used to cost real
-    // search time per disagreement -- measured to net LOSE ~23 Elo in a
-    // real match) so the main search threads can go back to trusting any
-    // fresh GPU-tt score unconditionally. See
-    // docs/gpu-async-eval/consultative-eval-measurements.md.
-    void record_agreement() { agreements_.fetch_add(1, std::memory_order_relaxed); }
+    // Call from GpuQueue::run() (the GPU-prep thread itself) once per
+    // freshly-inferred position, with the CNN's score and NNUE's eval of
+    // the SAME (settled) position. Pure measurement -- nothing acts on
+    // the result any more (a bounded resolution search used to; see the
+    // note at the top of gpu_queue.cpp for why it was removed).
+    //
+    // Two things are tracked: how OFTEN the two models disagree beyond
+    // kNeutralAgreementMaxGapCp, and the SIGNED mean of (cnn - nnue). A
+    // large signed mean means the two are simply on different scales --
+    // fixable by recalibrating the CNN's output, which would collapse
+    // the disagreement rate. A near-zero signed mean alongside a high
+    // disagreement rate means they genuinely differ position by
+    // position, which is the interesting case.
+    void record_cnn_vs_nnue(int cnn_cp, int nnue_cp) {
+        if (std::abs(cnn_cp - nnue_cp) <= kNeutralAgreementMaxGapCp) {
+            agreements_.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            disagreements_.fetch_add(1, std::memory_order_relaxed);
+        }
+        cnn_minus_nnue_total_.fetch_add(cnn_cp - nnue_cp, std::memory_order_relaxed);
+        cnn_total_.fetch_add(cnn_cp, std::memory_order_relaxed);
+        nnue_total_.fetch_add(nnue_cp, std::memory_order_relaxed);
+        cnn_sq_total_.fetch_add(static_cast<std::int64_t>(cnn_cp) * cnn_cp, std::memory_order_relaxed);
+        nnue_sq_total_.fetch_add(static_cast<std::int64_t>(nnue_cp) * nnue_cp, std::memory_order_relaxed);
+        cnn_nnue_total_.fetch_add(static_cast<std::int64_t>(cnn_cp) * nnue_cp, std::memory_order_relaxed);
+        cnn_vs_nnue_samples_.fetch_add(1, std::memory_order_relaxed);
+    }
 
-    // Call whenever NNUE and the CNN score disagree by more than
-    // kNeutralAgreementMaxGapCp -- resolved with a bounded real search
-    // (see gpu_queue.cpp's resolve_disagreement()) BEFORE store(), so
-    // the score that ends up in the GPU tt is already a verified
-    // real-search result, not a contested static eval the main search
-    // would otherwise have to double-check itself.
-    void record_resolved_disagreement() { resolved_disagreements_.fetch_add(1, std::memory_order_relaxed); }
+    // Least-squares fit of nnue ~ a + slope*cnn over this search's
+    // sampled positions, plus how well the two actually track each other.
+    //  - slope far from 1 means the CNN's cp scale is simply wrong (its
+    //    raw output is a logit x kScoreScale, see metal_backend.mm) and a
+    //    single multiplier fixes it.
+    //  - a low correlation means no rescaling will help: the CNN just
+    //    isn't ranking these positions the way the search's own eval does.
+    double cnn_to_nnue_slope() const {
+        const double vc = var_cnn();
+        return vc <= 0.0 ? 0.0 : covariance() / vc;
+    }
+    // Constant part of that fit, in cp. This is the number
+    // kCnnToNnueOffsetCp (gpu_config.hpp) exists to cancel, so once that
+    // correction is applied this should read near 0 -- it is the
+    // self-check on the correction.
+    double cnn_to_nnue_intercept_cp() const { return avg_nnue_cp() - cnn_to_nnue_slope() * avg_cnn_cp(); }
+    double cnn_nnue_correlation() const {
+        const double d = var_cnn() * var_nnue();
+        return d <= 0.0 ? 0.0 : covariance() / std::sqrt(d);
+    }
 
     // Wall-clock accounting for GpuQueue::run()'s main loop -- call once
     // per loop iteration with how long the "real work" (drain + quietify
@@ -151,45 +186,26 @@ public:
         return total == 0 ? 0.0 : (100.0 * static_cast<double>(busy) / static_cast<double>(total));
     }
 
-    // Call once per resolve_disagreement() call (gpu_queue.cpp) with how
-    // many nodes that bounded search visited, and how far its final
-    // score ended up from the closer of the two disagreeing inputs
-    // (NNUE's eval, the CNN's raw score) -- a resolution whose answer
-    // lands right on top of one of the two inputs added little new
-    // information; one that lands somewhere else entirely (a real
-    // alpha-beta verdict neither static model had) is doing real work.
-    void record_resolve_search(long long nodes, int value_added_cp) {
-        resolve_node_total_.fetch_add(static_cast<std::uint64_t>(nodes), std::memory_order_relaxed);
-        resolve_call_count_.fetch_add(1, std::memory_order_relaxed);
-        resolve_value_added_total_cp_.fetch_add(static_cast<std::uint64_t>(value_added_cp), std::memory_order_relaxed);
-    }
-
-    double resolve_avg_nodes() const {
-        const std::uint64_t calls = resolve_call_count_.load(std::memory_order_relaxed);
-        return calls == 0 ? 0.0 : static_cast<double>(resolve_node_total_.load(std::memory_order_relaxed)) / static_cast<double>(calls);
-    }
-    double resolve_avg_value_added_cp() const {
-        const std::uint64_t calls = resolve_call_count_.load(std::memory_order_relaxed);
-        return calls == 0 ? 0.0 : static_cast<double>(resolve_value_added_total_cp_.load(std::memory_order_relaxed)) / static_cast<double>(calls);
-    }
+    double avg_cnn_minus_nnue_cp() const { return mean_of(cnn_minus_nnue_total_); }
+    // Read alongside avg_cnn_minus_nnue_cp() to tell a constant OFFSET
+    // (avg_cnn - avg_nnue large, ratio near 1) from a SCALE mismatch
+    // (avg_cnn / avg_nnue far from 1) -- they need different fixes.
+    double avg_cnn_cp() const { return mean_of(cnn_total_); }
+    double avg_nnue_cp() const { return mean_of(nnue_total_); }
 
     std::uint64_t stores() const { return stores_.load(std::memory_order_relaxed); }
     std::uint64_t useful_hits() const { return useful_hits_.load(std::memory_order_relaxed); }
     std::uint64_t agreements() const { return agreements_.load(std::memory_order_relaxed); }
-    std::uint64_t resolved_disagreements() const { return resolved_disagreements_.load(std::memory_order_relaxed); }
+    std::uint64_t disagreements() const { return disagreements_.load(std::memory_order_relaxed); }
     std::uint64_t redundant_stores() const { return redundant_stores_.load(std::memory_order_relaxed); }
     std::uint64_t collisions() const { return collisions_.load(std::memory_order_relaxed); }
 
-    // Of the positions stored, what fraction needed the GPU thread's own
-    // bounded resolution search rather than a simple agree-and-store --
-    // measures how much of this thread's time is going into verification
-    // vs plain inference, so we can tell if the resolution work is
-    // starting to threaten this thread's previously-idle headroom (see
-    // gpubench and the submission-rate measurements elsewhere in
-    // consultative-eval-measurements.md).
-    double resolved_disagreement_rate_percent() const {
-        const std::uint64_t s = stores();
-        return s == 0 ? 0.0 : (100.0 * static_cast<double>(resolved_disagreements()) / static_cast<double>(s));
+    // How often the CNN and NNUE land more than kNeutralAgreementMaxGapCp
+    // apart -- read together with avg_cnn_minus_nnue_cp() (see
+    // record_cnn_vs_nnue).
+    double disagreement_rate_percent() const {
+        const std::uint64_t n = cnn_vs_nnue_samples_.load(std::memory_order_relaxed);
+        return n == 0 ? 0.0 : (100.0 * static_cast<double>(disagreements()) / static_cast<double>(n));
     }
 
     // Fraction of stores() that overwrote a DIFFERENT position's slot
@@ -207,14 +223,12 @@ public:
     std::size_t capacity() const { return capacity_; }
 
     // Of the positions the GPU thread computed and stored (this search),
-    // what fraction were ever actually consulted by TranspositionTable::
-    // probe() and used to produce a result. Every stored score is now
-    // pre-vetted (agreed or resolved, see record_agreement()/
-    // record_resolved_disagreement()) and trusted unconditionally on the
-    // main search thread, so this is again a simple usage/hit-rate
-    // measure, not a trust-rate one. NOT a cache hit rate: a single
-    // computed position could be probed (and used) many times by
-    // different workers/nodes, so this can exceed 100%.
+    // what fraction were ever actually consulted by the search and used
+    // to produce a result (negamax.cpp's should_qsearch branch). THE
+    // number to watch: it is what says whether this subsystem is visible
+    // to the search at all. NOT a cache hit rate -- a single computed
+    // position can be probed (and used) many times by different
+    // workers/nodes, so this can exceed 100%.
     double usage_ratio_percent() const {
         const std::uint64_t s = stores();
         return s == 0 ? 0.0 : (100.0 * static_cast<double>(useful_hits()) / static_cast<double>(s));
@@ -240,12 +254,24 @@ private:
     std::atomic<std::uint64_t> stores_{0};
     std::atomic<std::uint64_t> useful_hits_{0};
     std::atomic<std::uint64_t> agreements_{0};
-    std::atomic<std::uint64_t> resolved_disagreements_{0};
+    std::atomic<std::uint64_t> disagreements_{0};
+    std::atomic<std::int64_t> cnn_minus_nnue_total_{0};
+    std::atomic<std::int64_t> cnn_total_{0};
+    std::atomic<std::int64_t> nnue_total_{0};
+    std::atomic<std::int64_t> cnn_sq_total_{0};
+    std::atomic<std::int64_t> nnue_sq_total_{0};
+    std::atomic<std::int64_t> cnn_nnue_total_{0};
+    std::atomic<std::uint64_t> cnn_vs_nnue_samples_{0};
+
+    double mean_of(const std::atomic<std::int64_t> &total) const {
+        const std::uint64_t n = cnn_vs_nnue_samples_.load(std::memory_order_relaxed);
+        return n == 0 ? 0.0 : static_cast<double>(total.load(std::memory_order_relaxed)) / static_cast<double>(n);
+    }
+    double covariance() const { return mean_of(cnn_nnue_total_) - avg_cnn_cp() * avg_nnue_cp(); }
+    double var_cnn() const { return mean_of(cnn_sq_total_) - avg_cnn_cp() * avg_cnn_cp(); }
+    double var_nnue() const { return mean_of(nnue_sq_total_) - avg_nnue_cp() * avg_nnue_cp(); }
     std::atomic<std::uint64_t> busy_ns_{0};
     std::atomic<std::uint64_t> idle_ns_{0};
-    std::atomic<std::uint64_t> resolve_node_total_{0};
-    std::atomic<std::uint64_t> resolve_call_count_{0};
-    std::atomic<std::uint64_t> resolve_value_added_total_cp_{0};
     std::atomic<std::uint64_t> redundant_stores_{0};
     std::atomic<std::uint64_t> collisions_{0};
 };

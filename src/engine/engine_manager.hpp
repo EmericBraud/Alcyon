@@ -26,6 +26,7 @@
 #include "core/move/generator/move_generator.hpp"
 
 #include "engine/config/config.hpp"
+#include "engine/eval/gpu/gpu_tt.hpp"
 #include "engine/tt/transp_table.hpp"
 #include "engine/search/worker.hpp"
 #include "engine/eval/tablebase.hpp"
