@@ -6,18 +6,12 @@
 #include "common/cpu.hpp"
 #include "core/move/move.hpp"
 #include "engine/config/config.hpp"
-#include "engine/eval/gpu/gpu_tt.hpp"
 
-// NOTE: this used to classify the GPU score against the current
-// alpha-beta window and only trust it when it agreed with a live NNUE
-// eval computed right here (classify_cut_decision/should_trust_gpu_score,
-// removed) -- moved to the GPU-prep thread itself instead (see
-// gpu_queue.cpp's run()), which already has NNUE's opinion for free
-// (the settled position's own eval_state) and can resolve a
-// disagreement with a bounded search WITHOUT costing the search
-// thread's own time budget. Doing the same check here, live, on every
-// probe() call was measured to net LOSE ~23 Elo in a real match: see
-// docs/gpu-async-eval/consultative-eval-measurements.md.
+// NOTE: probe() used to consult the GPU-eval score cache
+// (engine/eval/gpu/gpu_tt.hpp) and override its own score with it. All of
+// that is gone -- see the note inside probe(). The GPU score is consulted
+// only at frontier nodes now, in negamax.cpp's should_qsearch branch.
+// See docs/gpu-async-eval/consultative-eval-measurements.md.
 
 enum TTFlag : std::uint8_t
 {
@@ -210,36 +204,21 @@ public:
             int score = score_from_tt(s, ply);
             flag = static_cast<TTFlag>(f & 0x03);
 
-            // GPU-eval score override for a position the main TT ALSO
-            // already has an entry for (typically a transposition into a
-            // position seen elsewhere in the tree) -- see the independent
-            // gpu_tt-only check below the loop for the primary case
-            // (a brand-new frontier node with no main-TT entry at all,
-            // e.g. a PV-leaf child freshly precomputed by the GPU queue --
-            // see docs/gpu-async-eval/architecture.md). Non-blocking read
-            // of a small separate score cache; a no-op (miss) whenever
-            // gpu_eval is disabled or this position was never submitted.
-            //
-            // Trusted UNCONDITIONALLY: the GPU-prep thread itself already
-            // compares this score against NNUE before storing it (agreeing
-            // outright, or resolving a disagreement with its own bounded
-            // search -- see gpu_queue.cpp's run()), so by the time it
-            // lands here it's already vetted. Comparing AGAIN here (an
-            // extra NNUE eval, plus a bounded search extension on
-            // disagreement) used to run on this search thread and was
-            // measured to net LOSE ~23 Elo in a real match: that cost
-            // competed with the rest of the search tree for the same time
-            // budget. Moving the verification to the (otherwise idle)
-            // GPU-prep thread keeps this probe cheap again. See
-            // docs/gpu-async-eval/consultative-eval-measurements.md.
-            int16_t gpu_score;
-            std::uint8_t gpu_depth, gpu_age;
-            if (gpu_eval::shared_gpu_tt().probe(key, gpu_score, gpu_depth, gpu_age) &&
-                gpu_age == gpu_eval::shared_gpu_tt().current_age())
-            {
-                score = gpu_score;
-                gpu_eval::shared_gpu_tt().record_useful_hit();
-            }
+            // NOTE: a GPU-eval score used to override `score` here, for a
+            // position the main TT ALSO had an entry for. Removed, for two
+            // independent reasons:
+            //  - Unsound: the bound checks below (TT_ALPHA/TT_BETA) apply
+            //    THIS entry's bound flag, which only ever certified the
+            //    entry's OWN search score ("true value <= s"). That
+            //    guarantee does not transfer to a substituted static CNN
+            //    score, so the cutoffs it produced were unjustified.
+            //  - Pointless: to even reach here the entry must have passed
+            //    `d < depth`, i.e. it holds a real search result at least
+            //    as deep as what this node is being asked for -- strictly
+            //    better information than a static eval.
+            // The GPU score is consulted where it actually helps instead:
+            // the frontier-node case in negamax.cpp's should_qsearch
+            // branch, where there is no search result at all yet.
 
             if (flag == TT_EXACT)
             {
@@ -259,16 +238,11 @@ public:
         }
 
         // NOTE: the brand-new-node case (no main-TT entry at all, e.g. a
-        // PV-leaf child freshly precomputed by the GPU queue) used to be
-        // handled here too, with the same trust-or-nothing logic as
-        // above. Moved to negamax.cpp's should_qsearch branch instead --
-        // that call site can recurse back into negamax() with a bounded
-        // extra-depth search on disagreement (see
-        // gpu_eval::kDisagreementExtensionPlies), which this method
-        // cannot do (a TT probe has no business calling back into the
-        // search). See docs/gpu-async-eval/consultative-eval-measurements.md
-        // section 6 for why a plain reject-and-drop-to-qsearch measured
-        // worse than trusting the (imprecise but free) GPU score there.
+        // PV-leaf child freshly precomputed by the GPU queue) is handled
+        // in negamax.cpp's should_qsearch branch, not here -- that's the
+        // only place where the absence of any search result makes a
+        // static GPU score the best available answer. See
+        // docs/gpu-async-eval/consultative-eval-measurements.md.
         return false;
     }
 

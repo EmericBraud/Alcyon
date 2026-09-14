@@ -22,7 +22,31 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     // On ne l'utilise que si on n'est pas en échec, car une position en échec est instable
     if (!in_check)
     {
-        stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
+        // The GPU-eval queue precomputes CNN scores for the CHILDREN of PV
+        // leaves (see gpu_queue.cpp), and those children are reached right
+        // here, inside qsearch -- not in negamax. Consuming them anywhere
+        // else measured at ~10 useful hits per multi-million-node search,
+        // i.e. the subsystem was invisible to the search.
+        //
+        // Used as the stand-pat, which is where it belongs: what gets
+        // stored is a quiesced value (the position is settled before it is
+        // encoded), so it is the same KIND of quantity as the static eval
+        // it replaces, only computed off-thread. No bound semantics
+        // attached to it -- a stand-pat is an eval, not an alpha/beta
+        // certificate. See docs/gpu-async-eval/consultative-eval-measurements.md.
+        std::int16_t gpu_score;
+        std::uint8_t gpu_depth, gpu_age;
+        if (gpu_eval::enabled.load(std::memory_order_relaxed) &&
+            gpu_eval::shared_gpu_tt().probe(board.get_hash(), gpu_score, gpu_depth, gpu_age) &&
+            gpu_age == gpu_eval::shared_gpu_tt().current_age())
+        {
+            gpu_eval::shared_gpu_tt().record_useful_hit();
+            stand_pat = gpu_score;
+        }
+        else
+        {
+            stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
+        }
         if (stand_pat >= beta)
             return beta;
         if (stand_pat > alpha)
