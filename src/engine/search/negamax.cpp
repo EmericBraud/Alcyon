@@ -295,7 +295,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         const bool critical = !gpu_eval::submit_only_critical() || is_pv ||
                               std::abs(tt_score - beta) <= gpu_eval::kCriticalWindowMarginCp;
         if (tt_hit && critical && depth >= gpu_eval::transposition_submit_min_depth())
-            maybe_submit_transposition_to_gpu(depth);
+            maybe_submit_transposition_to_gpu(depth, tt_move, ply);
     }
 
     if (search::should_qsearch(depth, ply, in_check))

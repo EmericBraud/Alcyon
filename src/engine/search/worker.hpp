@@ -152,7 +152,7 @@ struct SearchWorker
     // worker's own heuristics and pushes a GpuTask. Used by both
     // maybe_submit_pv_leaf_to_gpu (after its PV walk) and
     // maybe_submit_transposition_to_gpu (below, no walk needed).
-    void submit_current_position_to_gpu(int depth);
+    void submit_current_position_to_gpu(int depth, Move tt_move, int ply);
 
     // Called from negamax right after a TT probe that hit (see
     // negamax.cpp) -- `board` is already the position that just proved
@@ -164,7 +164,7 @@ struct SearchWorker
     // of recurring only grow as iterative deepening re-walks the same
     // shallow prefixes at increasing depth. Gated by
     // gpu_eval::kMinDepthForTranspositionSubmit at the call site.
-    void maybe_submit_transposition_to_gpu(int depth);
+    void maybe_submit_transposition_to_gpu(int depth, Move tt_move, int ply);
 
     inline VBoard &get_board()
     {
