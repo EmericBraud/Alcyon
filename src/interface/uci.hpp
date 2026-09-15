@@ -591,6 +591,9 @@ public:
                           << " cnn_nnue_corr=" << gpu_eval::shared_gpu_tt().cnn_nnue_correlation()
                           << " gpu_thread_busy=" << gpu_eval::shared_gpu_tt().gpu_thread_busy_percent() << "%"
                           << " decision_flip_rate=" << gpu_eval::shared_gpu_tt().decision_flip_rate_percent() << "%"
+                          << " ordering_samples=" << gpu_eval::shared_gpu_tt().ordering_samples()
+                          << " ordering_cnn=" << gpu_eval::shared_gpu_tt().ordering_cnn_percent() << "%"
+                          << " ordering_heuristic=" << gpu_eval::shared_gpu_tt().ordering_heuristic_percent() << "%"
                           << " redundant=" << gpu_eval::shared_gpu_tt().redundant_stores()
                           << " redundant_rate=" << gpu_eval::shared_gpu_tt().redundant_rate_percent() << "%"
                           << " collisions=" << gpu_eval::shared_gpu_tt().collisions()

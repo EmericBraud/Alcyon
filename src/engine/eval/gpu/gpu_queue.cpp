@@ -292,6 +292,18 @@ void GpuQueue::run() {
     // side to move.
     static int score_signs[kMaxBatchPositions];
 
+    // Phase 0 (measure_diagnostics() seulement) : de quoi comparer, apres
+    // inference, la preference du CNN parmi les candidats d'une tache au coup
+    // que la recherche a elle-meme retenu. On garde la tache et la cle de
+    // chaque candidat ; apres la boucle de store, TOUS les candidats ont leur
+    // score dans le gpu_tt -- ceux qui viennent d'etre calcules parce qu'on
+    // les y a mis, ceux qui avaient ete dedupliques parce que c'est
+    // precisement pourquoi ils l'ont ete. Une sonde suffit donc, pas besoin
+    // de remonter d'un slot de batch vers sa tache.
+    static GpuTask drained[kMaxDrainTasksPerBatch];
+    static std::uint64_t cand_key[kMaxDrainTasksPerBatch][kNumCandidateMoves];
+    static bool cand_ok[kMaxDrainTasksPerBatch][kNumCandidateMoves];
+
     while (running_.load(std::memory_order_relaxed)) {
         // Wall-clock accounting for GpuTT::gpu_thread_busy_percent() --
         // covers this whole iteration (drain + quietify + encode +
@@ -310,7 +322,14 @@ void GpuQueue::run() {
             if (!task) {
                 break; // queue empty for now
             }
+            const int task_index = tasks_drained;
             ++tasks_drained;
+            if (measure) {
+                drained[task_index] = *task;
+                for (int i = 0; i < kNumCandidateMoves; ++i) {
+                    cand_ok[task_index][i] = false;
+                }
+            }
 
             if (!scratch.load_fen(task->position.to_fen())) {
                 continue; // shouldn't happen -- defensively skip a malformed snapshot
@@ -335,6 +354,10 @@ void GpuQueue::run() {
                 // invisible to the search. See docs/gpu-async-eval/
                 // consultative-eval-measurements.md.
                 const std::uint64_t child_key = scratch.get_hash();
+                if (measure) {
+                    cand_key[task_index][i] = child_key;
+                    cand_ok[task_index][i] = true;
+                }
 
                 // Settle the position before encoding it -- a static CNN
                 // eval on a "loud" position (mid-exchange, in check) is
@@ -427,6 +450,52 @@ void GpuQueue::run() {
                 shared_gpu_tt().record_cnn_vs_nnue(cnn_cp, nnue_cps[i]);
             }
             shared_gpu_tt().store(child_keys[i], static_cast<std::int16_t>(score_signs[i] * cnn_cp), child_depths[i]);
+        }
+
+        // Phase 0 : on STOCKE le hint, on ne le juge pas ici.
+        //
+        // Un noeud qui a deja son coup TT classe ce coup premier avec un
+        // bonus de 9600 : aucun hint n'y sert a rien, et le comparer au coup
+        // TT reviendrait a mesurer la prediction d'une information deja
+        // possedee. On ne retient donc que les noeuds soumis SANS coup TT, et
+        // la comparaison se fait plus tard, quand la recherche aura conclu
+        // sur ce noeud (voir negamax.cpp).
+        //
+        // La valeur stockee etant relative au trait de l'ENFANT, le parent
+        // prefere le candidat au score stocke le PLUS BAS. Apres la boucle de
+        // store, tous les candidats ont leur score dans le gpu_tt : ceux
+        // qu'on vient de calculer parce qu'on les y a mis, les autres parce
+        // que c'est precisement pourquoi ils avaient ete dedupliques.
+        if (measure) {
+            for (int t = 0; t < tasks_drained; ++t) {
+                const GpuTask &task = drained[t];
+                if (task.num_candidates < 2 || task.tt_move.get_value() != 0 ||
+                    task.blind_best.get_value() == 0) {
+                    continue;
+                }
+                Move cnn_best(0);
+                int best_score = 0;
+                for (int i = 0; i < task.num_candidates; ++i) {
+                    if (!cand_ok[t][i]) {
+                        continue;
+                    }
+                    std::int16_t sc;
+                    std::uint8_t d, a;
+                    if (!shared_gpu_tt().probe(cand_key[t][i], sc, d, a) || a != shared_gpu_tt().current_age()) {
+                        continue;
+                    }
+                    if (cnn_best.get_value() == 0 || sc < best_score) {
+                        best_score = sc;
+                        cnn_best = task.candidate_moves[i];
+                    }
+                }
+                if (cnn_best.get_value() == 0) {
+                    continue;
+                }
+                shared_gpu_tt().store_ordering_hint(task.position.zobrist_key,
+                                                    cnn_best.get_from_sq(), cnn_best.get_to_sq(),
+                                                    task.blind_best.get_from_sq(), task.blind_best.get_to_sq());
+            }
         }
 
         const auto busy_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - iter_start).count();

@@ -159,3 +159,72 @@ phase 0 échoue, la conclusion honnête est que **ce modèle-ci** n'a rien à
 apporter à **cette recherche-ci**, et que la suite est côté entraînement
 (tête policy, ou réseau nettement plus petit pour changer le rapport 1:256),
 pas côté intégration.
+
+---
+
+## Résultat de la phase 0 : NÉGATIF, et la direction s'arrête
+
+Mesuré sur 5 positions, **51 821 échantillons** :
+
+| prédicteur | accord avec le coup que la recherche a finalement retenu |
+|---|---|
+| préférence du CNN | **18,75 %** |
+| heuristiques d'ordonnancement | **24,66 %** |
+| écart | **−5,91 points** |
+
+L'heuristique gagne sur **5 positions sur 5**. Par position, l'écart va de
+−1,1 à −30,5 points, jamais en faveur du CNN.
+
+La conclusion est donc plus forte qu'un simple « pas de gain » : le signal
+d'ordonnancement tiré du CNN est **substantiellement moins bon** que
+l'empilement déjà en place (MVV-LVA/SEE, killers, counter-moves, history,
+continuation history). La condition d'arrêt de la section 4 est remplie.
+
+### Le premier test était faux, et c'est instructif
+
+La première version mesurait CNN 56,1 % contre heuristiques 54,1 % sur 1 948
+échantillons — un écart de +2,0 points, ambigu. Elle était **fausse sur les
+deux axes à la fois** :
+
+- **Mauvaise population.** Elle n'échantillonnait que les nœuds ayant *déjà*
+  un coup TT. Or à ces nœuds le coup TT reçoit un bonus de 9600 et passe
+  premier quoi que dise le CNN : un hint n'y sert à rien par construction.
+- **Mauvaise cible.** Elle prenait ce même coup TT comme cible, donc mesurait
+  la capacité du CNN à prédire une information que le moteur possédait déjà.
+
+La version correcte ne retient que les nœuds soumis **sans** coup TT — la
+seule population où un hint servirait — et compare, plus tard, au coup que la
+recherche a effectivement conclu sur ce nœud. D'où la table de hints différée
+(`GpuTT::store_ordering_hint`, délibérément séparée du cache de scores : y
+ranger un hint obligerait à écrire un score bidon, relu ensuite comme un vrai
+stand-pat par qsearch).
+
+Les deux taux s'effondrent au passage (56 %/54 % → 19 %/25 %), ce qui est
+cohérent : prédire le verdict d'une recherche qui n'a pas encore eu lieu est
+bien plus dur que « prédire » un coup déjà présent dans la TT. Et le
+handicap que j'imposais à l'heuristique (l'aveugler au coup TT) devient sans
+objet ici, puisqu'il n'y avait pas de coup TT à masquer — la comparaison est
+donc franche, contre l'ordonnancement réellement déployé.
+
+### Ce que ça ne démontre pas
+
+Le prédicteur testé est la tête **value**, lue par argmin des évals d'enfants.
+Ce n'est pas une tête **policy** entraînée, qui lirait le parent directement
+et serait entraînée sur exactement cette cible. Le proxy sous-estime donc ce
+qu'une policy pourrait faire.
+
+Mais l'écart à combler n'est plus de 2 points d'ambiguïté : c'est **5,9 points
+dans le mauvais sens**, sur 51 821 échantillons et 5 positions sur 5. Avant
+d'investir dans une tête policy (entraînement absent du dépôt, dataset à
+générer, réseau à concevoir), il faudrait une raison de croire qu'elle
+franchirait cet écart. Le poids de la preuve a changé de camp.
+
+### Bilan des deux canaux
+
+- **Valeurs** : plafonné à 1 feuille sur 256 par le rapport de débit,
+  corrélation 0,91 avec NNUE, un nœud touché sur 12 000. Elo mesuré
+  −2,5 ± 27 sur 139 parties.
+- **Ordonnancement** : −5,91 points contre l'ordonnancement existant.
+
+Les deux canaux sont mesurés, aucun ne paie. L'effort rapporterait davantage
+sur la recherche ou le NNUE.
