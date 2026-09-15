@@ -12,7 +12,11 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     int tt_score;
     TTFlag flag;
     Move tt_move = 0;
-    if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move, flag))
+    // La coupure qsearch est desactivee avec CHESS26_TT_NO_CUTOFF : sinon la
+    // re-recherche sur TT pre-remplie gagnerait ici aussi par coupure, et
+    // l'isolation de l'ordonnancement serait fausse. Le coup TT reste lu.
+    if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move, flag) &&
+        search::tt_cutoffs_enabled())
         return tt_score;
 
     bool in_check = board.is_king_attacked<Us>();

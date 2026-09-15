@@ -454,6 +454,13 @@ void SearchWorker::iterative_deepening()
                                                           std::chrono::steady_clock::now() - start_time_ref)
                                                           .count());
 
+                // Vider notre propre reliquat avant de lire le total : sans
+                // ca, "nodes" et "nps" sont toujours des multiples de 32768
+                // (voir le flush par paquets dans check_stop()), ce qui rend
+                // tout comptage de noeuds inexploitable -- y compris pour
+                // comparer deux ordonnancements.
+                global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
+                local_nodes = 0;
                 long long nodes = global_nodes.load(std::memory_order_relaxed);
                 long long nps = nodes * 1000 / elapsed_ms;
                 const Move pv_root = best_root_move.get_value() != 0 ? best_root_move : out_move;

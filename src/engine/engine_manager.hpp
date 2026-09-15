@@ -373,6 +373,15 @@ private:
         for (auto &th : threads)
             th.join();
 
+        // Vider le reliquat de chaque worker : SearchWorker ne reverse
+        // local_nodes dans global_nodes que tous les 32768 noeuds (voir
+        // worker.cpp), donc sans ce flush final tout "nodes"/"nps" affiche en
+        // UCI est un multiple de 32768 et sous-compte jusqu'a 32767 par
+        // thread. evaluate_position() et run_benchmark() le faisaient deja ;
+        // le chemin normal d'un "go" ne le faisait pas.
+        for (auto &worker : workers)
+            total_nodes.fetch_add(worker.local_nodes, std::memory_order_relaxed);
+
         best_move = workers[0].best_root_move;
 
         if (best_move.get_value() == 0) [[unlikely]]

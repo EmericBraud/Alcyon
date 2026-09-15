@@ -6,6 +6,8 @@
 
 #include "common/fatal.hpp"
 
+#include <cstdlib>
+
 namespace search
 {
     inline bool is_null(const VBoard &board, int ply)
@@ -267,7 +269,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         TTFlag flag;
         int tt_score;
         bool tt_hit = shared_tt.probe(board.get_hash(), depth, ply, alpha, beta, tt_score, tt_move, flag);
-        if (tt_move != excluded_move && search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
+        if (search::tt_cutoffs_enabled() && tt_move != excluded_move &&
+            search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
             return tt_score;
 
         // A TT hit here (that didn't already return above) is PROVEN to
