@@ -86,6 +86,36 @@ namespace engine_constants
             PARAM_SPECIFIER double TableInitConst = 0.63065940599962;
             PARAM_SPECIFIER double TableInitDiv = 2.301959991800665;
         }
+        namespace time
+        {
+            // Gestion du temps. Le moteur n'avait qu'UNE limite, donc il
+            // demarrait des iterations qu'il ne pouvait pas finir, les
+            // avortait et jetait leur travail.
+            //
+            // BaseDivisor : part de l'horloge restante allouee a ce coup.
+            // IncrementFraction : part de l'increment ajoutee (en %).
+            // HardFactor : la limite dure vaut ce multiple de la souple --
+            //   elle n'autorise que de FINIR une iteration deja commencee.
+            // HardClampPercent : et jamais plus que ce % de l'horloge, pour
+            //   ne pas jouer toute sa pendule sur un coup.
+            // InstabilityFactor : si le meilleur coup racine vient de
+            //   changer, la limite souple est etiree d'autant -- la position
+            //   n'est pas tranchee, une iteration de plus vaut son prix.
+            PARAM_SPECIFIER int BaseDivisor = 28;
+            PARAM_SPECIFIER int IncrementFraction = 50;
+            PARAM_SPECIFIER int HardFactor = 3;
+            PARAM_SPECIFIER int HardClampPercent = 40;
+            PARAM_SPECIFIER double InstabilityFactor = 1.5;
+            // On ne teste la limite souple qu'APRES une iteration terminee,
+            // donc demarrer l'iteration suivante double a peu pres le temps
+            // total (EBF mesure ~2,2). Il faut donc renoncer bien avant la
+            // limite : a EBF 2, une iteration coute autant que toutes les
+            // precedentes cumulees, donc si on a deja depense plus de la
+            // moitie du budget elle ne rentrera pas.
+            // Mesure sans ce garde-fou : 0,8-1,1 s consommees pour une
+            // limite souple de 403 ms.
+            PARAM_SPECIFIER int SoftStartPercent = 50;
+        }
         namespace see_pruning
         {
             PARAM_SPECIFIER int MaxDepth = 6;
@@ -161,6 +191,36 @@ namespace engine_constants
 
             PARAM_SPECIFIER double TableInitConst = 0.6295;
             PARAM_SPECIFIER double TableInitDiv = 2.3783;
+        }
+        namespace time
+        {
+            // Gestion du temps. Le moteur n'avait qu'UNE limite, donc il
+            // demarrait des iterations qu'il ne pouvait pas finir, les
+            // avortait et jetait leur travail.
+            //
+            // BaseDivisor : part de l'horloge restante allouee a ce coup.
+            // IncrementFraction : part de l'increment ajoutee (en %).
+            // HardFactor : la limite dure vaut ce multiple de la souple --
+            //   elle n'autorise que de FINIR une iteration deja commencee.
+            // HardClampPercent : et jamais plus que ce % de l'horloge, pour
+            //   ne pas jouer toute sa pendule sur un coup.
+            // InstabilityFactor : si le meilleur coup racine vient de
+            //   changer, la limite souple est etiree d'autant -- la position
+            //   n'est pas tranchee, une iteration de plus vaut son prix.
+            PARAM_SPECIFIER int BaseDivisor = 28;
+            PARAM_SPECIFIER int IncrementFraction = 50;
+            PARAM_SPECIFIER int HardFactor = 3;
+            PARAM_SPECIFIER int HardClampPercent = 40;
+            PARAM_SPECIFIER double InstabilityFactor = 1.5;
+            // On ne teste la limite souple qu'APRES une iteration terminee,
+            // donc demarrer l'iteration suivante double a peu pres le temps
+            // total (EBF mesure ~2,2). Il faut donc renoncer bien avant la
+            // limite : a EBF 2, une iteration coute autant que toutes les
+            // precedentes cumulees, donc si on a deja depense plus de la
+            // moitie du budget elle ne rentrera pas.
+            // Mesure sans ce garde-fou : 0,8-1,1 s consommees pour une
+            // limite souple de 403 ms.
+            PARAM_SPECIFIER int SoftStartPercent = 50;
         }
         namespace see_pruning
         {

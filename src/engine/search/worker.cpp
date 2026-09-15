@@ -424,6 +424,7 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 void SearchWorker::iterative_deepening()
 {
     int last_score = 0;
+    Move prev_best_root = 0;
     for (int depth = 1; depth < engine_constants::search::MaxDepth; ++depth)
     {
         age_history();
@@ -444,6 +445,31 @@ void SearchWorker::iterative_deepening()
         const bool depth_reached = depth_limit > 0 && depth >= depth_limit;
         if (depth_reached && thread_id == 0)
             shared_stop.store(true, std::memory_order_relaxed);
+
+        // Limite SOUPLE : on vient de terminer une profondeur, faut-il en
+        // demarrer une autre ? Decide par thread 0 seulement, qui leve
+        // shared_stop pour que tout le monde se replie. L'interet par
+        // rapport a la seule limite dure : on rend un resultat COMPLET au
+        // lieu d'avorter une iteration a mi-chemin et de jeter son travail.
+        //
+        // Bonus d'instabilite : si le meilleur coup racine vient de changer,
+        // la position n'est pas tranchee et une iteration de plus vaut son
+        // prix. S'il est stable, on garde le temps pour plus tard.
+        if (thread_id == 0)
+        {
+            const int soft = manager.soft_limit_ms();
+            const Move current_best = best_root_move.get_value() != 0 ? best_root_move : out_move;
+            const bool unstable = prev_best_root.get_value() != 0 &&
+                                  current_best.get_value() != prev_best_root.get_value();
+            prev_best_root = current_best;
+            if (soft > 0)
+            {
+                const double factor = unstable ? engine_constants::search::time::InstabilityFactor : 1.0;
+                const double budget = soft * factor * (engine_constants::search::time::SoftStartPercent / 100.0);
+                if (manager.elapsed_ms() >= static_cast<long long>(budget))
+                    shared_stop.store(true, std::memory_order_relaxed);
+            }
+        }
 
         if (depth_reached || shared_stop.load(std::memory_order_relaxed))
         {

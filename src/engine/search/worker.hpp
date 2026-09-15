@@ -23,6 +23,41 @@ class EngineManager;
 // Voir docs/gpu-async-eval/ordering-hints-plan.md.
 namespace search
 {
+    // Diagnostic (CHESS26_ORDER_STATS=1, affiche par la commande UCI
+    // "orderstats") : a quel RANG se trouve le coup qui provoque un
+    // fail-high, et est-il tactique ou calme ?
+    //
+    // C'est la mesure qui dimensionne l'idee de reordonner la QUEUE de liste
+    // (quiets et mauvaises captures) avec une tete policy : si la quasi-
+    // totalite des coupures tombe sur les deux premiers coups, cette queue
+    // est rarement atteinte et la reordonner ne peut rien rapporter. Si une
+    // part notable tombe au rang 5 ou plus, il y a de la place.
+    //
+    // Buckets : rang 1, 2, 3, 4, 5-8, 9-16, 17+.
+    constexpr int kCutoffBuckets = 7;
+    inline std::atomic<long long> cutoff_tactical[kCutoffBuckets] = {};
+    inline std::atomic<long long> cutoff_quiet[kCutoffBuckets] = {};
+
+    inline bool order_stats_enabled()
+    {
+        static const bool on = std::getenv("CHESS26_ORDER_STATS") != nullptr;
+        return on;
+    }
+
+    inline int cutoff_bucket(int rank)
+    {
+        if (rank <= 4) return rank - 1;
+        if (rank <= 8) return 4;
+        if (rank <= 16) return 5;
+        return 6;
+    }
+
+    inline void record_cutoff(int rank, bool is_tactical)
+    {
+        const int b = cutoff_bucket(rank);
+        (is_tactical ? cutoff_tactical : cutoff_quiet)[b].fetch_add(1, std::memory_order_relaxed);
+    }
+
     inline bool tt_cutoffs_enabled()
     {
         static const bool on = std::getenv("CHESS26_TT_NO_CUTOFF") == nullptr;

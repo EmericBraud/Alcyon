@@ -44,6 +44,11 @@ class UCI
     // donnees d'entrainement, sinon l'ouverture de chaque partie est
     // etiquetee par data/komodo.bin au lieu de la recherche (voir parse_go).
     bool own_book = true;
+    // "Move Overhead" etait annonce comme option UCI et JAMAIS lu (marque
+    // //@TODO). Le manager de tournoi le reglait, le moteur l'ignorait, donc
+    // il depassait systematiquement son budget reel de la latence de
+    // process/pipe -- un risque de perte au temps en partie reelle.
+    int move_overhead = 100;
 
     static bool parse_int(const std::string &s, int &out)
     {
@@ -108,7 +113,7 @@ class UCI
         std::string token;
         bool is_ponder = false;
         bool is_infinite = false;
-        int wtime = -1, btime = -1, winc = 0, binc = 0, movetime = -1, depth = -1;
+        int wtime = -1, btime = -1, winc = 0, binc = 0, movetime = -1, depth = -1, movestogo = -1;
 
         // Lecture des options UCI
         while (is >> token)
@@ -125,6 +130,8 @@ class UCI
                 is >> binc;
             else if (token == "movetime")
                 is >> movetime;
+            else if (token == "movestogo")
+                is >> movestogo;
             else if (token == "depth")
                 is >> depth;
             else if (token == "infinite")
@@ -163,26 +170,46 @@ class UCI
         }
 
         // Time Management
+        //
+        // Deux limites desormais (voir engine_constants::search::time) :
+        //  - SOUPLE : on ne demarre pas une nouvelle iteration au-dela.
+        //  - DURE   : on avorte une iteration en cours.
+        // Une seule limite faisait demarrer des iterations infinissables,
+        // avortees a mi-chemin, dont le travail etait perdu.
+        //
+        // La limite souple n'est posee que pour un vrai controle de temps
+        // (wtime/btime). Avec movetime ou "go depth", l'appelant demande une
+        // duree ou une profondeur precise : on la respecte telle quelle.
+        namespace tc = engine_constants::search::time;
         int time_to_think = 5000;
+        int soft_ms = 0;
 
-        // "go depth N" sans contrainte de temps : le temps ne doit pas etre la
-        // limite qui mord, c'est la profondeur. Le champ depth etait parse
-        // puis jamais relu -- toute recherche sans movetime/wtime tournait 5 s
-        // quelle que soit la profondeur demandee.
         if (depth != -1 && movetime == -1 && wtime == -1)
         {
+            // "go depth N" : la profondeur mord, pas le temps. Le champ depth
+            // etait parse puis jamais relu -- toute recherche sans
+            // movetime/wtime tournait 5 s quelle que soit la profondeur.
             time_to_think = std::numeric_limits<int>::max() / 2;
         }
         else if (movetime != -1)
         {
-            time_to_think = movetime - 50;
+            time_to_think = movetime - move_overhead;
         }
         else if (wtime != -1)
         {
-            int my_time = (board.get_side_to_move() == WHITE) ? wtime : btime;
-            int my_inc = (board.get_side_to_move() == WHITE) ? winc : binc;
-
-            time_to_think = (my_time / 28) + (my_inc / 2);
+            const int my_time = (board.get_side_to_move() == WHITE) ? wtime : btime;
+            const int my_inc = (board.get_side_to_move() == WHITE) ? winc : binc;
+            // Budget reellement disponible : l'horloge moins la latence que
+            // l'arbitre nous compte en plus.
+            const int usable = std::max(1, my_time - move_overhead);
+            // movestogo n'etait pas parse du tout : en cadence par periodes
+            // le moteur etait aveugle. Avec, on repartit sur les coups
+            // restants ; sans, on retombe sur le diviseur fixe.
+            const int share = (movestogo > 0) ? std::max(1, usable / std::max(1, movestogo))
+                                              : usable / tc::BaseDivisor;
+            soft_ms = share + (my_inc * tc::IncrementFraction) / 100;
+            time_to_think = std::min(soft_ms * tc::HardFactor, (usable * tc::HardClampPercent) / 100);
+            time_to_think = std::max(time_to_think, soft_ms);
         }
 
         if (time_to_think < 20)
@@ -194,7 +221,7 @@ class UCI
             return;
         }
         engine.start_search(time_to_think, is_ponder && ponder_enabled, is_infinite, ponder_enabled,
-                            depth > 0 ? depth : 0);
+                            depth > 0 ? depth : 0, soft_ms);
     }
 
     // The two backends read different files: the Metal/MPSGraph path parses
@@ -288,6 +315,15 @@ class UCI
         {
             e.get_tt().clear();
             logs::debug << "info string Hash table cleared" << std::endl;
+            handled = true;
+        }
+        else if (name == "Move Overhead ")
+        {
+            int overhead = 0;
+            if (parse_int(value, overhead) && overhead >= 0 && overhead <= 1000)
+                move_overhead = overhead;
+            else
+                logs::uci << "info string error: Move Overhead must be 0..1000" << std::endl;
             handled = true;
         }
         else if (name == "OwnBook ")
@@ -519,7 +555,7 @@ public:
                 logs::uci << "id author Emeric" << std::endl;
                 logs::uci << "option name Threads type spin default " << default_threads << " min 1 max " << std::thread::hardware_concurrency() << std::endl;
                 logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
-                logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl; //@TODO
+                logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl;
                 logs::uci << "option name Ponder type check default " << (ponder_enabled ? "true" : "false") << std::endl;
                 logs::uci << "option name OwnBook type check default true" << std::endl;
                 logs::uci << "option name gpueval type check default false" << std::endl;
@@ -600,6 +636,25 @@ public:
                           << " collisions=" << gpu_eval::shared_gpu_tt().collisions()
                           << " collision_rate=" << gpu_eval::shared_gpu_tt().collision_rate_percent() << "%"
                           << " capacity=" << gpu_eval::shared_gpu_tt().capacity() << std::endl;
+            }
+            else if (token == "orderstats")
+            {
+                // Histogramme des rangs de coupure -- voir search::record_cutoff.
+                static const char *labels[] = {"1", "2", "3", "4", "5-8", "9-16", "17+"};
+                long long total = 0, tail_quiet = 0;
+                for (int i = 0; i < search::kCutoffBuckets; ++i)
+                    total += search::cutoff_tactical[i].load() + search::cutoff_quiet[i].load();
+                for (int i = 4; i < search::kCutoffBuckets; ++i)
+                    tail_quiet += search::cutoff_quiet[i].load();
+                logs::uci << "info string orderstats total=" << total;
+                for (int i = 0; i < search::kCutoffBuckets; ++i)
+                {
+                    const long long t = search::cutoff_tactical[i].load();
+                    const long long q = search::cutoff_quiet[i].load();
+                    logs::uci << " rang" << labels[i] << "=" << (t + q)
+                              << "(" << (total ? 100.0 * (t + q) / total : 0.0) << "%,tact=" << t << ",calme=" << q << ")";
+                }
+                logs::uci << " queue_calme_rang5+=" << (total ? 100.0 * tail_quiet / total : 0.0) << "%" << std::endl;
             }
             else if (token == "gpubench")
             {
