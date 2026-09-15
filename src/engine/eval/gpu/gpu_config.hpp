@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 
 // GPU-eval subsystem: a dedicated CPU thread encodes leaf-of-PV positions
 // (per search worker) into CNN input planes and batches them to a Metal
@@ -25,9 +26,17 @@ namespace gpu_eval {
 inline std::atomic<bool> enabled{false};
 
 // How many candidate replies to encode and batch per PV-leaf position.
-// Tunable later; kept as a compile-time constant for now so the fixed
-// -size buffers below don't need runtime resizing.
-inline constexpr int kNumCandidateMoves = 5;
+// Kept as a compile-time constant so the fixed-size buffers below don't
+// need runtime resizing.
+//
+// The cheapest volume multiplier there is: the submitting search thread
+// already generated and scored EVERY legal move (see
+// SearchWorker::submit_current_position_to_gpu), so taking more of them
+// costs it a few extra pick_best_move() passes and nothing else -- while
+// the GPU thread's real cost is per-INFERENCE-CALL, not per-position
+// (measured ~42ms per call almost regardless of batch size), so a fuller
+// batch is nearly free throughput.
+inline constexpr int kNumCandidateMoves = 4;
 
 // Root-move-improvement submissions (see negamax.cpp's ply==0 loop and
 // SearchWorker::maybe_submit_pv_leaf_to_gpu_throttled) happen on the
@@ -39,7 +48,10 @@ inline constexpr int kNumCandidateMoves = 5;
 // measurement showed it wasn't needed: GpuQueue::push() already drops
 // silently on a full/contended queue, so bursty submissions just get
 // dropped rather than causing unbounded cost.
-inline constexpr int kMinDepthForMidSearchSubmit = 6;
+inline int mid_search_submit_min_depth() {
+    static const int v = std::getenv("CHESS26_GPU_MID_DEPTH") ? std::atoi(std::getenv("CHESS26_GPU_MID_DEPTH")) : 3;
+    return v;
+}
 
 // How far apart (in cp) NNUE and the CNN have to be before the two count
 // as "disagreeing" on a position. MEASUREMENT ONLY now (see GpuTT::
@@ -76,27 +88,80 @@ inline constexpr int kCnnToNnueOffsetCp = -165;
 // making it a much better bet for "will this be looked at again" than
 // an arbitrary leaf (tried first: a near-alpha qsearch leaf, measured at
 // ~4% useful_hits -- most are refuted branches alpha-beta abandons for
-// good and never revisits). Gated by depth so this doesn't fire on
-// every trivially-shallow transposition (extremely frequent, least
-// valuable per position individually).
-inline constexpr int kMinDepthForTranspositionSubmit = 4;
+// good and never revisits).
+//
+// This is THE volume knob: it used to be 4, which measured at ~60-200
+// positions/s stored -- far too few to be visible in a multi-million-node
+// search (measured ~85 useful hits per 8s search). At 0, with the
+// criticality gate below doing the filtering instead, the same search
+// stores ~3000 positions/s and lands ~1700-1900 useful hits. The GPU
+// device itself is the only thing that should be the limit.
+//
+// WARNING: lowering this multiplies the move-gen + move-scoring work
+// done ON THE SEARCH THREADS (see
+// SearchWorker::submit_current_position_to_gpu). That is exactly the cost
+// pattern that measured -23 Elo in an earlier iteration. Its NPS cost has
+// NOT been measured -- the measurement session ran on battery, where
+// back-to-back identical runs varied by 74% (2.12M vs 3.70M nps) and any
+// NPS comparison is meaningless. Re-measure on AC power before drawing
+// any Elo conclusion from this default.
+inline int transposition_submit_min_depth() {
+    static const int v = std::getenv("CHESS26_GPU_TT_DEPTH") ? std::atoi(std::getenv("CHESS26_GPU_TT_DEPTH")) : 0;
+    return v;
+}
 
 // How many queued PV-leaf tasks the GPU thread drains and encodes
 // together before firing a single GpuBackend::infer_batch() call (see
-// GpuQueue::run(), gpu_queue.cpp). A small network like this one is
-// dominated by MPSGraph's per-call launch overhead rather than raw
-// compute, so batching several tasks' candidates into one Metal call
-// amortizes that overhead instead of paying it once per 5-candidate
-// task. kMaxBatchPositions bounds the fixed-size encoding buffers (no
-// runtime allocation on this thread's hot loop).
-inline constexpr int kMaxDrainTasksPerBatch = 8;
-inline constexpr int kMaxBatchPositions = kMaxDrainTasksPerBatch * kNumCandidateMoves;
+// GpuQueue::run(), gpu_queue.cpp). This network is dominated by
+// MPSGraph's per-call dispatch overhead, not by raw compute -- measured
+// (gpubench): 225 positions/s at batch 1, 4304/s at batch 256, i.e. the
+// cost of a call barely moves with its size. So the batch should be as
+// full as production allows.
+//
+// kMaxBatchPositions bounds the fixed-size encoding buffers (no runtime
+// allocation on this thread's hot loop): 256 * 31 * 64 floats = 2MB,
+// sized to gpubench's measured best throughput point.
+inline constexpr int kMaxBatchPositions = 256;
+// Generously above kMaxBatchPositions / kNumCandidateMoves: most drained
+// candidates are deduped away (measured ~60-78% already fresh in the GPU
+// tt), so draining only enough tasks to nominally fill the buffer leaves
+// it less than half full. The drain loop is bounded by the buffer itself,
+// not by this.
+inline constexpr int kMaxDrainTasksPerBatch = 128;
+
+// Criticality gate on transposition submissions (see negamax.cpp's
+// TT-probe branch). How near its own cutoff boundary a node's TT score
+// has to be for a refined eval to plausibly change what the node does.
+inline constexpr int kCriticalWindowMarginCp = 100;
+
+// On by default (opt out with CHESS26_GPU_CRIT=0): with the depth gate
+// above opened to 0, this is what keeps the submissions worth making.
+// Measured via decision_flip_rate_percent(): turning it on raised the
+// share of consumed GPU scores that actually changed a node's outcome at
+// every depth setting tried (48%->57% at depth 0, 49%->53% at 2,
+// 70%->79% at 4).
+inline bool submit_only_critical() {
+    static const bool on = [] {
+        const char *v = std::getenv("CHESS26_GPU_CRIT");
+        return !v || std::atoi(v) != 0;
+    }();
+    return on;
+}
+
+// Diagnostic switch for the decision-flip measurement at the qsearch
+// consumption site (see qsearch.cpp). Costs an extra NNUE eval per GPU
+// hit, so it is opt-in and never on in a real match.
+inline bool measure_decision_flips() {
+    static const bool on = std::getenv("CHESS26_GPU_MEASURE_FLIPS") != nullptr;
+    return on;
+}
 
 // Fixed-capacity ring buffer for pending GPU-eval tasks (see gpu_queue.hpp).
-// Must be a power of two (index masking, no modulo). One task per
-// worker-iteration PV leaf, so this only needs to cover "a few pending
-// iterations behind the dedicated thread", not one slot per search node.
-inline constexpr std::size_t kQueueCapacity = 256;
+// Must be a power of two (index masking, no modulo). Sized so a burst of
+// submissions between two inference calls isn't dropped: at 256 it was
+// measured dropping 16% of pushes while the GPU thread was stalled in a
+// single slow infer_batch() call.
+inline constexpr std::size_t kQueueCapacity = 1024;
 
 // Preallocated size of the small GPU-score cache (gpu_tt.hpp). 4 MB for
 // now, matching a single 32-byte(ish) entry per bucket at a modest entry

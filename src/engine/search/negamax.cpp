@@ -282,7 +282,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         // increasing depth. Gated by depth so this doesn't fire on every
         // trivially-shallow transposition (extremely frequent, least
         // valuable per position).
-        if (tt_hit && depth >= gpu_eval::kMinDepthForTranspositionSubmit)
+        //
+        // Second gate (see gpu_eval::submit_only_critical): CRITICALITY.
+        // A refined eval can only change what a node does if the node's
+        // decision is close. Two free signals here:
+        //  - is_pv: a PV node needs an exact value; a null-window node is
+        //    only being proved to fail high or low, and a 30cp refinement
+        //    of an eval that is 400cp from the bound changes nothing.
+        //  - |tt_score - beta| small: the node sits near its own cutoff
+        //    boundary, so a better eval flips the outcome.
+        // Measured via decision_flip_rate_percent() -- see qsearch.cpp.
+        const bool critical = !gpu_eval::submit_only_critical() || is_pv ||
+                              std::abs(tt_score - beta) <= gpu_eval::kCriticalWindowMarginCp;
+        if (tt_hit && critical && depth >= gpu_eval::transposition_submit_min_depth())
             maybe_submit_transposition_to_gpu(depth);
     }
 

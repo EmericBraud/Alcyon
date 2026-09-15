@@ -62,6 +62,8 @@ public:
         cnn_vs_nnue_samples_.store(0, std::memory_order_relaxed);
         redundant_stores_.store(0, std::memory_order_relaxed);
         collisions_.store(0, std::memory_order_relaxed);
+        flips_.store(0, std::memory_order_relaxed);
+        flip_samples_.store(0, std::memory_order_relaxed);
         busy_ns_.store(0, std::memory_order_relaxed);
         idle_ns_.store(0, std::memory_order_relaxed);
     }
@@ -176,6 +178,21 @@ public:
     // long the idle sleep_for() wait took when the queue was empty.
     // Together these answer "how saturated is the GPU-prep thread" --
     // see gpu_thread_busy_percent().
+    // See qsearch.cpp's consumption site: called once per GPU score the
+    // search actually read, with whether that score put the node on the
+    // other side of beta than the eval it replaced would have. Only
+    // populated when measure_decision_flips() is on.
+    void record_decision_flip(bool flipped) {
+        flip_samples_.fetch_add(1, std::memory_order_relaxed);
+        if (flipped) {
+            flips_.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    double decision_flip_rate_percent() const {
+        const std::uint64_t n = flip_samples_.load(std::memory_order_relaxed);
+        return n == 0 ? 0.0 : (100.0 * static_cast<double>(flips_.load(std::memory_order_relaxed)) / static_cast<double>(n));
+    }
+
     void record_busy_ns(std::uint64_t ns) { busy_ns_.fetch_add(ns, std::memory_order_relaxed); }
     void record_idle_ns(std::uint64_t ns) { idle_ns_.fetch_add(ns, std::memory_order_relaxed); }
 
@@ -270,6 +287,8 @@ private:
     double covariance() const { return mean_of(cnn_nnue_total_) - avg_cnn_cp() * avg_nnue_cp(); }
     double var_cnn() const { return mean_of(cnn_sq_total_) - avg_cnn_cp() * avg_cnn_cp(); }
     double var_nnue() const { return mean_of(nnue_sq_total_) - avg_nnue_cp() * avg_nnue_cp(); }
+    std::atomic<std::uint64_t> flips_{0};
+    std::atomic<std::uint64_t> flip_samples_{0};
     std::atomic<std::uint64_t> busy_ns_{0};
     std::atomic<std::uint64_t> idle_ns_{0};
     std::atomic<std::uint64_t> redundant_stores_{0};

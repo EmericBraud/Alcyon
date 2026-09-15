@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <optional>
+#include <string>
 
 #include "core/move/generator/move_generator.hpp"
 #include "engine/config/eval.hpp"
@@ -24,15 +25,31 @@ namespace gpu_eval {
 
 namespace {
 
-// Best-effort: bias the scheduler away from performance cores. macOS
-// exposes no public API to pin a thread to a specific physical core
-// (unlike Linux's pthread_setaffinity_np, see the commented-out attempt
-// in engine_manager.hpp) -- QoS class is the closest available lever,
-// and this subsystem is Apple/Metal-only for now (see CMakeLists.txt's
-// ENABLE_GPU_EVAL), so that's the only platform this needs to handle.
-void pin_to_background_core() {
+// This thread spends essentially all of its time inside MPSGraph's
+// synchronous dispatch (measured: infer_batch() is >99% of its wall
+// clock; quietify + encode + NNUE together are under 1%). That dispatch
+// is CPU-side work, so demoting this thread starves the GPU rather than
+// protecting the search: at QOS_CLASS_UTILITY -- which parks it on the
+// E-cores -- one inference call took 394ms against 42ms at
+// QOS_CLASS_USER_INITIATED, a 9.4x throughput difference with 10 search
+// threads running. So it asks for the SAME priority band as the search
+// threads, not a lower one.
+//
+// Kept overridable (CHESS26_GPU_QOS=utility|default|user_initiated|
+// user_interactive) because this is a scheduling trade-off against the
+// search threads on a 4 P-core + 6 E-core machine, and the right answer
+// may differ on other hardware.
+// ponytail: env var rather than a UCI option -- it is a diagnostic
+// knob, promote it if it turns out to need per-match tuning.
+void set_gpu_thread_qos() {
 #ifdef __APPLE__
-    pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+    const char *q = std::getenv("CHESS26_GPU_QOS");
+    const std::string name = q ? q : "";
+    const qos_class_t qos = name == "utility"          ? QOS_CLASS_UTILITY
+                            : name == "default"        ? QOS_CLASS_DEFAULT
+                            : name == "user_interactive" ? QOS_CLASS_USER_INTERACTIVE
+                                                         : QOS_CLASS_USER_INITIATED;
+    pthread_set_qos_class_self_np(qos, 0);
 #endif
 }
 
@@ -232,7 +249,7 @@ void GpuQueue::stop() {
 }
 
 void GpuQueue::run() {
-    pin_to_background_core();
+    set_gpu_thread_qos();
 
     // VBoard (not plain Board) -- quietify() below needs real static eval
     // (Eval::eval_relative) for its stand-pat check, which requires an
