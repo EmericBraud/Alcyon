@@ -133,14 +133,21 @@ if(ENABLE_NNUE_EVAL)
 endif()
 
 if(ENABLE_GPU_EVAL)
-    target_sources(chess_core PRIVATE src/engine/eval/gpu/metal_backend.mm)
-    set_source_files_properties(src/engine/eval/gpu/metal_backend.mm PROPERTIES
+    target_sources(chess_core PRIVATE
+        src/engine/eval/gpu/metal_backend.mm
+        src/engine/eval/gpu/coreml_backend.mm
+    )
+    set_source_files_properties(
+        src/engine/eval/gpu/metal_backend.mm
+        src/engine/eval/gpu/coreml_backend.mm
+        PROPERTIES
         COMPILE_FLAGS "-fobjc-arc"
         LANGUAGE OBJCXX
     )
     target_compile_definitions(chess_core PUBLIC CHESS26_GPU_EVAL_METAL)
     target_compile_definitions(chess26 PRIVATE CHESS26_GPU_EVAL_METAL)
 
+    find_library(COREML_FRAMEWORK CoreML REQUIRED)
     find_library(METAL_FRAMEWORK Metal REQUIRED)
     find_library(MPS_FRAMEWORK MetalPerformanceShaders REQUIRED)
     find_library(MPS_GRAPH_FRAMEWORK MetalPerformanceShadersGraph REQUIRED)
@@ -160,8 +167,8 @@ if(ENABLE_GPU_EVAL)
     # (libc++'s std::__1:: vs libstdc++'s std::__cxx11::/plain std::),
     # so there's no symbol collision; only the extern "C" boundary
     # (gpu_backend.hpp) needs to (and does) stay POD-only.
-    target_link_libraries(chess_core PUBLIC ${METAL_FRAMEWORK} ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK} ${FOUNDATION_FRAMEWORK} c++)
-    target_link_libraries(chess26 PRIVATE ${METAL_FRAMEWORK} ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK} ${FOUNDATION_FRAMEWORK} c++)
+    target_link_libraries(chess_core PUBLIC ${METAL_FRAMEWORK} ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK} ${COREML_FRAMEWORK} ${FOUNDATION_FRAMEWORK} c++)
+    target_link_libraries(chess26 PRIVATE ${METAL_FRAMEWORK} ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK} ${COREML_FRAMEWORK} ${FOUNDATION_FRAMEWORK} c++)
 endif()
 
 if(ENABLE_GUI)

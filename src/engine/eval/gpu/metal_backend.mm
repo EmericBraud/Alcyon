@@ -350,13 +350,13 @@ MetalGraphImpl &impl() {
 // std::string/std::vector crossing into the rest of chess_core, which is
 // compiled by a different C++ toolchain (this file needs Apple Clang;
 // the rest of the project doesn't -- see that header's comment).
-bool chess26_gpu_backend_load_weights(const char *weights_path) {
+bool chess26_gpu_metal_load_weights(const char *weights_path) {
     return gpu_eval::impl().load(std::string(weights_path));
 }
 
-bool chess26_gpu_backend_is_ready() { return gpu_eval::impl().is_ready(); }
+bool chess26_gpu_metal_is_ready() { return gpu_eval::impl().is_ready(); }
 
-void chess26_gpu_backend_infer_batch(const float *planes_batch, const int *piece_counts, int batch_size,
+void chess26_gpu_metal_infer_batch(const float *planes_batch, const int *piece_counts, int batch_size,
                                       std::int32_t *out_scores_cp) {
     gpu_eval::impl().infer(planes_batch, piece_counts, batch_size, out_scores_cp);
 }
