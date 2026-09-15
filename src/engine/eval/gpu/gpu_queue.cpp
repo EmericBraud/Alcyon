@@ -25,15 +25,17 @@ namespace gpu_eval {
 
 namespace {
 
-// This thread spends essentially all of its time inside MPSGraph's
-// synchronous dispatch (measured: infer_batch() is >99% of its wall
-// clock; quietify + encode + NNUE together are under 1%). That dispatch
-// is CPU-side work, so demoting this thread starves the GPU rather than
-// protecting the search: at QOS_CLASS_UTILITY -- which parks it on the
-// E-cores -- one inference call took 394ms against 42ms at
-// QOS_CLASS_USER_INITIATED, a 9.4x throughput difference with 10 search
-// threads running. So it asks for the SAME priority band as the search
-// threads, not a lower one.
+// This thread spends most of its time inside the backend's synchronous
+// inference dispatch. Profiled over a 10s search, per phase:
+//   ANE backend:   infer 7257ms (73%), quietify 2399ms (24%),
+//                  load_fen 210ms, nnue-stats 44ms, encode 34ms, rest 25ms
+//   Metal backend: infer 7296ms (87%), quietify 1013ms (12%), rest ~160ms
+// That dispatch is CPU-side work, so demoting this thread starves the
+// accelerator rather than protecting the search: at QOS_CLASS_UTILITY --
+// which parks it on the E-cores -- one MPSGraph inference call took 394ms
+// against 42ms at QOS_CLASS_USER_INITIATED, a 9.4x throughput difference
+// with 10 search threads running. So it asks for the SAME priority band
+// as the search threads, not a lower one.
 //
 // Kept overridable (CHESS26_GPU_QOS=utility|default|user_initiated|
 // user_interactive) because this is a scheduling trade-off against the
@@ -276,8 +278,12 @@ void GpuQueue::run() {
     // NNUE eval of the settled position, captured at encode time (while
     // `scratch` is still live there) -- compared against the CNN's score
     // after inference purely to MEASURE how far the two models are apart
-    // (see GpuTT::record_cnn_vs_nnue); nothing is acted on.
+    // (see GpuTT::record_cnn_vs_nnue); nothing is acted on, so it is only
+    // computed under measure_diagnostics(). Profiled at 57ms of this
+    // thread's ~9.5s -- small, but it is self-measurement, not work the
+    // engine needs.
     static int nnue_cps[kMaxBatchPositions];
+    const bool measure = measure_diagnostics();
     // +1 / -1: the CNN scores the SETTLED position, but the score is
     // stored under the UNSETTLED candidate's key (that's the position the
     // search actually probes -- see the store loop below). An odd number
@@ -386,7 +392,9 @@ void GpuQueue::run() {
                     score_signs[batch_size] = (quiet_num_moves % 2 == 0) ? 1 : -1;
                     // Captured now, while `scratch` is still live at the
                     // settled position -- see nnue_cps' doc above.
-                    nnue_cps[batch_size] = eval_relative_dispatch(scratch, -engine_constants::eval::Inf, engine_constants::eval::Inf);
+                    if (measure) {
+                        nnue_cps[batch_size] = eval_relative_dispatch(scratch, -engine_constants::eval::Inf, engine_constants::eval::Inf);
+                    }
                     ++batch_size;
                 }
 
@@ -415,7 +423,9 @@ void GpuQueue::run() {
             // it was measured, and where nnue_cps[i] lives), before the
             // sign flip that moves the score into the stored key's frame.
             const int cnn_cp = scores[i] + kCnnToNnueOffsetCp;
-            shared_gpu_tt().record_cnn_vs_nnue(cnn_cp, nnue_cps[i]);
+            if (measure) {
+                shared_gpu_tt().record_cnn_vs_nnue(cnn_cp, nnue_cps[i]);
+            }
             shared_gpu_tt().store(child_keys[i], static_cast<std::int16_t>(score_signs[i] * cnn_cp), child_depths[i]);
         }
 

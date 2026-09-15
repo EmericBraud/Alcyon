@@ -43,7 +43,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
             gpu_eval::shared_gpu_tt().record_useful_hit();
             stand_pat = gpu_score;
 
-            // Measurement mode (CHESS26_GPU_MEASURE_FLIPS=1): of the GPU
+            // Measurement mode (CHESS26_GPU_MEASURE=1): of the GPU
             // scores the search actually reads, how many CHANGE what this
             // node does? A score that lands on the same side of beta as
             // the eval it replaced delivered nothing, however accurate it
@@ -53,7 +53,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
             //
             // Off by default: it costs the very NNUE eval the GPU score
             // was there to avoid, so it is a diagnostic, not a feature.
-            if (gpu_eval::measure_decision_flips())
+            if (gpu_eval::measure_diagnostics())
             {
                 const int nnue = Eval::eval_relative<Us>(board, alpha, beta);
                 gpu_eval::shared_gpu_tt().record_decision_flip((gpu_score >= beta) != (nnue >= beta));
