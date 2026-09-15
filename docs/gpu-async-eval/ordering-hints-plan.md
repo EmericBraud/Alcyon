@@ -273,3 +273,45 @@ l'ordonnancement actuel, puis avec le meilleur coup placé d'office en tête
 rapporter. Si l'oracle n'économise que quelques pourcents, aucune policy ne
 vaut l'investissement ; s'il en économise 30 %, la cible est claire et on
 connaît d'avance la barre à franchir (39,13 % de top-1).
+
+### La borne : un ordonnancement PARFAIT vaut ~15 % de nœuds, soit ~15 Elo
+
+Mesuré sans rien entraîner. Protocole : `Threads 1` (déterministe),
+`go depth 10`, nombre de nœuds d'une recherche à TT vide contre une
+re-recherche sur une TT déjà remplie par une recherche de même profondeur —
+donc où presque chaque nœud connaît d'avance le coup qu'une recherche
+profonde y préfère.
+
+Les coupures de score de la TT sont **désactivées des deux côtés**
+(`CHESS26_TT_NO_CUTOFF=1`, voir `search::tt_cutoffs_enabled`). Sans ça, la
+seconde recherche gagnerait surtout par ses coupures et l'apport de
+l'ordonnancement serait massivement surestimé.
+
+| position | TT vide | TT pré-remplie | réduction |
+|---|---|---|---|
+| milieu 1 | 158 023 | 123 801 | +21,7 % |
+| milieu 2 | 167 563 | 167 089 | +0,3 % |
+| Kiwipete | 71 338 | 63 629 | +10,8 % |
+| milieu 3 | 64 776 | 32 411 | +50,0 % |
+| finale | 28 417 | 27 725 | +2,4 % |
+| **agrégé** | **490 117** | **414 655** | **+15,4 %** |
+
+15,4 % de nœuds en moins = facteur ×1,18 = **0,24 doublement**. À ~60 Elo par
+doublement, le plafond d'un ordonnancement **parfait** est de l'ordre de
+**15 Elo** (12-17 selon la constante retenue).
+
+Et ce plafond n'est pas atteignable. Les heuristiques actuelles font déjà
+39,13 % de top-1 ; une policy entraînée qui monterait à 50 % ne capturerait,
+en extrapolation linéaire, que (50−39)/(100−39) ≈ 18 % du plafond, soit
+**~3 Elo**. Pour ça il faudrait débloquer l'entraînement (absent du dépôt),
+générer un dataset, concevoir et entraîner un réseau, puis l'intégrer.
+
+La dispersion est forte (0,3 % à 50 % sur 5 positions), donc l'agrégat est à
+prendre à ±plusieurs points. Mais l'ordre de grandeur — plafond à deux
+chiffres bas, gain réaliste à un chiffre — est robuste, et il suffit à
+trancher.
+
+**Note utile au-delà de ce sous-système** : cette borne vaut pour *toute*
+amélioration de l'ordonnancement, pas seulement pour une policy CNN. Elle dit
+donc aussi qu'il reste peu de marge à gratter en réglant les heuristiques
+existantes à la main.

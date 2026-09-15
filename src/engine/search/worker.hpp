@@ -1,4 +1,6 @@
 #pragma once
+
+#include <cstdlib>
 #include <chrono>
 
 #include <atomic>
@@ -10,6 +12,23 @@
 #include "engine/eval/virtual_board.hpp"
 
 class EngineManager;
+
+// Diagnostic (CHESS26_TT_NO_CUTOFF=1) : la TT ne fournit plus que des COUPS,
+// plus aucune coupure de score -- ni dans negamax ni dans qsearch. Sert a
+// borner le gain maximal qu'un ordonnancement parfait pourrait rapporter : on
+// compare le nombre de noeuds d'une recherche a TT vide a celui d'une
+// re-recherche sur une TT deja remplie par une recherche de meme profondeur.
+// Sans ce drapeau la seconde recherche gagnerait surtout par ses coupures, ce
+// qui surestimerait massivement l'apport de l'ordonnancement.
+// Voir docs/gpu-async-eval/ordering-hints-plan.md.
+namespace search
+{
+    inline bool tt_cutoffs_enabled()
+    {
+        static const bool on = std::getenv("CHESS26_TT_NO_CUTOFF") == nullptr;
+        return on;
+    }
+}
 
 struct SearchWorker
 {
