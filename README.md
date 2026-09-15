@@ -60,6 +60,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 | Version | Time control | Games | Chess26 score | Elo (vs SF8) |
 |---|---|---|---|---|
 | v5.0 | 60s+0.2s | 300 | 91.0 / 300 (30.3%) — 37W / 155L / 108D | **-169 ± 29** † |
+| v5.1 | 60s+0.2s | 178 | 58.5 / 178 (32.9%) — 28W / 89L / 61D | **-124 ± 41** |
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
@@ -67,11 +68,20 @@ The v5.0 figure above is its measured **-144.4 ± 28.7** shifted by that estimat
 so every row in the table faces the same opponent. The shift is an estimate, not
 a measurement.
 
-Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3190 Elo** for Chess26 in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
+v5.1's run was stopped at 178 games, so its interval (±41) is wider than
+v5.0's (±29) and the two overlap: the gain is the direction the numbers point,
+not yet a separated result. The score comparison (32.9% vs 30.3%) is the one
+figure that goes through no model at all. Most of v5.1's gain is time
+management, measured in isolation at +93.9 ± 29.0 over 216 self-play games
+against the commit that preceded it — a self-play gain transfers to a
+different, stronger opponent at roughly half value, which is about what the
+table shows.
+
+Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3235 Elo** for Chess26 (v5.1) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
 
 - CCRL's list runs at a longer time control (40 moves/15 min) and typically multi-core, vs. our single-threaded 60+0.2 test
 - The reference Stockfish 8 is built from source at tag `sf_8` with `ARCH=general-64`, so it has neither `popcnt` nor prefetch — likely *understating* its actual strength, so the true gap is probably larger
-- 300 games gives a fairly wide confidence interval (±28.7 Elo just from sampling)
+- 178 games gives a wide confidence interval (±41 Elo just from sampling)
 
 An actual CCRL-comparable number would require running on CCRL's reference hardware/time control (or submitting the engine to CCRL directly, which accepts community submissions) and a fully optimized reference build for every opponent.
 
