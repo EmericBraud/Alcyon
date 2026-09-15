@@ -181,7 +181,7 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
 
 void SearchWorker::maybe_submit_pv_leaf_to_gpu(Move pv_root, int depth)
 {
-    if (!gpu_eval::enabled.load(std::memory_order_relaxed))
+    if (!gpu_eval::active())
         return;
 
     if (pv_root.get_value() == 0)
@@ -324,7 +324,7 @@ void SearchWorker::maybe_submit_transposition_to_gpu(int depth, Move tt_move, in
     // maybe_submit_pv_leaf_to_gpu). Depth gating happens at the call
     // site (gpu_eval::kMinDepthForTranspositionSubmit); this only checks
     // the master on/off switch.
-    if (!gpu_eval::enabled.load(std::memory_order_relaxed))
+    if (!gpu_eval::active())
         return;
     submit_current_position_to_gpu(depth, tt_move, ply);
 }
