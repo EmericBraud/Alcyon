@@ -183,6 +183,16 @@ class UCI
         engine.start_search(time_to_think, is_ponder && ponder_enabled, is_infinite, ponder_enabled);
     }
 
+    // The two backends read different files: the Metal/MPSGraph path parses
+    // the raw exported weights, the ANE/CoreML path needs its own converted
+    // .mlpackage (see tools/export_coreml.py).
+    static std::string gpu_model_path()
+    {
+        return gpu_eval::GpuBackend::instance().active() == gpu_eval::Backend::Ane
+                   ? file::get_data_path("gpu/v3_model.mlpackage")
+                   : file::get_data_path("gpu/v3_weights.bin");
+    }
+
     void set_option(std::istringstream &is)
     {
         std::string word, name, value, option;
@@ -266,6 +276,25 @@ class UCI
             logs::debug << "info string Hash table cleared" << std::endl;
             handled = true;
         }
+        else if (name == "gpubackend ")
+        {
+            // Which inference implementation gpueval uses. Set this BEFORE
+            // switching gpueval on -- it decides which model file gets
+            // loaded. See gpu_backend.hpp.
+            if (value == "metal ")
+            {
+                gpu_eval::GpuBackend::instance().select(gpu_eval::Backend::Metal);
+            }
+            else if (value == "ane ")
+            {
+                gpu_eval::GpuBackend::instance().select(gpu_eval::Backend::Ane);
+            }
+            else
+            {
+                logs::uci << "info string error: gpubackend must be 'ane' or 'metal'" << std::endl;
+            }
+            handled = true;
+        }
         else if (name == "gpueval ")
         {
             const bool on = (value == "true ");
@@ -273,7 +302,7 @@ class UCI
             {
                 if (!gpu_eval::GpuBackend::instance().is_ready())
                 {
-                    const std::string weights_path = file::get_data_path("gpu/v3_weights.bin");
+                    const std::string weights_path = gpu_model_path();
                     if (!gpu_eval::shared_gpu_queue().start(weights_path))
                     {
                         logs::uci << "info string error: gpueval weights failed to load, staying disabled" << std::endl;
@@ -474,6 +503,7 @@ public:
                 logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl; //@TODO
                 logs::uci << "option name Ponder type check default " << (ponder_enabled ? "true" : "false") << std::endl;
                 logs::uci << "option name gpueval type check default false" << std::endl;
+                logs::uci << "option name gpubackend type combo default ane var ane var metal" << std::endl;
 
 #ifdef SPSA_TUNING
                 for (auto int_option : int_options)
@@ -550,36 +580,63 @@ public:
             else if (token == "gpubench")
             {
                 // Raw GpuBackend::infer_batch() throughput, isolated from
-                // search/encoding overhead -- dummy zero-filled planes,
-                // repeated iterations per batch size to amortize timer
-                // and dispatch overhead. Requires "setoption name gpueval
-                // value true" first (weights must already be loaded).
-                if (!gpu_eval::GpuBackend::instance().is_ready())
+                // search/encoding overhead -- repeated iterations per batch
+                // size to amortize timer and dispatch overhead.
+                //
+                // Runs BOTH implementations (ANE via CoreML, GPU via
+                // MPSGraph), loading whichever is not loaded yet, and
+                // restores the previously selected one at the end. Also
+                // prints each backend's score for one fixed pseudo-random
+                // input: they must agree to within fp16 noise, since the
+                // CoreML model is an fp16 conversion of the same weights --
+                // a large gap means the export or the plane layout is wrong,
+                // and any throughput number below is then meaningless.
                 {
-                    logs::uci << "info string error: gpubench requires gpueval enabled first" << std::endl;
-                }
-                else
-                {
-                    static const int kBatchSizes[] = {1, 5, 8, 16, 32, 40, 64, 128, 256};
+                    static const int kBatchSizes[] = {1, 8, 32, 64, 128, 256};
                     static float planes[256 * gpu_eval::kNumPlanesV3 * gpu_eval::kPlaneSize];
                     static int piece_counts[256];
                     static std::int32_t scores[256];
                     std::fill(std::begin(piece_counts), std::end(piece_counts), 8);
-
-                    for (int bs : kBatchSizes)
+                    // Deterministic non-zero input: zero planes are a
+                    // degenerate case both backends can agree on trivially.
+                    std::uint32_t seed = 12345;
+                    for (float &v : planes)
                     {
-                        constexpr int kIters = 100;
-                        const auto t0 = std::chrono::steady_clock::now();
-                        for (int it = 0; it < kIters; ++it)
-                            gpu_eval::GpuBackend::instance().infer_batch(planes, piece_counts, bs, scores);
-                        const auto t1 = std::chrono::steady_clock::now();
-                        const double secs = std::chrono::duration<double>(t1 - t0).count();
-                        const double calls_per_sec = kIters / secs;
-                        const double positions_per_sec = calls_per_sec * bs;
-                        logs::uci << "info string gpubench batch=" << bs
-                                  << " ms_per_call=" << (secs * 1000.0 / kIters)
-                                  << " positions_per_sec=" << static_cast<long long>(positions_per_sec) << std::endl;
+                        seed = seed * 1664525u + 1013904223u;
+                        v = static_cast<float>((seed >> 16) & 0xFF) / 255.0f;
                     }
+
+                    const gpu_eval::Backend previous = gpu_eval::GpuBackend::instance().active();
+                    for (gpu_eval::Backend backend : {gpu_eval::Backend::Ane, gpu_eval::Backend::Metal})
+                    {
+                        const char *label = (backend == gpu_eval::Backend::Ane) ? "ane" : "metal";
+                        gpu_eval::GpuBackend::instance().select(backend);
+                        if (!gpu_eval::GpuBackend::instance().is_ready() &&
+                            !gpu_eval::GpuBackend::instance().load_weights(gpu_model_path()))
+                        {
+                            logs::uci << "info string gpubench backend=" << label << " unavailable (load failed)" << std::endl;
+                            continue;
+                        }
+
+                        gpu_eval::GpuBackend::instance().infer_batch(planes, piece_counts, 1, scores);
+                        logs::uci << "info string gpubench backend=" << label
+                                  << " probe_score_cp=" << scores[0] << std::endl;
+
+                        for (int bs : kBatchSizes)
+                        {
+                            constexpr int kIters = 30;
+                            const auto t0 = std::chrono::steady_clock::now();
+                            for (int it = 0; it < kIters; ++it)
+                                gpu_eval::GpuBackend::instance().infer_batch(planes, piece_counts, bs, scores);
+                            const auto t1 = std::chrono::steady_clock::now();
+                            const double secs = std::chrono::duration<double>(t1 - t0).count();
+                            const double positions_per_sec = (kIters / secs) * bs;
+                            logs::uci << "info string gpubench backend=" << label << " batch=" << bs
+                                      << " ms_per_call=" << (secs * 1000.0 / kIters)
+                                      << " positions_per_sec=" << static_cast<long long>(positions_per_sec) << std::endl;
+                        }
+                    }
+                    gpu_eval::GpuBackend::instance().select(previous);
                 }
             }
             else if (token == "quit")

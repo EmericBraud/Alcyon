@@ -31,18 +31,45 @@
 // metal_backend.mm (Apple-Clang-only) and gpu_backend_stub.cpp (built
 // instead when CHESS26_GPU_EVAL_METAL isn't defined) implement the
 // extern "C" functions themselves.
+//
+// Two independent implementations sit behind it, so their throughput can be
+// compared on the same engine:
+//   - metal_backend.mm  : MPSGraph, runs on the GPU.
+//   - coreml_backend.mm : CoreML, asks for the Apple Neural Engine.
+// Both are always built (on Apple); which one is live is a runtime choice,
+// see GpuBackend::select(). The _stub variants are built on every other
+// platform.
 extern "C" {
-bool chess26_gpu_backend_load_weights(const char *weights_path);
-bool chess26_gpu_backend_is_ready();
-void chess26_gpu_backend_infer_batch(const float *planes_batch, const int *piece_counts, int batch_size,
-                                      std::int32_t *out_scores_cp);
+bool chess26_gpu_metal_load_weights(const char *weights_path);
+bool chess26_gpu_metal_is_ready();
+void chess26_gpu_metal_infer_batch(const float *planes_batch, const int *piece_counts, int batch_size,
+                                    std::int32_t *out_scores_cp);
+
+// weights_path here is the .mlpackage directory (see
+// tools/export_coreml.py), NOT the raw v3_weights.bin the Metal
+// backend reads -- CoreML needs its own converted model.
+bool chess26_gpu_ane_load_weights(const char *model_path);
+bool chess26_gpu_ane_is_ready();
+void chess26_gpu_ane_infer_batch(const float *planes_batch, const int *piece_counts, int batch_size,
+                                  std::int32_t *out_scores_cp);
 }
 
 namespace gpu_eval {
 
+enum class Backend {
+    Ane,   // CoreML, Neural Engine (default)
+    Metal, // MPSGraph, GPU
+};
+
 class GpuBackend {
 public:
     static GpuBackend &instance();
+
+    // Which implementation load_weights()/is_ready()/infer_batch() address.
+    // Switching does NOT unload the other one -- both can be loaded at once,
+    // which is what the gpubench comparison relies on.
+    void select(Backend backend);
+    Backend active() const;
 
     // Loads the raw exported weights (see
     // training/cnn/eval_compare/export_weights_for_metal.py) for v3's
