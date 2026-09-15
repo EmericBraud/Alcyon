@@ -27,6 +27,22 @@ struct GpuTask {
     Move candidate_moves[kNumCandidateMoves];
     int num_candidates = 0;
     std::uint8_t depth = 0; // search depth (plies) this PV leaf was captured at
+
+    // Phase 0 only (measure_diagnostics()), both filled by
+    // SearchWorker::submit_current_position_to_gpu:
+    //
+    //  tt_move     -- the move the search itself settled on at this position
+    //                 (its main-TT entry). The TARGET both predictors are
+    //                 scored against.
+    //  blind_best  -- the best candidate according to the move-ordering
+    //                 heuristics ALONE, re-ranked with tt_move suppressed.
+    //                 Without that suppression the comparison is circular:
+    //                 score_move gives tt_move a 9600 bonus, so our first
+    //                 pick would BE tt_move by construction and agree 100%.
+    //                 The CNN is likewise blind to tt_move, so the two
+    //                 predictors face the target on equal terms.
+    Move tt_move = 0;
+    Move blind_best = 0;
 };
 
 class GpuQueue {

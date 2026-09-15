@@ -10,6 +10,7 @@
 #include "worker.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <cstdlib>
 
 template <Color Us>
@@ -291,6 +292,27 @@ void SearchWorker::submit_current_position_to_gpu(int depth, Move tt_move, int p
     task.num_candidates = std::min(list.size(), gpu_eval::kNumCandidateMoves);
     for (int i = 0; i < task.num_candidates; ++i)
         task.candidate_moves[i] = list.pick_best_move(i);
+
+    // Phase 0 (voir GpuTask) : la cible, et le choix de l'heuristique privee
+    // du coup TT. Re-score les memes candidats avec tt_move supprime, sinon
+    // la comparaison serait circulaire.
+    if (gpu_eval::measure_diagnostics())
+    {
+        task.tt_move = tt_move;
+        int best_blind = std::numeric_limits<int>::min();
+        for (int i = 0; i < task.num_candidates; ++i)
+        {
+            const Move &m = task.candidate_moves[i];
+            const int s = (board.get_side_to_move() == WHITE)
+                              ? score_move<WHITE>(m, Move(0), safe_ply, prev_move)
+                              : score_move<BLACK>(m, Move(0), safe_ply, prev_move);
+            if (s > best_blind)
+            {
+                best_blind = s;
+                task.blind_best = m;
+            }
+        }
+    }
 
     gpu_eval::shared_gpu_queue().push(task);
 }

@@ -296,6 +296,27 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                               std::abs(tt_score - beta) <= gpu_eval::kCriticalWindowMarginCp;
         if (tt_hit && critical && depth >= gpu_eval::transposition_submit_min_depth())
             maybe_submit_transposition_to_gpu(depth, tt_move, ply);
+
+        // Phase 0, cote consommation (CHESS26_GPU_MEASURE=1) : ce noeud a
+        // maintenant un coup TT, donc la recherche a conclu. Si le thread GPU
+        // avait depose un hint pour lui -- ce qu'il ne fait QUE pour les
+        // noeuds soumis sans coup TT, la seule population ou un hint
+        // servirait -- on peut enfin departager les deux predicteurs sur la
+        // cible qu'ils essayaient de deviner.
+        if (tt_move != 0 && gpu_eval::measure_diagnostics() &&
+            gpu_eval::enabled.load(std::memory_order_relaxed))
+        {
+            int cnn_from, cnn_to, heur_from, heur_to;
+            if (gpu_eval::shared_gpu_tt().probe_ordering_hint(board.get_hash(), cnn_from, cnn_to,
+                                                             heur_from, heur_to))
+            {
+                const int target_from = tt_move.get_from_sq();
+                const int target_to = tt_move.get_to_sq();
+                gpu_eval::shared_gpu_tt().record_ordering_sample(
+                    cnn_from == target_from && cnn_to == target_to,
+                    heur_from == target_from && heur_to == target_to);
+            }
+        }
     }
 
     if (search::should_qsearch(depth, ply, in_check))

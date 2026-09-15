@@ -3,8 +3,6 @@
 #include "common/constants.hpp"
 #include "move.hpp"
 
-#include "common/logger.hpp"
-#include <iostream>
 
 struct MoveList
 {

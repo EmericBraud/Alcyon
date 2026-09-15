@@ -34,6 +34,9 @@ public:
         capacity_ = n;
         index_mask_ = n - 1;
         table_ = std::make_unique<Entry[]>(n);
+        // Table de hints de phase 0, taille fixe (1 Mio) : elle ne sert qu'a
+        // la mesure, inutile de la dimensionner sur kGpuTTSizeBytes.
+        hints_ = std::make_unique<HintEntry[]>(kHintEntries);
     }
 
     void clear() {
@@ -62,6 +65,9 @@ public:
         cnn_vs_nnue_samples_.store(0, std::memory_order_relaxed);
         redundant_stores_.store(0, std::memory_order_relaxed);
         collisions_.store(0, std::memory_order_relaxed);
+        ordering_samples_.store(0, std::memory_order_relaxed);
+        ordering_cnn_hits_.store(0, std::memory_order_relaxed);
+        ordering_heur_hits_.store(0, std::memory_order_relaxed);
         flips_.store(0, std::memory_order_relaxed);
         flip_samples_.store(0, std::memory_order_relaxed);
         busy_ns_.store(0, std::memory_order_relaxed);
@@ -193,6 +199,78 @@ public:
         return n == 0 ? 0.0 : (100.0 * static_cast<double>(flips_.load(std::memory_order_relaxed)) / static_cast<double>(n));
     }
 
+    // --- Phase 0 : table de hints d'ordonnancement, differee ---
+    //
+    // Table SEPAREE du cache de scores, volontairement. Ranger les hints
+    // dans les bits libres de l'entree de score obligerait a ecrire un
+    // score bidon quand on ne connait que le hint, et ce zero serait relu
+    // comme un vrai stand-pat par qsearch. Une table a part ne peut pas
+    // corrompre le canal des valeurs.
+    //
+    // Le hint est stocke par le thread GPU pour un noeud PARENT qui n'avait
+    // AUCUN coup TT au moment de la soumission -- c'est la seule population
+    // ou un hint servirait, puisqu'un noeud qui a deja son coup TT le classe
+    // premier avec un bonus de 9600 et n'a que faire du CNN. La comparaison
+    // arrive plus tard, quand la recherche a conclu sur ce noeud et y a
+    // depose un coup : voir negamax.cpp.
+    //
+    // ponytail: on ne garde que (from, to) par coup, 12 bits -- deux
+    // promotions vers la meme case sont confondues. Ca affecte les deux
+    // predicteurs pareil et c'est une fraction negligeable des noeuds.
+    void store_ordering_hint(std::uint64_t key, int cnn_from, int cnn_to, int heur_from, int heur_to) {
+        HintEntry &slot = hints_[key & hint_mask_];
+        const std::uint64_t packed = (static_cast<std::uint64_t>(cnn_from & 63)) |
+                                     (static_cast<std::uint64_t>(cnn_to & 63) << 6) |
+                                     (static_cast<std::uint64_t>(heur_from & 63) << 12) |
+                                     (static_cast<std::uint64_t>(heur_to & 63) << 18) |
+                                     (static_cast<std::uint64_t>(current_age_) << 24);
+        slot.data.store(packed, std::memory_order_relaxed);
+        slot.key.store(key ^ packed, std::memory_order_release);
+    }
+
+    bool probe_ordering_hint(std::uint64_t key, int &cnn_from, int &cnn_to, int &heur_from, int &heur_to) const {
+        const HintEntry &slot = hints_[key & hint_mask_];
+        const std::uint64_t stored = slot.key.load(std::memory_order_acquire);
+        const std::uint64_t packed = slot.data.load(std::memory_order_relaxed);
+        if ((stored ^ packed) != key || static_cast<std::uint8_t>((packed >> 24) & 0xFF) != current_age_) {
+            return false;
+        }
+        cnn_from = static_cast<int>(packed & 63);
+        cnn_to = static_cast<int>((packed >> 6) & 63);
+        heur_from = static_cast<int>((packed >> 12) & 63);
+        heur_to = static_cast<int>((packed >> 18) & 63);
+        return true;
+    }
+
+    // Phase 0 (voir docs/gpu-async-eval/ordering-hints-plan.md) : un
+    // echantillon par noeud soumis ou la recherche avait un choix reel.
+    // cnn_match  -- le candidat prefere du CNN est celui que la recherche a
+    //               retenu (son coup TT).
+    // heur_match -- le meilleur candidat selon les heuristiques
+    //               d'ordonnancement SEULES, privees du coup TT, l'est.
+    // La question que tranche cette mesure : le CNN apporte-t-il quelque
+    // chose qu'un ordonnancement deja bon (SEE, killers, counter-moves,
+    // history, continuation) n'a pas ? Si heur >= cnn, la direction
+    // "ordonnancement" est morte et il n'y a rien a entrainer.
+    void record_ordering_sample(bool cnn_match, bool heur_match) {
+        ordering_samples_.fetch_add(1, std::memory_order_relaxed);
+        if (cnn_match) {
+            ordering_cnn_hits_.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (heur_match) {
+            ordering_heur_hits_.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    std::uint64_t ordering_samples() const { return ordering_samples_.load(std::memory_order_relaxed); }
+    double ordering_cnn_percent() const {
+        const std::uint64_t n = ordering_samples();
+        return n == 0 ? 0.0 : (100.0 * static_cast<double>(ordering_cnn_hits_.load(std::memory_order_relaxed)) / static_cast<double>(n));
+    }
+    double ordering_heuristic_percent() const {
+        const std::uint64_t n = ordering_samples();
+        return n == 0 ? 0.0 : (100.0 * static_cast<double>(ordering_heur_hits_.load(std::memory_order_relaxed)) / static_cast<double>(n));
+    }
+
     void record_busy_ns(std::uint64_t ns) { busy_ns_.fetch_add(ns, std::memory_order_relaxed); }
     void record_idle_ns(std::uint64_t ns) { idle_ns_.fetch_add(ns, std::memory_order_relaxed); }
 
@@ -256,6 +334,13 @@ private:
         std::atomic<std::uint64_t> key{0};
         std::atomic<std::uint64_t> data{0};
     };
+    struct HintEntry {
+        std::atomic<std::uint64_t> key{0};
+        std::atomic<std::uint64_t> data{0};
+    };
+    static constexpr std::size_t kHintEntries = 1u << 16; // 1 Mio
+    std::unique_ptr<HintEntry[]> hints_;
+    static constexpr std::size_t hint_mask_ = kHintEntries - 1;
 
     static std::uint64_t pack(std::uint64_t key, std::int16_t score_cp, std::uint8_t depth, std::uint8_t age) {
         (void)key;
@@ -287,6 +372,9 @@ private:
     double covariance() const { return mean_of(cnn_nnue_total_) - avg_cnn_cp() * avg_nnue_cp(); }
     double var_cnn() const { return mean_of(cnn_sq_total_) - avg_cnn_cp() * avg_cnn_cp(); }
     double var_nnue() const { return mean_of(nnue_sq_total_) - avg_nnue_cp() * avg_nnue_cp(); }
+    std::atomic<std::uint64_t> ordering_samples_{0};
+    std::atomic<std::uint64_t> ordering_cnn_hits_{0};
+    std::atomic<std::uint64_t> ordering_heur_hits_{0};
     std::atomic<std::uint64_t> flips_{0};
     std::atomic<std::uint64_t> flip_samples_{0};
     std::atomic<std::uint64_t> busy_ns_{0};
