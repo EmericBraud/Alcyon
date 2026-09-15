@@ -53,6 +53,9 @@ class EngineManager
     alignas(64) std::atomic<long long> total_nodes{0};
     alignas(64) std::atomic<bool> is_infinite{false};
     alignas(64) std::atomic<bool> ponder_enabled{false};
+    // "go depth N" : profondeur maximale d'iterative deepening, 0 = illimite.
+    // Consultee par SearchWorker::iterative_deepening via max_depth_limit().
+    alignas(64) std::atomic<int> max_depth{0};
 
     std::chrono::time_point<std::chrono::steady_clock> start_time;
     std::atomic<int> time_limit{0};
@@ -102,7 +105,12 @@ public:
         root_best_move.store(0);
     }
 
-    void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false, bool ponder_enabled = false)
+    // Profondeur maximale demandee par "go depth N" (0 = illimite). Lue par
+    // les workers, qui detiennent un const EngineManager &.
+    int max_depth_limit() const { return max_depth.load(std::memory_order_relaxed); }
+
+    void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false, bool ponder_enabled = false,
+                      int depth_limit = 0)
     {
         stop();
         if (search_thread.joinable())
@@ -122,6 +130,7 @@ public:
         root_best_move.store(0);
 
         time_limit.store(time_ms, std::memory_order_relaxed);
+        max_depth.store(depth_limit, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
         search_thread = std::jthread([this]()
                                      { this->start_workers(); });
@@ -149,6 +158,7 @@ public:
         is_infinite.store(false, std::memory_order_relaxed);
         total_nodes = 0;
         time_limit = time_ms;
+        max_depth.store(0, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
         tt.next_generation();
         gpu_eval::shared_gpu_tt().next_generation();
@@ -187,6 +197,7 @@ public:
         root_best_move.store(0, std::memory_order_relaxed);
 
         time_limit.store(time_ms, std::memory_order_relaxed);
+        max_depth.store(0, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
         tt.next_generation();
         gpu_eval::shared_gpu_tt().next_generation();
@@ -241,6 +252,7 @@ public:
         root_best_move.store(0, std::memory_order_relaxed);
 
         time_limit.store(std::numeric_limits<int>::max() / 2, std::memory_order_relaxed);
+        max_depth.store(0, std::memory_order_relaxed);
         tt.next_generation();
         gpu_eval::shared_gpu_tt().next_generation();
 

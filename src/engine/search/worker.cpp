@@ -412,7 +412,18 @@ void SearchWorker::iterative_deepening()
         // "info" reporting below), gets a chance to submit its own PV
         // leaf to the GPU-eval queue.
         maybe_submit_pv_leaf_to_gpu(best_root_move.get_value() != 0 ? best_root_move : out_move, depth);
-        if (shared_stop.load(std::memory_order_relaxed))
+
+        // "go depth N" : cette profondeur vient d'etre terminee, on s'arrete.
+        // Teste ici, dans la MEME branche que l'arret par le temps, pour que
+        // la derniere profondeur complete emette son info line comme
+        // d'habitude -- et thread 0 leve shared_stop afin que les autres
+        // workers se replient au lieu d'entamer la profondeur suivante.
+        const int depth_limit = manager.max_depth_limit();
+        const bool depth_reached = depth_limit > 0 && depth >= depth_limit;
+        if (depth_reached && thread_id == 0)
+            shared_stop.store(true, std::memory_order_relaxed);
+
+        if (depth_reached || shared_stop.load(std::memory_order_relaxed))
         {
             if (thread_id == 0)
             {
