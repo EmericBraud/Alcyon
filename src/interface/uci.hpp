@@ -4,6 +4,7 @@
 #include <chrono>
 #include <expected>
 #include <iostream>
+#include <limits>
 #include <vector>
 #include <charconv>
 #include <cctype>
@@ -39,6 +40,10 @@ class UCI
     std::vector<UCIOption<double>> double_options;
 #endif
     bool ponder_enabled = true;
+    // "setoption name OwnBook value false" : indispensable pour generer des
+    // donnees d'entrainement, sinon l'ouverture de chaque partie est
+    // etiquetee par data/komodo.bin au lieu de la recherche (voir parse_go).
+    bool own_book = true;
 
     static bool parse_int(const std::string &s, int &out)
     {
@@ -128,7 +133,7 @@ class UCI
 
         logs::debug << "info string DEBUG: Checking Book..." << std::endl;
         logs::debug << "info string DEBUG: My Hash is " << std::hex << board.polyglot_key() << std::dec << std::endl;
-        if (!is_infinite && !is_ponder)
+        if (!is_infinite && !is_ponder && own_book)
         {
             Move book_move = Book::probe(board);
 
@@ -160,7 +165,15 @@ class UCI
         // Time Management
         int time_to_think = 5000;
 
-        if (movetime != -1)
+        // "go depth N" sans contrainte de temps : le temps ne doit pas etre la
+        // limite qui mord, c'est la profondeur. Le champ depth etait parse
+        // puis jamais relu -- toute recherche sans movetime/wtime tournait 5 s
+        // quelle que soit la profondeur demandee.
+        if (depth != -1 && movetime == -1 && wtime == -1)
+        {
+            time_to_think = std::numeric_limits<int>::max() / 2;
+        }
+        else if (movetime != -1)
         {
             time_to_think = movetime - 50;
         }
@@ -180,7 +193,8 @@ class UCI
             engine.start_search(0, false, true);
             return;
         }
-        engine.start_search(time_to_think, is_ponder && ponder_enabled, is_infinite, ponder_enabled);
+        engine.start_search(time_to_think, is_ponder && ponder_enabled, is_infinite, ponder_enabled,
+                            depth > 0 ? depth : 0);
     }
 
     // The two backends read different files: the Metal/MPSGraph path parses
@@ -274,6 +288,11 @@ class UCI
         {
             e.get_tt().clear();
             logs::debug << "info string Hash table cleared" << std::endl;
+            handled = true;
+        }
+        else if (name == "OwnBook ")
+        {
+            own_book = (value == "true ");
             handled = true;
         }
         else if (name == "gpubackend ")
@@ -502,6 +521,7 @@ public:
                 logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
                 logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl; //@TODO
                 logs::uci << "option name Ponder type check default " << (ponder_enabled ? "true" : "false") << std::endl;
+                logs::uci << "option name OwnBook type check default true" << std::endl;
                 logs::uci << "option name gpueval type check default false" << std::endl;
                 logs::uci << "option name gpubackend type combo default ane var ane var metal" << std::endl;
 
