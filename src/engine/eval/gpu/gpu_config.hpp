@@ -148,11 +148,18 @@ inline bool submit_only_critical() {
     return on;
 }
 
-// Diagnostic switch for the decision-flip measurement at the qsearch
-// consumption site (see qsearch.cpp). Costs an extra NNUE eval per GPU
-// hit, so it is opt-in and never on in a real match.
-inline bool measure_decision_flips() {
-    static const bool on = std::getenv("CHESS26_GPU_MEASURE_FLIPS") != nullptr;
+// Diagnostic switch (CHESS26_GPU_MEASURE) for everything this subsystem
+// measures about ITSELF rather than needs to run:
+//   - the decision-flip rate at the qsearch consumption site (qsearch.cpp),
+//   - the CNN-vs-NNUE calibration stats on the GPU-prep thread
+//     (gpu_queue.cpp -- GpuTT::record_cnn_vs_nnue and the NNUE eval it
+//     needs).
+// Both cost real work on live paths, and neither feeds a decision: the
+// calibration numbers produced kCnnToNnueOffsetCp once, and re-deriving
+// them every search is only useful when re-tuning it. Off by default;
+// profiling put the NNUE stats eval at 57ms of the prep thread's ~9.5s.
+inline bool measure_diagnostics() {
+    static const bool on = std::getenv("CHESS26_GPU_MEASURE") != nullptr;
     return on;
 }
 
