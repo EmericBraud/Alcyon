@@ -56,6 +56,12 @@ class EngineManager
     // "go depth N" : profondeur maximale d'iterative deepening, 0 = illimite.
     // Consultee par SearchWorker::iterative_deepening via max_depth_limit().
     alignas(64) std::atomic<int> max_depth{0};
+    // Limite SOUPLE, en ms : on ne DEMARRE pas une nouvelle iteration
+    // au-dela. time_limit reste la limite DURE, qui avorte une iteration en
+    // cours. Avant, il n'y avait qu'une limite : le moteur demarrait une
+    // iteration qu'il ne pouvait pas finir, l'avortait, et jetait le travail.
+    // 0 = pas de limite souple (movetime, go depth, infinite).
+    alignas(64) std::atomic<int> soft_limit{0};
 
     std::chrono::time_point<std::chrono::steady_clock> start_time;
     std::atomic<int> time_limit{0};
@@ -108,9 +114,16 @@ public:
     // Profondeur maximale demandee par "go depth N" (0 = illimite). Lue par
     // les workers, qui detiennent un const EngineManager &.
     int max_depth_limit() const { return max_depth.load(std::memory_order_relaxed); }
+    int soft_limit_ms() const { return soft_limit.load(std::memory_order_relaxed); }
+    long long elapsed_ms() const
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - start_time)
+            .count();
+    }
 
     void start_search(int time_ms = 20000, bool ponder = false, bool infinite = false, bool ponder_enabled = false,
-                      int depth_limit = 0)
+                      int depth_limit = 0, int soft_ms = 0)
     {
         stop();
         if (search_thread.joinable())
@@ -131,6 +144,7 @@ public:
 
         time_limit.store(time_ms, std::memory_order_relaxed);
         max_depth.store(depth_limit, std::memory_order_relaxed);
+        soft_limit.store(soft_ms, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
         search_thread = std::jthread([this]()
                                      { this->start_workers(); });
@@ -159,6 +173,7 @@ public:
         total_nodes = 0;
         time_limit = time_ms;
         max_depth.store(0, std::memory_order_relaxed);
+        soft_limit.store(0, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
         tt.next_generation();
         gpu_eval::shared_gpu_tt().next_generation();
@@ -198,6 +213,7 @@ public:
 
         time_limit.store(time_ms, std::memory_order_relaxed);
         max_depth.store(0, std::memory_order_relaxed);
+        soft_limit.store(0, std::memory_order_relaxed);
         start_time = std::chrono::steady_clock::now();
         tt.next_generation();
         gpu_eval::shared_gpu_tt().next_generation();
@@ -253,6 +269,7 @@ public:
 
         time_limit.store(std::numeric_limits<int>::max() / 2, std::memory_order_relaxed);
         max_depth.store(0, std::memory_order_relaxed);
+        soft_limit.store(0, std::memory_order_relaxed);
         tt.next_generation();
         gpu_eval::shared_gpu_tt().next_generation();
 

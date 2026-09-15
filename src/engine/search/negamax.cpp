@@ -453,6 +453,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         // --- MISE À JOUR DES SCORES ET DES TABLES ---
         if (score >= beta)
         {
+            if (search::order_stats_enabled())
+                search::record_cutoff(moves_searched, is_tactical);
             shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
 
             if (!is_tactical)
