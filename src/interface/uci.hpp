@@ -594,6 +594,7 @@ public:
                           << " ordering_samples=" << gpu_eval::shared_gpu_tt().ordering_samples()
                           << " ordering_cnn=" << gpu_eval::shared_gpu_tt().ordering_cnn_percent() << "%"
                           << " ordering_heuristic=" << gpu_eval::shared_gpu_tt().ordering_heuristic_percent() << "%"
+                          << " ordering_nnue=" << gpu_eval::shared_gpu_tt().ordering_nnue_percent() << "%"
                           << " redundant=" << gpu_eval::shared_gpu_tt().redundant_stores()
                           << " redundant_rate=" << gpu_eval::shared_gpu_tt().redundant_rate_percent() << "%"
                           << " collisions=" << gpu_eval::shared_gpu_tt().collisions()

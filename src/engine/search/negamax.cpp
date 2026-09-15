@@ -306,15 +306,16 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (tt_move != 0 && gpu_eval::measure_diagnostics() &&
             gpu_eval::enabled.load(std::memory_order_relaxed))
         {
-            int cnn_from, cnn_to, heur_from, heur_to;
+            int cnn_from, cnn_to, heur_from, heur_to, nnue_from, nnue_to;
             if (gpu_eval::shared_gpu_tt().probe_ordering_hint(board.get_hash(), cnn_from, cnn_to,
-                                                             heur_from, heur_to))
+                                                             heur_from, heur_to, nnue_from, nnue_to))
             {
                 const int target_from = tt_move.get_from_sq();
                 const int target_to = tt_move.get_to_sq();
                 gpu_eval::shared_gpu_tt().record_ordering_sample(
                     cnn_from == target_from && cnn_to == target_to,
-                    heur_from == target_from && heur_to == target_to);
+                    heur_from == target_from && heur_to == target_to,
+                    nnue_from == target_from && nnue_to == target_to);
             }
         }
     }
