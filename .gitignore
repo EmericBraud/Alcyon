@@ -27,3 +27,6 @@ src/.DS_Store
 __pycache__/
 *.pyc
 config.json
+
+# binaire compile par tools/build_inspect_binpack.sh
+tools/inspect_binpack
