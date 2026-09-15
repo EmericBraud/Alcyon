@@ -240,14 +240,16 @@ void SearchWorker::maybe_submit_pv_leaf_to_gpu(Move pv_root, int depth)
         moves_to_unplay[num_moves_to_unplay++] = m;
     }
 
-    // `board` is now at the PV leaf.
-    submit_current_position_to_gpu(depth);
+    // `board` is now at the PV leaf. Its own TT move (if any) is the best
+    // available guess at which child the search will look at first -- see
+    // submit_current_position_to_gpu's note on why that matters.
+    submit_current_position_to_gpu(depth, shared_tt.get_move(board.get_hash()), num_moves_to_unplay);
 
     for (int i = num_moves_to_unplay - 1; i >= 0; --i)
         board.Board::unplay(moves_to_unplay[i]);
 }
 
-void SearchWorker::submit_current_position_to_gpu(int depth)
+void SearchWorker::submit_current_position_to_gpu(int depth, Move tt_move, int ply)
 {
     // Assumes `board` is ALREADY at the position to submit -- callers are
     // responsible for getting there (and back) themselves; this just
@@ -255,17 +257,32 @@ void SearchWorker::submit_current_position_to_gpu(int depth)
     // killers/continuation history), per gpu_eval::kNumCandidateMoves,
     // same one-shot scorer + partial selection idiom as engine_manager.
     // hpp's root move-scoring path, and pushes the task.
+    //
+    // The ranking decides WHICH children get CNN-evaluated, so it should
+    // match the order the real search will use at this node as closely as
+    // possible -- a child the search never visits is a wasted inference.
+    // This used to pass score_move(m, 0, 0, 0): no tt_move (so the TT's
+    // own best move, by far the likeliest child to be searched, got none
+    // of its 9600-point bonus), killers read from ply 0 instead of this
+    // node's, and counter-moves disabled. Only ~7.9% of stored scores
+    // were ever read back.
+    const auto *history = board.get_history();
+    const Move prev_move = (history && !history->empty()) ? history->back().move : Move(0);
+    // score_move indexes killer_moves[ply]; the PV-leaf caller's walk can
+    // in principle reach past the table, so clamp rather than trust it.
+    const int safe_ply = std::clamp(ply, 0, engine_constants::search::MaxDepth - 1);
+
     MoveList list;
     MoveGen::generate_legal_moves(board, list);
     if (board.get_side_to_move() == WHITE)
     {
         for (int i = 0; i < list.size(); ++i)
-            list.scores[i] = score_move<WHITE>(list.moves[i], 0, 0, 0);
+            list.scores[i] = score_move<WHITE>(list.moves[i], tt_move, safe_ply, prev_move);
     }
     else
     {
         for (int i = 0; i < list.size(); ++i)
-            list.scores[i] = score_move<BLACK>(list.moves[i], 0, 0, 0);
+            list.scores[i] = score_move<BLACK>(list.moves[i], tt_move, safe_ply, prev_move);
     }
 
     gpu_eval::GpuTask task;
@@ -278,7 +295,7 @@ void SearchWorker::submit_current_position_to_gpu(int depth)
     gpu_eval::shared_gpu_queue().push(task);
 }
 
-void SearchWorker::maybe_submit_transposition_to_gpu(int depth)
+void SearchWorker::maybe_submit_transposition_to_gpu(int depth, Move tt_move, int ply)
 {
     // Called from negamax right after a TT probe that hit -- `board` is
     // already the transposed position, no PV walk needed (unlike
@@ -287,7 +304,7 @@ void SearchWorker::maybe_submit_transposition_to_gpu(int depth)
     // the master on/off switch.
     if (!gpu_eval::enabled.load(std::memory_order_relaxed))
         return;
-    submit_current_position_to_gpu(depth);
+    submit_current_position_to_gpu(depth, tt_move, ply);
 }
 
 void SearchWorker::maybe_submit_pv_leaf_to_gpu_throttled(Move pv_root, int depth)
