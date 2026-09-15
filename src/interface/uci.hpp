@@ -640,6 +640,17 @@ public:
             else if (token == "orderstats")
             {
                 // Histogramme des rangs de coupure -- voir search::record_cutoff.
+                // Les compteurs ne sont alimentes que dans un build
+                // -DENABLE_SEARCH_EXPERIMENTS=ON : sinon ils resteraient a
+                // zero sans qu'on sache si c'est la mesure ou la recherche
+                // qui ne dit rien.
+                if (!search::order_stats_enabled())
+                {
+                    logs::uci << "info string orderstats unavailable: rebuild with "
+                                 "-DENABLE_SEARCH_EXPERIMENTS=ON and set CHESS26_ORDER_STATS=1"
+                              << std::endl;
+                    continue;
+                }
                 static const char *labels[] = {"1", "2", "3", "4", "5-8", "9-16", "17+"};
                 long long total = 0, tail_quiet = 0;
                 for (int i = 0; i < search::kCutoffBuckets; ++i)

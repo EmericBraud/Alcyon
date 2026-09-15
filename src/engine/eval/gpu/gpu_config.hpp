@@ -25,6 +25,27 @@ namespace gpu_eval {
 // atomic load. Also gates whether the dedicated thread is even started.
 inline std::atomic<bool> enabled{false};
 
+// Forme pliable a la compilation du test ci-dessus, a utiliser EN PREMIER
+// dans toute condition de la recherche.
+//
+// Avec ENABLE_GPU_EVAL off -- le defaut, voir CMakeLists.txt -- il n'y a
+// aucun backend pour repondre, donc chaque site de consommation dans
+// negamax/qsearch doit disparaitre entierement plutot que payer un chargement
+// atomique par noeud pour un sous-systeme qui ne peut pas tourner. Et avec
+// ENABLE_GPU_EVAL on mais "gpueval" a false, la placer en premier fait que
+// les accesseurs d'environnement (measure_diagnostics,
+// transposition_submit_min_depth, submit_only_critical -- chacun un
+// static const avec son garde d'initialisation) ne sont plus appeles du
+// tout sur le chemin chaud.
+inline bool active()
+{
+#ifdef CHESS26_GPU_EVAL_METAL
+    return enabled.load(std::memory_order_relaxed);
+#else
+    return false;
+#endif
+}
+
 // How many candidate replies to encode and batch per PV-leaf position.
 // Kept as a compile-time constant so the fixed-size buffers below don't
 // need runtime resizing.

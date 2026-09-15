@@ -40,7 +40,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
         // certificate. See docs/gpu-async-eval/consultative-eval-measurements.md.
         std::int16_t gpu_score;
         std::uint8_t gpu_depth, gpu_age;
-        if (gpu_eval::enabled.load(std::memory_order_relaxed) &&
+        if (gpu_eval::active() &&
             gpu_eval::shared_gpu_tt().probe(board.get_hash(), gpu_score, gpu_depth, gpu_age) &&
             gpu_age == gpu_eval::shared_gpu_tt().current_age())
         {

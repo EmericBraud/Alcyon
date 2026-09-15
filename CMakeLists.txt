@@ -15,6 +15,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(ENABLE_GUI "Build with GUI support" OFF)
 option(BUILD_TESTING "Build unit tests" ON)
 option(ENABLE_GPU_EVAL "Enable the native GPU (Metal) CNN eval queue -- see src/engine/eval/gpu/" OFF)
+# Interrupteurs de mesure de la recherche (histogramme des rangs de coupure,
+# desactivation des coupures TT pour l'experience d'oracle d'ordonnancement).
+# Off par defaut : ils sont testes sur le chemin chaud et ne servent qu'a
+# mesurer. Voir namespace search dans src/engine/search/worker.hpp.
+option(ENABLE_SEARCH_EXPERIMENTS "Build the search measurement switches (CHESS26_ORDER_STATS, CHESS26_TT_NO_CUTOFF)" OFF)
 
 include(CheckCXXCompilerFlag)
 include(CheckIPOSupported)
@@ -146,6 +151,14 @@ if(ENABLE_GPU_EVAL)
     )
     target_compile_definitions(chess_core PUBLIC CHESS26_GPU_EVAL_METAL)
     target_compile_definitions(chess26 PRIVATE CHESS26_GPU_EVAL_METAL)
+endif()
+
+if(ENABLE_SEARCH_EXPERIMENTS)
+    target_compile_definitions(chess_core PUBLIC CHESS26_SEARCH_EXPERIMENTS)
+    target_compile_definitions(chess26 PRIVATE CHESS26_SEARCH_EXPERIMENTS)
+endif()
+
+if(ENABLE_GPU_EVAL)
 
     find_library(COREML_FRAMEWORK CoreML REQUIRED)
     find_library(METAL_FRAMEWORK Metal REQUIRED)
@@ -231,6 +244,20 @@ include(CTest)
     )
 
     target_compile_definitions(chess26_tests PRIVATE CHESS26_UNIT_TESTING)
+
+    # Meme raison que pour chess26 (voir la section ENABLE_GPU_EVAL) : les
+    # usage requirements de chess_core ne traversent pas $<TARGET_OBJECTS:>,
+    # donc la cible de test doit redeclarer frameworks et definitions. Sans
+    # ca, "cmake --build" echouait au lien sur _MTLCreateSystemDefaultDevice
+    # et _OBJC_CLASS_$_MLModel des que ENABLE_GPU_EVAL etait on.
+    if(ENABLE_GPU_EVAL)
+        target_compile_definitions(chess26_tests PRIVATE CHESS26_GPU_EVAL_METAL)
+        target_link_libraries(chess26_tests PRIVATE ${METAL_FRAMEWORK} ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK} ${COREML_FRAMEWORK} ${FOUNDATION_FRAMEWORK} c++)
+    endif()
+
+    if(ENABLE_SEARCH_EXPERIMENTS)
+        target_compile_definitions(chess26_tests PRIVATE CHESS26_SEARCH_EXPERIMENTS)
+    endif()
     # Enable NNUE_EVAL for tests only when NNUE support is enabled for the main build
     if(ENABLE_NNUE_EVAL)
         target_compile_definitions(chess26_tests PRIVATE NNUE_EVAL)
