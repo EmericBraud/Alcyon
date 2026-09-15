@@ -138,7 +138,9 @@ L'ordonnancement du moteur est **déjà bon** : coup TT, captures triées par
 SEE, killers, counter-moves, history, continuation history. Le hint doit
 battre cet empilement, ce qui n'est pas acquis.
 
-Notre modèle n'a **pas de tête policy**, seulement une tête value. Ordonner
+Notre modèle n'a **pas de tête policy**, seulement une tête value (l'étude
+des architectures cibles est dans
+[ane-architecture-study.md](ane-architecture-study.md)). Ordonner
 en évaluant les enfants un par un est une approximation coûteuse de ce qu'une
 tête policy donnerait directement. C'est une limite du modèle, pas de
 l'intégration — et si la phase 0 est proche du seuil, entraîner une tête
