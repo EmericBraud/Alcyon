@@ -505,9 +505,18 @@ void SearchWorker::iterative_deepening()
             }
             return;
         }
-#ifndef NDEBUG
+        // Une ligne "info" par profondeur TERMINEE, comme tout moteur UCI :
+        // c'est ce qui permet a un GUI d'afficher la progression, et a un
+        // outil d'analyse de voir a quelle profondeur le meilleur coup
+        // change. Elle existait mais etait doublement neutralisee -- sous
+        // #ifndef NDEBUG *et* via logs::debug, alors que NDEBUG est force
+        // pour chess_core (CMakeLists.txt) : aucun build reel ne l'emettait.
         if (thread_id == 0)
         {
+            // Meme flush que dans la branche terminale, sinon "nodes" est un
+            // multiple de 32768 (voir check_stop()).
+            global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);
+            local_nodes = 0;
             auto elapsed_ms = std::max<long long>(1,
                                                   std::chrono::duration_cast<std::chrono::milliseconds>(
                                                       std::chrono::steady_clock::now() - start_time_ref)
@@ -515,7 +524,7 @@ void SearchWorker::iterative_deepening()
 
             long long nodes = global_nodes.load(std::memory_order_relaxed);
             long long nps = nodes * 1000 / elapsed_ms;
-            logs::debug
+            logs::uci
                 << "info depth " << depth
                 << " seldepth " << max_extended_depth
                 << " score cp " << last_score
@@ -525,7 +534,6 @@ void SearchWorker::iterative_deepening()
                 << " pv " << get_pv_line(depth)
                 << std::endl;
         }
-#endif
     }
     if (thread_id == 0)
     {
