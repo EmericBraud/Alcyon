@@ -1,0 +1,159 @@
+# Plan : passer du canal « valeur » au canal « ordonnancement »
+
+Ce document décrit la direction décidée après la revue de
+[consultative-eval-measurements.md](consultative-eval-measurements.md), et
+surtout **l'ordre dans lequel on va essayer de la falsifier**. Il n'est pas
+un compte rendu : les mesures se consignent dans l'autre fichier.
+
+## 1. Pourquoi on change de canal
+
+Trois chiffres mesurés ferment la direction actuelle.
+
+**Le rapport de débit est de 1 à 256.** La recherche parcourt ~4 M nœuds/s
+(10 threads) ; l'ANE évalue 15 600 positions/s. Même avec un ciblage
+parfait, on raffinerait 0,4 % des feuilles.
+
+**On est très loin de ce plafond.** Sur une recherche de 10 s : ~39 M nœuds,
+80 000 positions calculées, 6 300 relues (7,9 %), dont ~55 % changent une
+décision de stand-pat. Soit **un nœud sur 12 000 touché, un sur 22 000 qui
+change**. C'est l'empreinte totale du sous-système sur la recherche, et elle
+explique l'Elo à 0 ± bruit sans avoir à invoquer quoi que ce soit d'autre.
+
+**Le ciblage ne peut pas être réparé.** Un évaluateur asynchrone doit avoir
+son score prêt *avant* que la recherche n'atteigne le nœud, donc il faut
+prédire quels nœuds seront visités. Or l'ensemble des nœuds visités par
+alpha-beta est déterminé par la recherche elle-même : il dépend des coupures,
+qui dépendent des scores trouvés en route. On prédit la sortie d'un processus
+dont l'entrée est sa propre sortie. C'est pourquoi toutes nos heuristiques
+plafonnent vers 8 %, et pourquoi passer le vrai `tt_move`/`ply`/`prev_move`
+au tri des candidats (commit `63f44a8`) n'a rien donné.
+
+## 2. Les deux règles qui contraignent tout le reste
+
+**Règle de comparabilité.** Le CNN ne peut intervenir qu'à quantité
+comparable : statique contre statique, ou recherche contre recherche. Il n'a
+le droit de remplacer une valeur que là où il n'existe aucun résultat de
+recherche. C'est ce qui disqualifie le départage des coups racine que
+j'avais d'abord proposé : opposer une éval à 0 pli à un verdict alpha-beta à
+20 plis, c'est jeter l'information qui fait la force du moteur.
+
+**Asymétrie du risque.** Une valeur fausse corrompt le résultat. Un
+ordonnancement faux ne coûte que du temps — alpha-beta cherche toujours
+tout, simplement dans un moins bon ordre. Un hint n'est pas une prétention
+sur la valeur, c'est une suggestion.
+
+Croisées, ces deux règles ne laissent que deux canaux : les valeurs de
+feuille (légitime mais plafonné à 1:256) et **l'ordonnancement** (non
+plafonné, et le seul où se tromper est bon marché).
+
+## 3. Ce qu'on jette aujourd'hui
+
+Chaque tâche soumise évalue les 4 meilleurs enfants d'un parent. On garde les
+4 **valeurs**, stockées comme évals de feuille — le canal plafonné et
+risqué — et on jette leur **ordre relatif**, qui est le canal non plafonné et
+sans risque. C'est à l'envers sur les deux critères, et le travail de calcul
+est déjà fait.
+
+## 4. Phase 0 — falsifier avant d'écrire du code
+
+Rien ne justifie de toucher au `MovePicker` avant de savoir si le CNN a
+quelque chose à dire sur l'ordre. Le test ne demande aucun changement de
+comportement.
+
+Pour chaque parent soumis, le thread GPU connaît après inférence le coup que
+le CNN préfère parmi les candidats. On le compare au coup que la recherche a
+finalement retenu à ce nœud (relu dans la TT principale, plus tard dans la
+recherche). Trois taux à mesurer :
+
+- **accord CNN** : le coup préféré du CNN est-il celui que la recherche a
+  retenu ?
+- **accord de référence** : le premier coup de notre tri actuel l'est-il ?
+- **accord du coup TT** seul, comme borne haute triviale.
+
+**Condition d'arrêt : si l'accord CNN ne dépasse pas l'accord de référence,
+on s'arrête là et on écrit le résultat négatif dans le fichier de mesures.**
+Coût : deux compteurs et une relecture de TT sur le thread GPU. Aucun risque
+pour la recherche.
+
+Attention au piège de méthode : ne comparer que sur les nœuds où la
+recherche a *réellement* eu le choix (au moins deux coups explorés), sinon
+l'accord est gonflé par les nœuds à coup unique.
+
+## 5. Phase 1 — le design, si la phase 0 passe
+
+**Stockage.** L'entrée de `gpu_tt` n'utilise que les bits 0-31 (score 16,
+depth 8, age 8) ; les bits 32-63 sont libres. Un coup compressé y tient
+(from 6 bits + to 6 bits + promo 2 bits), plus un bit de validité. Pas un
+octet de mémoire en plus, pas de seconde table.
+
+Deux chemins d'écriture distincts, tous deux sur le thread GPU :
+`store_score(clé_enfant, ...)` comme aujourd'hui, et
+`store_hint(clé_parent, coup)`. Comme ce thread est l'unique écrivain, le
+read-modify-write est sans course (`store()` en dépend déjà pour compter les
+`redundant_stores`) : chaque chemin **préserve** le champ de l'autre, donc
+une position qui est à la fois parent soumis et enfant d'une autre
+soumission garde ses deux informations.
+
+**Consommation.** Une sonde par **nœud**, pas par coup : le `MovePicker` est
+construit par nœud, il sonde `gpu_tt` une fois avec le hash du nœud courant
+et accorde un bonus au coup indiqué. C'est ce qui rend le design abordable —
+la variante « sonder la clé de chaque enfant au moment du tri » a été
+écartée parce qu'il n'existe pas d'aide « hash après coup » dans
+`zobrist.hpp` : il faudrait soit un `play`/`unplay` par coup trié, soit
+réécrire le zobrist incrémental (castling, en passant, promotions), où un
+bug sonde silencieusement la mauvaise entrée.
+
+**Magnitude du bonus.** Sous le coup TT (9600) et sous les killers (8000) :
+le hint est « un candidat calme sérieux », pas « plus fiable qu'une coupure
+prouvée ». Départ proposé vers 6000, au-dessus de l'history et en dessous
+des counter-moves (7500). À régler, pas à deviner.
+
+**Portée.** Limitée aux nœuds proches de la racine, où les sous-arbres sont
+gros et où un bon premier coup se rembourse. Une porte de profondeur, comme
+pour les soumissions.
+
+## 6. Phase 2 — mesurer sans passer par l'Elo
+
+La métrique principale n'est pas l'Elo mais le **nombre de nœuds pour
+atteindre une profondeur fixe**, sur une suite de positions. Un meilleur
+ordonnancement élague davantage, donc coûte moins de nœuds : c'est objectif,
+et surtout la variance est bien plus faible que celle d'un match. Les
+mesures NPS de cette session ont montré 74 % d'écart entre deux runs
+identiques sur batterie ; un comptage de nœuds à profondeur fixe est
+déterministe à thread unique.
+
+Protocole : `Threads 1` pour supprimer le non-déterminisme du SMP, `go depth
+N` sur une dizaine de positions, avec et sans le hint, et comparer les
+totaux. Complément utile : le taux « le premier coup essayé était le
+meilleur » aux nœuds à choix multiple.
+
+L'Elo ne vient qu'après, **sur secteur** : voir l'avertissement dans
+`gpu_config.hpp` sur `transposition_submit_min_depth`.
+
+## 7. Plafonds connus d'avance
+
+À garder en tête pour ne pas surinterpréter un résultat médiocre.
+
+L'ordonnancement du moteur est **déjà bon** : coup TT, captures triées par
+SEE, killers, counter-moves, history, continuation history. Le hint doit
+battre cet empilement, ce qui n'est pas acquis.
+
+Notre modèle n'a **pas de tête policy**, seulement une tête value. Ordonner
+en évaluant les enfants un par un est une approximation coûteuse de ce qu'une
+tête policy donnerait directement. C'est une limite du modèle, pas de
+l'intégration — et si la phase 0 est proche du seuil, entraîner une tête
+policy serait le vrai levier plutôt que de raffiner l'intégration.
+
+Le CNN est corrélé à **0,91** avec NNUE (pente ~1, offset corrigé). Il
+n'apporte que les 17 % de variance résiduelle, de signe inconnu. Ça borne ce
+canal comme ça bornait l'autre ; la différence est que l'ordonnancement n'est
+pas en plus divisé par 256.
+
+## 8. Ce que cette direction ne résout pas
+
+Elle ne rend pas le sous-système utile en soi : elle déplace le pari sur un
+canal où le plafond arithmétique et le risque sont tous deux meilleurs. Si la
+phase 0 échoue, la conclusion honnête est que **ce modèle-ci** n'a rien à
+apporter à **cette recherche-ci**, et que la suite est côté entraînement
+(tête policy, ou réseau nettement plus petit pour changer le rapport 1:256),
+pas côté intégration.
