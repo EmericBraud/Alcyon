@@ -68,6 +68,7 @@ public:
         ordering_samples_.store(0, std::memory_order_relaxed);
         ordering_cnn_hits_.store(0, std::memory_order_relaxed);
         ordering_heur_hits_.store(0, std::memory_order_relaxed);
+        ordering_nnue_hits_.store(0, std::memory_order_relaxed);
         flips_.store(0, std::memory_order_relaxed);
         flip_samples_.store(0, std::memory_order_relaxed);
         busy_ns_.store(0, std::memory_order_relaxed);
@@ -217,18 +218,29 @@ public:
     // ponytail: on ne garde que (from, to) par coup, 12 bits -- deux
     // promotions vers la meme case sont confondues. Ca affecte les deux
     // predicteurs pareil et c'est une fraction negligeable des noeuds.
-    void store_ordering_hint(std::uint64_t key, int cnn_from, int cnn_to, int heur_from, int heur_to) {
+    // nnue_* : le MEME argmin-des-evals-d'enfants, mais avec NNUE a la place
+    // du CNN. C'est le controle qui separe deux hypotheses : si NNUE -- bien
+    // plus precis -- plafonne au meme niveau que le CNN, alors c'est la
+    // METHODE (differencier des evals statiques de positions qui ne
+    // divergent que d'un pli) qui est aveugle, et la mesure ne dit rien
+    // contre une tete policy entrainee. Si NNUE fait nettement mieux, alors
+    // la methode est informative et c'est le CNN qui est faible.
+    void store_ordering_hint(std::uint64_t key, int cnn_from, int cnn_to, int heur_from, int heur_to,
+                             int nnue_from, int nnue_to) {
         HintEntry &slot = hints_[key & hint_mask_];
         const std::uint64_t packed = (static_cast<std::uint64_t>(cnn_from & 63)) |
                                      (static_cast<std::uint64_t>(cnn_to & 63) << 6) |
                                      (static_cast<std::uint64_t>(heur_from & 63) << 12) |
                                      (static_cast<std::uint64_t>(heur_to & 63) << 18) |
+                                     (static_cast<std::uint64_t>(nnue_from & 63) << 32) |
+                                     (static_cast<std::uint64_t>(nnue_to & 63) << 38) |
                                      (static_cast<std::uint64_t>(current_age_) << 24);
         slot.data.store(packed, std::memory_order_relaxed);
         slot.key.store(key ^ packed, std::memory_order_release);
     }
 
-    bool probe_ordering_hint(std::uint64_t key, int &cnn_from, int &cnn_to, int &heur_from, int &heur_to) const {
+    bool probe_ordering_hint(std::uint64_t key, int &cnn_from, int &cnn_to, int &heur_from, int &heur_to,
+                             int &nnue_from, int &nnue_to) const {
         const HintEntry &slot = hints_[key & hint_mask_];
         const std::uint64_t stored = slot.key.load(std::memory_order_acquire);
         const std::uint64_t packed = slot.data.load(std::memory_order_relaxed);
@@ -239,6 +251,8 @@ public:
         cnn_to = static_cast<int>((packed >> 6) & 63);
         heur_from = static_cast<int>((packed >> 12) & 63);
         heur_to = static_cast<int>((packed >> 18) & 63);
+        nnue_from = static_cast<int>((packed >> 32) & 63);
+        nnue_to = static_cast<int>((packed >> 38) & 63);
         return true;
     }
 
@@ -252,7 +266,7 @@ public:
     // chose qu'un ordonnancement deja bon (SEE, killers, counter-moves,
     // history, continuation) n'a pas ? Si heur >= cnn, la direction
     // "ordonnancement" est morte et il n'y a rien a entrainer.
-    void record_ordering_sample(bool cnn_match, bool heur_match) {
+    void record_ordering_sample(bool cnn_match, bool heur_match, bool nnue_match) {
         ordering_samples_.fetch_add(1, std::memory_order_relaxed);
         if (cnn_match) {
             ordering_cnn_hits_.fetch_add(1, std::memory_order_relaxed);
@@ -260,6 +274,13 @@ public:
         if (heur_match) {
             ordering_heur_hits_.fetch_add(1, std::memory_order_relaxed);
         }
+        if (nnue_match) {
+            ordering_nnue_hits_.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    double ordering_nnue_percent() const {
+        const std::uint64_t n = ordering_samples();
+        return n == 0 ? 0.0 : (100.0 * static_cast<double>(ordering_nnue_hits_.load(std::memory_order_relaxed)) / static_cast<double>(n));
     }
     std::uint64_t ordering_samples() const { return ordering_samples_.load(std::memory_order_relaxed); }
     double ordering_cnn_percent() const {
@@ -375,6 +396,7 @@ private:
     std::atomic<std::uint64_t> ordering_samples_{0};
     std::atomic<std::uint64_t> ordering_cnn_hits_{0};
     std::atomic<std::uint64_t> ordering_heur_hits_{0};
+    std::atomic<std::uint64_t> ordering_nnue_hits_{0};
     std::atomic<std::uint64_t> flips_{0};
     std::atomic<std::uint64_t> flip_samples_{0};
     std::atomic<std::uint64_t> busy_ns_{0};

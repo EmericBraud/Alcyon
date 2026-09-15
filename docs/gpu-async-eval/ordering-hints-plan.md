@@ -228,3 +228,48 @@ franchirait cet écart. Le poids de la preuve a changé de camp.
 
 Les deux canaux sont mesurés, aucun ne paie. L'effort rapporterait davantage
 sur la recherche ou le NNUE.
+
+### Correction : c'est la MÉTHODE qui échoue, pas le CNN
+
+La conclusion ci-dessus sur-interprétait. Contrôle méthodologique : refaire
+exactement la même mesure en remplaçant le CNN par **NNUE**, évaluateur bien
+plus précis, via le même `argmin` des évals d'enfants.
+
+Sur 15 251 échantillons, 3 positions :
+
+| prédicteur | accord avec le coup retenu par la recherche |
+|---|---|
+| CNN | 20,22 % |
+| **NNUE (même méthode)** | **26,59 %** |
+| heuristiques d'ordonnancement | **39,13 %** |
+
+Un évaluateur nettement meilleur n'achète que **+6,4 points**, et perd encore
+**12,5 points** contre les heuristiques.
+
+Donc le facteur limitant n'est pas la qualité du modèle : c'est la méthode.
+Différencier les évals statiques de positions qui ne divergent que d'un pli
+est une mauvaise façon de prédire le verdict d'une recherche profonde, quel
+que soit l'évaluateur. Les écarts entre frères font 10-50 cp, l'erreur
+absolue de l'éval est du même ordre — le bruit domine le signal.
+
+**La phase 0 ne peut donc pas conclure sur une tête policy entraînée.** Ce
+qu'elle établit est plus étroit, et reste utile : on ne peut pas obtenir de
+l'ordonnancement gratuitement en relisant une tête *value*. La condition
+d'arrêt de la section 4 était mal spécifiée — elle confondait « le signal
+qu'on peut extraire aujourd'hui » et « ce que le modèle pourrait apprendre ».
+
+Lecture constructive, d'ailleurs : les heuristiques gagnent en utilisant des
+features **du coup** (SEE, killers, counter-moves, history), pas l'éval de la
+position résultante. Une tête policy est exactement une version apprise de
+ça. L'évidence pointe donc *vers* une policy comme bon instrument, et non
+contre.
+
+### Le prochain verrou, avant d'investir dans l'entraînement
+
+Reste à borner le gain accessible, et ça se mesure sans rien entraîner :
+compter les nœuds à profondeur fixe (`Threads 1`, déterministe) avec
+l'ordonnancement actuel, puis avec le meilleur coup placé d'office en tête
+(oracle). L'écart est le **maximum** que n'importe quelle policy pourrait
+rapporter. Si l'oracle n'économise que quelques pourcents, aucune policy ne
+vaut l'investissement ; s'il en économise 30 %, la cible est claire et on
+connaît d'avance la barre à franchir (39,13 % de top-1).

@@ -303,6 +303,11 @@ void GpuQueue::run() {
     static GpuTask drained[kMaxDrainTasksPerBatch];
     static std::uint64_t cand_key[kMaxDrainTasksPerBatch][kNumCandidateMoves];
     static bool cand_ok[kMaxDrainTasksPerBatch][kNumCandidateMoves];
+    // Eval NNUE de la position calmee de chaque candidat, ramenee au repere
+    // de la cle enfant comme le score CNN -- le controle methodologique
+    // decrit dans GpuTT::store_ordering_hint. Calculee pour TOUS les
+    // candidats, y compris ceux que la deduplication ecarte de l'inference.
+    static int cand_nnue[kMaxDrainTasksPerBatch][kNumCandidateMoves];
 
     while (running_.load(std::memory_order_relaxed)) {
         // Wall-clock accounting for GpuTT::gpu_thread_busy_percent() --
@@ -366,6 +371,11 @@ void GpuQueue::run() {
                 // a precomputed qsearch-style value for child_key, with
                 // the CNN standing in for the leaf eval.
                 quietify(scratch, quiet_moves, quiet_num_moves);
+                if (measure) {
+                    const int sign = (quiet_num_moves % 2 == 0) ? 1 : -1;
+                    cand_nnue[task_index][i] =
+                        sign * eval_relative_dispatch(scratch, -engine_constants::eval::Inf, engine_constants::eval::Inf);
+                }
 
                 // Skip re-encoding + re-inferring a candidate whose score
                 // is already fresh in the GPU TT (same key, current
@@ -473,11 +483,15 @@ void GpuQueue::run() {
                     task.blind_best.get_value() == 0) {
                     continue;
                 }
-                Move cnn_best(0);
-                int best_score = 0;
+                Move cnn_best(0), nnue_best(0);
+                int best_score = 0, best_nnue = 0;
                 for (int i = 0; i < task.num_candidates; ++i) {
                     if (!cand_ok[t][i]) {
                         continue;
+                    }
+                    if (nnue_best.get_value() == 0 || cand_nnue[t][i] < best_nnue) {
+                        best_nnue = cand_nnue[t][i];
+                        nnue_best = task.candidate_moves[i];
                     }
                     std::int16_t sc;
                     std::uint8_t d, a;
@@ -489,12 +503,13 @@ void GpuQueue::run() {
                         cnn_best = task.candidate_moves[i];
                     }
                 }
-                if (cnn_best.get_value() == 0) {
+                if (cnn_best.get_value() == 0 || nnue_best.get_value() == 0) {
                     continue;
                 }
                 shared_gpu_tt().store_ordering_hint(task.position.zobrist_key,
                                                     cnn_best.get_from_sq(), cnn_best.get_to_sq(),
-                                                    task.blind_best.get_from_sq(), task.blind_best.get_to_sq());
+                                                    task.blind_best.get_from_sq(), task.blind_best.get_to_sq(),
+                                                    nnue_best.get_from_sq(), nnue_best.get_to_sq());
             }
         }
 
