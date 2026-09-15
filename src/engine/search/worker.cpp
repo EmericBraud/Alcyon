@@ -425,6 +425,7 @@ void SearchWorker::iterative_deepening()
 {
     int last_score = 0;
     Move prev_best_root = 0;
+    int stable_iterations = 0; // iterations consecutives sans changement du coup racine
     for (int depth = 1; depth < engine_constants::search::MaxDepth; ++depth)
     {
         age_history();
@@ -459,12 +460,21 @@ void SearchWorker::iterative_deepening()
         {
             const int soft = manager.soft_limit_ms();
             const Move current_best = best_root_move.get_value() != 0 ? best_root_move : out_move;
-            const bool unstable = prev_best_root.get_value() != 0 &&
-                                  current_best.get_value() != prev_best_root.get_value();
+            if (prev_best_root.get_value() != 0 && current_best.get_value() != prev_best_root.get_value())
+                stable_iterations = 0;
+            else if (prev_best_root.get_value() != 0)
+                ++stable_iterations;
             prev_best_root = current_best;
             if (soft > 0)
             {
-                const double factor = unstable ? engine_constants::search::time::InstabilityFactor : 1.0;
+                // Plus le coup racine est stable depuis longtemps, moins une
+                // iteration de plus a de chances de le changer -- mesure a
+                // l'appui, voir engine_constants::search::time.
+                namespace tc = engine_constants::search::time;
+                static const double kStability[5] = {tc::StabilityFactor0, tc::StabilityFactor1,
+                                                     tc::StabilityFactor2, tc::StabilityFactor3,
+                                                     tc::StabilityFactor4};
+                const double factor = kStability[std::min(stable_iterations, 4)];
                 const double budget = soft * factor * (engine_constants::search::time::SoftStartPercent / 100.0);
                 if (manager.elapsed_ms() >= static_cast<long long>(budget))
                     shared_stop.store(true, std::memory_order_relaxed);
