@@ -292,7 +292,7 @@ void SearchWorker::maybe_submit_transposition_to_gpu(int depth)
 
 void SearchWorker::maybe_submit_pv_leaf_to_gpu_throttled(Move pv_root, int depth)
 {
-    if (depth < gpu_eval::kMinDepthForMidSearchSubmit)
+    if (depth < gpu_eval::mid_search_submit_min_depth())
         return;
     // Node-count throttle removed (test: does dropping it cause queue
     // overflow / GPU-thread starvation / measurable NPS regression?).
