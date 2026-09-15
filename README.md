@@ -57,17 +57,23 @@ Search and (HCE) evaluation constants are tunable via SPSA, using [OpenBench](ht
 
 Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `UHO_4060_v2` opening book, [fastchess](https://github.com/Disservin/fastchess)):
 
-| Time control | Games | Chess26 score | Elo (vs SF8) |
-|---|---|---|---|
-| 60s+0.2s | 300 | 91.0 / 300 (30.3%) — 37W / 155L / 108D | **-144.4 ± 28.7** |
+| Version | Time control | Games | Chess26 score | Elo (vs SF8) |
+|---|---|---|---|---|
+| v5.0 | 60s+0.2s | 300 | 91.0 / 300 (30.3%) — 37W / 155L / 108D | **-169 ± 29** † |
 
-Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3215 Elo** for Chess26 in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
+† v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
+rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
+The v5.0 figure above is its measured **-144.4 ± 28.7** shifted by that estimate
+so every row in the table faces the same opponent. The shift is an estimate, not
+a measurement.
+
+Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3190 Elo** for Chess26 in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
 
 - CCRL's list runs at a longer time control (40 moves/15 min) and typically multi-core, vs. our single-threaded 60+0.2 test
-- Stockfish 8 here ran under Rosetta 2 (x86_64 emulation on Apple Silicon), not natively — likely *understating* its actual strength, so the true gap is probably larger
+- The reference Stockfish 8 is built from source at tag `sf_8` with `ARCH=general-64`, so it has neither `popcnt` nor prefetch — likely *understating* its actual strength, so the true gap is probably larger
 - 300 games gives a fairly wide confidence interval (±28.7 Elo just from sampling)
 
-An actual CCRL-comparable number would require running on CCRL's reference hardware/time control (or submitting the engine to CCRL directly, which accepts community submissions) and a native (non-emulated) reference build for every opponent.
+An actual CCRL-comparable number would require running on CCRL's reference hardware/time control (or submitting the engine to CCRL directly, which accepts community submissions) and a fully optimized reference build for every opponent.
 
 ## 🚀 Planned Features
 
