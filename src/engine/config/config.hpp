@@ -49,22 +49,25 @@ namespace engine_constants
             PARAM_SPECIFIER int MaxDepth = 4;
             PARAM_SPECIFIER int MarginDepthFactor = 73;
             PARAM_SPECIFIER int MarginConst = 61;
-            // Escalade paresseuse (reverse_futility_pruning, negamax.cpp) :
-            // si l'evaluation PSQT tombe a moins de ce nombre de centipions
-            // de BETA, on paie le reseau complet et on re-decide.
+            // Seconde passe du RFP, sur le reseau complet. On teste d'abord
+            // la tete PSQT (~30x moins chere : 32 octets par ligne
+            // d'accumulateur contre 1024) ; si elle n'elague pas, on refait
+            // le MEME test avec le reseau complet, sous sa propre marge.
             //
-            // Ancree sur beta, pas sur la frontiere de decision beta+margin :
-            // une fenetre centree sur beta+margin se deplacerait des que le
-            // SPSA touche MarginDepthFactor ou MarginConst, et les deux
-            // dimensions se masqueraient mutuellement. Un facteur a tuner ne
-            // doit pas dependre d'un autre facteur a tuner.
+            // Initialisees aux valeurs de la marge lazy : a egalite, ce n'est
+            // pas le meme test -- il porte sur une autre quantite -- mais
+            // c'est le meme critere avec une meilleure mesure. Point de
+            // depart neutre par construction, et pas sur une borne, donc le
+            // SPSA peut perturber des deux cotes (contrairement a 0).
             //
-            // A 0 le mecanisme ne se declenche jamais et le comportement est
-            // exactement celui d'avant -- mode de defaillance sur, et
-            // l'optimiseur peut faire croitre la valeur depuis zero. C'est le
-            // defaut parce qu'un nombre choisi a la main ne peut pas gagner
-            // d'Elo ici. Plage suggeree : 0..250.
-            PARAM_SPECIFIER int EscalationMargin = 0;
+            // Parametres INDEPENDANTS, pas un delta ajoute a la marge lazy :
+            // un facteur a tuner ne doit pas dependre d'un autre facteur a
+            // tuner, sinon les deux dimensions se masquent mutuellement.
+            //
+            // Mettre PreciseMarginDepthFactor tres haut desactive la seconde
+            // passe et redonne le comportement d'avant.
+            PARAM_SPECIFIER int PreciseMarginDepthFactor = 73;
+            PARAM_SPECIFIER int PreciseMarginConst = 61;
         }
         namespace iterative_deepening
         {

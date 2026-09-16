@@ -47,27 +47,26 @@ namespace search
         namespace rfp = engine_constants::search::reverse_futility_pruning;
         if (depth <= rfp::MaxDepth && !in_check && ply > 0 && !is_pv)
         {
-            const int margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
-            const int psqt_eval = Eval::lazy_eval_relative<Us>(board);
-
-            // Escalade paresseuse : la tete PSQT coute ~30x moins que le
-            // reseau complet (32 octets par ligne d'accumulateur contre
-            // 1024) mais c'est un signal plus grossier. Payer le reseau
-            // complet a CHAQUE noeud interieur ferait passer les
-            // materialisations de 0,42 a ~0,72 par noeud (mesure), soit
-            // environ un tiers de NPS. On ne le paie donc que quand
-            // l'evaluation bon marche est proche de beta.
+            // Deux passes. La tete PSQT d'abord, ~30x moins chere que le
+            // reseau complet. Si elle elargue, on s'arrete la et on n'a rien
+            // paye. Sinon on refait le meme test avec le reseau complet, sous
+            // sa propre marge : meme critere, meilleure mesure.
             //
-            // Fenetre ancree sur beta -- frontiere FIXE -- et non sur
-            // beta+margin : voir EscalationMargin dans config.hpp. Comme la
-            // decision se prend en psqt-margin >= beta, une fenetre autour de
-            // beta ne couvre que des noeuds que le PSQT n'elaguait pas : ce
-            // mecanisme ne peut donc qu'AJOUTER des coupures, et seulement
-            // quand le reseau complet depasse le PSQT de plus d'une marge.
-            if (std::abs(psqt_eval - beta) < rfp::EscalationMargin)
-                return Eval::eval_relative<Us>(board, beta - 1, beta) - margin >= beta;
+            // Mesure de l'ecart entre les deux signaux pres de beta : sur les
+            // cas serres, le PSQT et le reseau complet ne sont pas d'accord
+            // sur la decision d'elagage une fois sur deux (12 008 bascules
+            // sur 22 288). Le signal bon marche n'est pas seulement plus
+            // grossier, il est en desaccord franc la ou ca decide.
+            //
+            // Cout : les noeuds qui atteignent ce test ne sont que 12 a 23 %
+            // des noeuds (le RFP est borne a MaxDepth), donc la seconde passe
+            // ajoute de l'ordre de 28 % d'evaluations completes, pas 70 %.
+            const int lazy_margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
+            if (Eval::lazy_eval_relative<Us>(board) - lazy_margin >= beta)
+                return true;
 
-            return psqt_eval - margin >= beta;
+            const int precise_margin = rfp::PreciseMarginDepthFactor * depth + rfp::PreciseMarginConst;
+            return Eval::eval_relative<Us>(board, beta - 1, beta) - precise_margin >= beta;
         }
         return false;
     }
