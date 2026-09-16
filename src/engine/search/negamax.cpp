@@ -62,7 +62,8 @@ namespace search
             // des noeuds (le RFP est borne a MaxDepth), donc la seconde passe
             // ajoute de l'ordre de 28 % d'evaluations completes, pas 70 %.
             const int lazy_margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
-            if (Eval::lazy_eval_relative<Us>(board) - lazy_margin >= beta)
+            const int psqt = Eval::lazy_eval_relative<Us>(board);
+            if (psqt - lazy_margin >= beta)
                 return true;
 
             const int precise_margin = rfp::PreciseMarginDepthFactor * depth + rfp::PreciseMarginConst;

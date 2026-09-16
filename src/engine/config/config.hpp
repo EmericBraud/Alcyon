@@ -54,11 +54,27 @@ namespace engine_constants
             // d'accumulateur contre 1024) ; si elle n'elague pas, on refait
             // le MEME test avec le reseau complet, sous sa propre marge.
             //
-            // Initialisees aux valeurs de la marge lazy : a egalite, ce n'est
-            // pas le meme test -- il porte sur une autre quantite -- mais
-            // c'est le meme critere avec une meilleure mesure. Point de
-            // depart neutre par construction, et pas sur une borne, donc le
-            // SPSA peut perturber des deux cotes (contrairement a 0).
+            // PreciseMarginConst = MarginConst + 250, et ce +250 est MESURE,
+            // pas choisi. Recopier MarginConst tel quel serait une faute :
+            // sur la population des noeuds RFP, la tete PSQT lit ~250 a 330
+            // centipions SOUS le reseau complet (mesure sur 1,6 M
+            // echantillons, moyenne plate de +296/+328/+319/+338 aux
+            // profondeurs 1 a 4). Le seuil que le SPSA a reellement valide
+            // pour le test lazy est donc full >= beta + margin + 250 : la
+            // marge tunee contient ce decalage. Sans la correction, le test
+            // precis serait 250cp plus permissif que celui qui a ete valide,
+            // et son gain apparent en noeuds ne serait qu'un elagage plus
+            // agressif.
+            //
+            // Ce decalage n'existe pas aux positions racines, ou l'ecart
+            // vaut 0 a 89cp. Il est propre aux noeuds RFP : non-PV, faible
+            // profondeur, atteints apres que l'ordonnancement a pousse
+            // captures et killers en premier -- des positions tendues, ou le
+            // trunk (qui porte les features de menaces) diverge legitimement
+            // d'un terme materiel-et-placement.
+            //
+            // Point de depart calibre, et pas sur une borne, donc le SPSA
+            // peut perturber des deux cotes (contrairement a 0).
             //
             // Parametres INDEPENDANTS, pas un delta ajoute a la marge lazy :
             // un facteur a tuner ne doit pas dependre d'un autre facteur a
@@ -67,7 +83,7 @@ namespace engine_constants
             // Mettre PreciseMarginDepthFactor tres haut desactive la seconde
             // passe et redonne le comportement d'avant.
             PARAM_SPECIFIER int PreciseMarginDepthFactor = 73;
-            PARAM_SPECIFIER int PreciseMarginConst = 61;
+            PARAM_SPECIFIER int PreciseMarginConst = 311;
         }
         namespace iterative_deepening
         {
