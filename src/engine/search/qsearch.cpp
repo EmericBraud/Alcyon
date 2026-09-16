@@ -7,6 +7,29 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     if (check_stop())
         return alpha;
 
+    // Borne dure sur le ply, comme negamax en a une ("if (ply >= MaxDepth)").
+    // La qsearch n'en avait pas : elle recurse en ply+1 et genere TOUTES les
+    // evasions quand elle est en echec, donc une sequence d'echecs peut la
+    // faire descendre arbitrairement loin. Deux consequences :
+    //
+    //  - score_move indexe killer_moves[ply], de taille [MaxDepth][2] : a
+    //    ply >= 64 la lecture sortait du tableau, dans les tables d'history
+    //    voisines de SearchWorker. Scores de coups aberrants, donc
+    //    ordonnancement faux, silencieusement. Le meme danger etait deja
+    //    connu et traite a UN seul endroit (safe_ply dans
+    //    submit_current_position_to_gpu) -- ici c'est la cause racine.
+    //  - chaque frame de qsearch porte une MoveList (~2 Ko), donc une
+    //    recursion non bornee menace aussi la pile.
+    //
+    // Le garde est ici plutot qu'un clamp dans score_move : une comparaison
+    // par noeud au lieu d'un clamp par coup, et il couvre les deux risques.
+    //
+    // Mesure : sur six positions dont une finale a echecs perpetuels, le
+    // seldepth maximal observe est 26 et le garde ne se declenche JAMAIS.
+    // C'est donc une assurance, pas une correction de comportement.
+    if (ply >= engine_constants::search::MaxDepth)
+        return Eval::lazy_eval_relative<Us>(board);
+
     // 2. Sondage de la Transposition Table (TT)
     // Utilisation du ply pour normaliser les scores de mat récupérés
     int tt_score;
