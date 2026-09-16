@@ -49,6 +49,22 @@ namespace engine_constants
             PARAM_SPECIFIER int MaxDepth = 4;
             PARAM_SPECIFIER int MarginDepthFactor = 73;
             PARAM_SPECIFIER int MarginConst = 61;
+            // Escalade paresseuse (reverse_futility_pruning, negamax.cpp) :
+            // si l'evaluation PSQT tombe a moins de ce nombre de centipions
+            // de BETA, on paie le reseau complet et on re-decide.
+            //
+            // Ancree sur beta, pas sur la frontiere de decision beta+margin :
+            // une fenetre centree sur beta+margin se deplacerait des que le
+            // SPSA touche MarginDepthFactor ou MarginConst, et les deux
+            // dimensions se masqueraient mutuellement. Un facteur a tuner ne
+            // doit pas dependre d'un autre facteur a tuner.
+            //
+            // A 0 le mecanisme ne se declenche jamais et le comportement est
+            // exactement celui d'avant -- mode de defaillance sur, et
+            // l'optimiseur peut faire croitre la valeur depuis zero. C'est le
+            // defaut parce qu'un nombre choisi a la main ne peut pas gagner
+            // d'Elo ici. Plage suggeree : 0..250.
+            PARAM_SPECIFIER int EscalationMargin = 0;
         }
         namespace iterative_deepening
         {

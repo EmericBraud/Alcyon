@@ -1,4 +1,5 @@
 #include "worker.hpp"
+#include <atomic>
 
 #include "engine/utils/random.hpp"
 #include "engine/engine_manager.hpp"
@@ -43,12 +44,30 @@ namespace search
     template <Color Us>
     inline bool reverse_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, int beta)
     {
-        if (depth <= engine_constants::search::reverse_futility_pruning::MaxDepth && !in_check && ply > 0 && !is_pv)
+        namespace rfp = engine_constants::search::reverse_futility_pruning;
+        if (depth <= rfp::MaxDepth && !in_check && ply > 0 && !is_pv)
         {
-            int static_eval = Eval::lazy_eval_relative<Us>(board);
-            int margin = engine_constants::search::reverse_futility_pruning::MarginDepthFactor * depth + engine_constants::search::reverse_futility_pruning::MarginConst;
-            if (static_eval - margin >= beta)
-                return true;
+            const int margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
+            const int psqt_eval = Eval::lazy_eval_relative<Us>(board);
+
+            // Escalade paresseuse : la tete PSQT coute ~30x moins que le
+            // reseau complet (32 octets par ligne d'accumulateur contre
+            // 1024) mais c'est un signal plus grossier. Payer le reseau
+            // complet a CHAQUE noeud interieur ferait passer les
+            // materialisations de 0,42 a ~0,72 par noeud (mesure), soit
+            // environ un tiers de NPS. On ne le paie donc que quand
+            // l'evaluation bon marche est proche de beta.
+            //
+            // Fenetre ancree sur beta -- frontiere FIXE -- et non sur
+            // beta+margin : voir EscalationMargin dans config.hpp. Comme la
+            // decision se prend en psqt-margin >= beta, une fenetre autour de
+            // beta ne couvre que des noeuds que le PSQT n'elaguait pas : ce
+            // mecanisme ne peut donc qu'AJOUTER des coupures, et seulement
+            // quand le reseau complet depasse le PSQT de plus d'une marge.
+            if (std::abs(psqt_eval - beta) < rfp::EscalationMargin)
+                return Eval::eval_relative<Us>(board, beta - 1, beta) - margin >= beta;
+
+            return psqt_eval - margin >= beta;
         }
         return false;
     }
