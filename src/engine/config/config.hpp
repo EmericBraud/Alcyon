@@ -40,6 +40,16 @@ namespace engine_constants
 
         namespace razoring
         {
+            // Razoring NEUTRALISE (MaxDepth = 0). Mesure : son ecart moyen
+            // depasse sa propre marge a toutes les profondeurs (+239 contre
+            // 100, +287 contre 200, +305 contre 300), et la depasse 51 a 66 %
+            // du temps. Sa marge corrigee sort donc NEGATIVE : le seuil que le
+            // SPSA avait valide est inatteignable avec une evaluation non
+            // biaisee. Autrement dit il n'elaguait pas sur un critere
+            // d'evaluation, il elaguait sur l'information que la tete PSQT
+            // omettait. Il n'y a rien a calibrer -- au tuner de le rouvrir
+            // s'il vaut quelque chose. Stockfish n'en garde qu'un test unique
+            // en profondeur 1.
             PARAM_SPECIFIER int MaxDepth = 3;
             PARAM_SPECIFIER int MarginDepthFactor = 100;
             PARAM_SPECIFIER int MarginConst = 0;
@@ -47,43 +57,19 @@ namespace engine_constants
         namespace reverse_futility_pruning
         {
             PARAM_SPECIFIER int MaxDepth = 4;
+            // MarginConst = 61 + 250, le +250 etant MESURE : sur la
+            // population du RFP la tete PSQT lisait ~250 a 335 centipions
+            // sous le reseau complet, donc le seuil reellement valide par le
+            // SPSA etait full >= beta + margin + 250. Le passage au reseau
+            // complet retire ce decalage implicite, il faut le remettre dans
+            // la marge.
             PARAM_SPECIFIER int MarginDepthFactor = 73;
-            PARAM_SPECIFIER int MarginConst = 61;
+            PARAM_SPECIFIER int MarginConst = 311;
             // Seconde passe du RFP, sur le reseau complet. On teste d'abord
             // la tete PSQT (~30x moins chere : 32 octets par ligne
             // d'accumulateur contre 1024) ; si elle n'elague pas, on refait
             // le MEME test avec le reseau complet, sous sa propre marge.
             //
-            // PreciseMarginConst = MarginConst + 250, et ce +250 est MESURE,
-            // pas choisi. Recopier MarginConst tel quel serait une faute :
-            // sur la population des noeuds RFP, la tete PSQT lit ~250 a 330
-            // centipions SOUS le reseau complet (mesure sur 1,6 M
-            // echantillons, moyenne plate de +296/+328/+319/+338 aux
-            // profondeurs 1 a 4). Le seuil que le SPSA a reellement valide
-            // pour le test lazy est donc full >= beta + margin + 250 : la
-            // marge tunee contient ce decalage. Sans la correction, le test
-            // precis serait 250cp plus permissif que celui qui a ete valide,
-            // et son gain apparent en noeuds ne serait qu'un elagage plus
-            // agressif.
-            //
-            // Ce decalage n'existe pas aux positions racines, ou l'ecart
-            // vaut 0 a 89cp. Il est propre aux noeuds RFP : non-PV, faible
-            // profondeur, atteints apres que l'ordonnancement a pousse
-            // captures et killers en premier -- des positions tendues, ou le
-            // trunk (qui porte les features de menaces) diverge legitimement
-            // d'un terme materiel-et-placement.
-            //
-            // Point de depart calibre, et pas sur une borne, donc le SPSA
-            // peut perturber des deux cotes (contrairement a 0).
-            //
-            // Parametres INDEPENDANTS, pas un delta ajoute a la marge lazy :
-            // un facteur a tuner ne doit pas dependre d'un autre facteur a
-            // tuner, sinon les deux dimensions se masquent mutuellement.
-            //
-            // Mettre PreciseMarginDepthFactor tres haut desactive la seconde
-            // passe et redonne le comportement d'avant.
-            PARAM_SPECIFIER int PreciseMarginDepthFactor = 73;
-            PARAM_SPECIFIER int PreciseMarginConst = 311;
         }
         namespace iterative_deepening
         {
@@ -98,8 +84,13 @@ namespace engine_constants
         }
         namespace futility_pruning
         {
+            // MarginConst = 95 - 90, le -90 etant l'ecart mesure sur la
+            // population de la futility (+49 a +139 selon la profondeur,
+            // bien plus faible que celui du razoring et du RFP, et ne
+            // depassant ses marges que 3 a 20 % du temps -- c'est le
+            // mecanisme le plus sain des trois).
             PARAM_SPECIFIER int MaxDepth = 8;
-            PARAM_SPECIFIER int MarginConst = 95;
+            PARAM_SPECIFIER int MarginConst = 5;
             PARAM_SPECIFIER int MarginDepthFactor = 105;
         }
         namespace singular

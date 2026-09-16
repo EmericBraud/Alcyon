@@ -24,7 +24,7 @@ namespace search
         if (in_check || is_pv || depth > engine_constants::search::razoring::MaxDepth || ply == 0)
             return false;
 
-        int static_eval = Eval::lazy_eval_relative<Us>(board);
+        int static_eval = Eval::prune_eval_relative<Us>(board, alpha - 1, alpha);
         int margin = engine_constants::search::razoring::MarginDepthFactor * depth + engine_constants::search::razoring::MarginConst;
         return static_eval + margin <= alpha;
     }
@@ -47,27 +47,12 @@ namespace search
         namespace rfp = engine_constants::search::reverse_futility_pruning;
         if (depth <= rfp::MaxDepth && !in_check && ply > 0 && !is_pv)
         {
-            // Deux passes. La tete PSQT d'abord, ~30x moins chere que le
-            // reseau complet. Si elle elargue, on s'arrete la et on n'a rien
-            // paye. Sinon on refait le meme test avec le reseau complet, sous
-            // sa propre marge : meme critere, meilleure mesure.
-            //
-            // Mesure de l'ecart entre les deux signaux pres de beta : sur les
-            // cas serres, le PSQT et le reseau complet ne sont pas d'accord
-            // sur la decision d'elagage une fois sur deux (12 008 bascules
-            // sur 22 288). Le signal bon marche n'est pas seulement plus
-            // grossier, il est en desaccord franc la ou ca decide.
-            //
-            // Cout : les noeuds qui atteignent ce test ne sont que 12 a 23 %
-            // des noeuds (le RFP est borne a MaxDepth), donc la seconde passe
-            // ajoute de l'ordre de 28 % d'evaluations completes, pas 70 %.
-            const int lazy_margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
-            const int psqt = Eval::lazy_eval_relative<Us>(board);
-            if (psqt - lazy_margin >= beta)
-                return true;
-
-            const int precise_margin = rfp::PreciseMarginDepthFactor * depth + rfp::PreciseMarginConst;
-            return Eval::eval_relative<Us>(board, beta - 1, beta) - precise_margin >= beta;
+            // Un seul test, sur le reseau complet (voir
+            // Eval::prune_eval_relative). La seconde passe qui existait ici
+            // n'avait d'objet que pour rattraper la tete PSQT ; elle
+            // disparait avec elle.
+            const int margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
+            return Eval::prune_eval_relative<Us>(board, beta - 1, beta) - margin >= beta;
         }
         return false;
     }
@@ -132,7 +117,7 @@ namespace search
         if (depth <= engine_constants::search::futility_pruning::MaxDepth && !in_check && !is_pv && ply > 0 && !is_mate_node)
         {
             int futil_margin = engine_constants::search::futility_pruning::MarginConst + engine_constants::search::futility_pruning::MarginDepthFactor * depth;
-            int static_eval = Eval::lazy_eval_relative<Us>(board);
+            int static_eval = Eval::prune_eval_relative<Us>(board, alpha - 1, alpha);
 
             if (static_eval + futil_margin <= alpha)
             {
