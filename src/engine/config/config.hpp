@@ -49,6 +49,28 @@ namespace engine_constants
             PARAM_SPECIFIER int MaxDepth = 4;
             PARAM_SPECIFIER int MarginDepthFactor = 73;
             PARAM_SPECIFIER int MarginConst = 61;
+            // Escalade paresseuse : si l'evaluation PSQT tombe a moins de ce
+            // nombre de centipions de la frontiere de decision, on paie le
+            // reseau complet pour re-decider. Voir reverse_futility_pruning
+            // dans negamax.cpp.
+            //
+            // A 0 le mecanisme est inactif et le comportement est exactement
+            // celui d'avant son introduction -- verifie au bit pres. C'est le
+            // defaut, parce qu'une valeur choisie a la main ne peut pas
+            // gagner d'Elo ici : l'escalade rend l'evaluation plus juste,
+            // donc elle elague MOINS (mesure : -27 %, +55 %, -25 %, +6 % de
+            // noeuds selon la position). Le gain ne viendra pas d'elle mais
+            // de ce qu'elle autorise ensuite -- rouvrir MaxDepth de 4 vers 7
+            // et resserrer les marges, ce que le signal PSQT seul
+            // interdisait. C'est visible dans ce fichier meme : le bloc HCE
+            // plus bas elague jusqu'a la profondeur 7 avec des marges PLUS
+            // SERREES, parce que son lazy_eval est l'estimation complete.
+            //
+            // A tuner conjointement, jamais separement :
+            //   EscalationMargin    0..250
+            //   MaxDepth            4..8
+            //   MarginDepthFactor / MarginConst autour de leurs valeurs
+            PARAM_SPECIFIER int EscalationMargin = 0;
         }
         namespace iterative_deepening
         {
@@ -175,6 +197,10 @@ namespace engine_constants
             PARAM_SPECIFIER int MaxDepth = 7;
             PARAM_SPECIFIER int MarginDepthFactor = 57;
             PARAM_SPECIFIER int MarginConst = 55;
+            // Sans objet en build HCE (lazy_eval y est deja l'estimation
+            // complete), presente pour que les deux namespaces restent
+            // symetriques.
+            PARAM_SPECIFIER int EscalationMargin = 0;
         }
         namespace iterative_deepening
         {
