@@ -43,34 +43,12 @@ namespace search
     template <Color Us>
     inline bool reverse_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, int beta)
     {
-        namespace rfp = engine_constants::search::reverse_futility_pruning;
-        if (depth <= rfp::MaxDepth && !in_check && ply > 0 && !is_pv)
+        if (depth <= engine_constants::search::reverse_futility_pruning::MaxDepth && !in_check && ply > 0 && !is_pv)
         {
-            const int margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
-            const int slack = (Eval::lazy_eval_relative<Us>(board) - margin) - beta;
-
-            // Escalade paresseuse. La tete PSQT coute ~30x moins que le
-            // reseau complet (32 octets par ligne d'accumulateur contre
-            // 1024), mais c'est un signal plus grossier -- et le config le
-            // dit : MaxDepth vaut 4 en build NNUE contre 7 en build HCE,
-            // avec des marges PLUS SERREES cote HCE. Le SPSA a donc trouve
-            // que pousser le RFP plus loin faisait perdre en NNUE, faute
-            // d'un signal assez fiable.
-            //
-            // Payer le reseau complet a CHAQUE noeud interieur ferait passer
-            // les materialisations de 0,42 a ~0,72 par noeud (mesure), soit
-            // environ un tiers de NPS, ~30 Elo perdus d'entree. On ne le
-            // paie donc que sur les decisions serrees : loin de la
-            // frontiere, une evaluation raffinee ne peut pas changer l'issue
-            // du noeud. Meme raisonnement que la criticite de la file GPU,
-            // mais ici la consultation est synchrone et gratuite.
-            // Strictement `<` : a EscalationMargin = 0 on n'escalade jamais,
-            // donc le comportement est exactement celui d'avant. C'est le
-            // test de limite qui garde ce mecanisme honnete.
-            if (std::abs(slack) < rfp::EscalationMargin)
-                return Eval::eval_relative<Us>(board, beta - 1, beta) - margin >= beta;
-
-            return slack >= 0;
+            int static_eval = Eval::lazy_eval_relative<Us>(board);
+            int margin = engine_constants::search::reverse_futility_pruning::MarginDepthFactor * depth + engine_constants::search::reverse_futility_pruning::MarginConst;
+            if (static_eval - margin >= beta)
+                return true;
         }
         return false;
     }
