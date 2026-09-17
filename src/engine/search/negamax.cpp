@@ -322,7 +322,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         {
             int cnn_from, cnn_to, heur_from, heur_to, nnue_from, nnue_to;
             if (gpu_eval::shared_gpu_tt().probe_ordering_hint(board.get_hash(), cnn_from, cnn_to,
-                                                             heur_from, heur_to, nnue_from, nnue_to))
+                                                              heur_from, heur_to, nnue_from, nnue_to))
             {
                 const int target_from = tt_move.get_from_sq();
                 const int target_to = tt_move.get_to_sq();
@@ -336,21 +336,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     if (search::should_qsearch(depth, ply, in_check))
     {
-        // Consult the GPU tt directly here, right before dropping into
-        // qsearch -- this is the frontier-node case (no main-TT entry
-        // for this key yet, e.g. a PV-leaf child freshly precomputed by
-        // the GPU queue). Trusted UNCONDITIONALLY: the GPU-prep thread
-        // already compared this score against NNUE (agreeing outright,
-        // or resolving a disagreement with its own bounded search)
-        // BEFORE storing it -- see gpu_queue.cpp's run(). Doing that
-        // comparison again here, live (an extra NNUE eval, plus a search
-        // extension on disagreement), used to run on this search thread
-        // and was measured to net LOSE ~23 Elo in a real match: that
-        // cost competed with the rest of the search tree for the same
-        // time budget. Moving it to the (otherwise idle) GPU-prep thread
-        // keeps this a cheap O(1) lookup again. See
-        // docs/gpu-async-eval/consultative-eval-measurements.md.
-        if (gpu_eval::active())
+        if constexpr (gpu_eval::active())
         {
             int16_t gpu_score;
             std::uint8_t gpu_depth, gpu_age;
@@ -522,19 +508,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             {
                 alpha = score;
             }
-
-            // The root's best-known move just changed -- board is back
-            // at the root here (board.unplay<Us>(m) already ran above),
-            // same precondition as the once-per-depth call from
-            // iterative_deepening(), but this fires mid-depth, on every
-            // improvement, not just once the whole depth (including any
-            // aspiration re-searches) has finished. See gpu_config.hpp's
-            // kMinDepthForMidSearchSubmit/kMinNodesBetweenGpuSubmits for
-            // why this needs throttling and the once-per-depth call
-            // doesn't.
-            if (ply == 0)
+            if constexpr (gpu_eval::active())
             {
-                maybe_submit_pv_leaf_to_gpu_throttled(m, depth);
+                if (ply == 0)
+                {
+                    maybe_submit_pv_leaf_to_gpu_throttled(m, depth);
+                }
             }
         }
     }
