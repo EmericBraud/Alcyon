@@ -6,7 +6,6 @@
 #include "engine/config/config.hpp"
 #include "engine/config/eval.hpp"
 #include "engine/engine_manager.hpp"
-#include "engine/eval/gpu/gpu_queue.hpp"
 #include "worker.hpp"
 
 #include <algorithm>
@@ -179,164 +178,6 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
     return pv_line;
 }
 
-void SearchWorker::maybe_submit_pv_leaf_to_gpu(Move pv_root, int depth)
-{
-    if constexpr (!gpu_eval::active())
-        return;
-
-    if (pv_root.get_value() == 0)
-        return;
-    if (!board.is_move_pseudo_legal(pv_root) || !board.is_move_legal(pv_root))
-        return;
-
-    // Walk down to the PV leaf on this worker's OWN board -- same
-    // technique as get_pv_line_with_root, mirrored here instead of
-    // reused because that one builds a UCI string (allocates), which
-    // this doesn't need. `board` is back at the root here (negamax_
-    // with_aspiration has just returned), same precondition as the
-    // reporting call sites in iterative_deepening().
-    //
-    // IMPORTANT: use Board::play/unplay explicitly (the core-board layer),
-    // NOT VBoard::play/unplay -- the latter also updates the NNUE
-    // accumulator (or HCE eval_state), which this walk has no use for
-    // (nothing here calls evaluate()) and would be a pure wasted cost on
-    // the search hot path. Bitboards/zobrist/side-to-move are all this
-    // needs, same as gpu_queue.cpp's separate `Board scratch`.
-    // Fixed capacity: pv_root plus up to 10 more plies (the loop below
-    // is bounded by std::min(depth - 1, 10)), so 11 is an exact bound --
-    // no runtime allocation on this hot path.
-    constexpr int kMaxPvWalkPlies = 11;
-    std::array<Move, kMaxPvWalkPlies> moves_to_unplay;
-    std::array<uint64_t, kMaxPvWalkPlies - 1> visited_hashes;
-    int num_moves_to_unplay = 0;
-    int num_visited_hashes = 0;
-
-    board.Board::play(pv_root);
-    moves_to_unplay[num_moves_to_unplay++] = pv_root;
-
-    for (int i = 0; i < std::min(depth - 1, 10); ++i)
-    {
-        if (board.is_repetition() || board.get_halfmove_clock() >= 100)
-            break;
-
-        Move m = shared_tt.get_move(board.get_hash());
-        if (m.get_value() == 0)
-            break;
-        if (!board.is_move_pseudo_legal(m) || !board.is_move_legal(m))
-            break;
-
-        uint64_t h = board.get_hash();
-        bool cycle_detected = false;
-        for (int v = 0; v < num_visited_hashes; ++v)
-            if (visited_hashes[v] == h)
-            {
-                cycle_detected = true;
-                break;
-            }
-        if (cycle_detected)
-            break;
-
-        visited_hashes[num_visited_hashes++] = h;
-        board.Board::play(m);
-        moves_to_unplay[num_moves_to_unplay++] = m;
-    }
-
-    // `board` is now at the PV leaf. Its own TT move (if any) is the best
-    // available guess at which child the search will look at first -- see
-    // submit_current_position_to_gpu's note on why that matters.
-    submit_current_position_to_gpu(depth, shared_tt.get_move(board.get_hash()), num_moves_to_unplay);
-
-    for (int i = num_moves_to_unplay - 1; i >= 0; --i)
-        board.Board::unplay(moves_to_unplay[i]);
-}
-
-void SearchWorker::submit_current_position_to_gpu(int depth, Move tt_move, int ply)
-{
-    // Assumes `board` is ALREADY at the position to submit -- callers are
-    // responsible for getting there (and back) themselves; this just
-    // ranks replies with this worker's own heuristic tables (history/
-    // killers/continuation history), per gpu_eval::kNumCandidateMoves,
-    // same one-shot scorer + partial selection idiom as engine_manager.
-    // hpp's root move-scoring path, and pushes the task.
-    //
-    // The ranking decides WHICH children get CNN-evaluated, so it should
-    // match the order the real search will use at this node as closely as
-    // possible -- a child the search never visits is a wasted inference.
-    // This used to pass score_move(m, 0, 0, 0): no tt_move (so the TT's
-    // own best move, by far the likeliest child to be searched, got none
-    // of its 9600-point bonus), killers read from ply 0 instead of this
-    // node's, and counter-moves disabled. Only ~7.9% of stored scores
-    // were ever read back.
-    const auto *history = board.get_history();
-    const Move prev_move = (history && !history->empty()) ? history->back().move : Move(0);
-    // score_move indexes killer_moves[ply]; the PV-leaf caller's walk can
-    // in principle reach past the table, so clamp rather than trust it.
-    const int safe_ply = std::clamp(ply, 0, engine_constants::search::MaxDepth - 1);
-
-    MoveList list;
-    MoveGen::generate_legal_moves(board, list);
-    if (board.get_side_to_move() == WHITE)
-    {
-        for (int i = 0; i < list.size(); ++i)
-            list.scores[i] = score_move<WHITE>(list.moves[i], tt_move, safe_ply, prev_move);
-    }
-    else
-    {
-        for (int i = 0; i < list.size(); ++i)
-            list.scores[i] = score_move<BLACK>(list.moves[i], tt_move, safe_ply, prev_move);
-    }
-
-    gpu_eval::GpuTask task;
-    task.position = gpu_eval::GpuPosition::from_board(board);
-    task.depth = static_cast<std::uint8_t>(std::clamp(depth, 0, 255));
-    task.num_candidates = std::min(list.size(), gpu_eval::kNumCandidateMoves);
-    for (int i = 0; i < task.num_candidates; ++i)
-        task.candidate_moves[i] = list.pick_best_move(i);
-
-    // Phase 0 (voir GpuTask) : la cible, et le choix de l'heuristique privee
-    // du coup TT. Re-score les memes candidats avec tt_move supprime, sinon
-    // la comparaison serait circulaire.
-    if (gpu_eval::measure_diagnostics())
-    {
-        task.tt_move = tt_move;
-        int best_blind = std::numeric_limits<int>::min();
-        for (int i = 0; i < task.num_candidates; ++i)
-        {
-            const Move &m = task.candidate_moves[i];
-            const int s = (board.get_side_to_move() == WHITE)
-                              ? score_move<WHITE>(m, Move(0), safe_ply, prev_move)
-                              : score_move<BLACK>(m, Move(0), safe_ply, prev_move);
-            if (s > best_blind)
-            {
-                best_blind = s;
-                task.blind_best = m;
-            }
-        }
-    }
-
-    gpu_eval::shared_gpu_queue().push(task);
-}
-
-void SearchWorker::maybe_submit_transposition_to_gpu(int depth, Move tt_move, int ply)
-{
-    // Called from negamax right after a TT probe that hit -- `board` is
-    // already the transposed position, no PV walk needed (unlike
-    // maybe_submit_pv_leaf_to_gpu). Depth gating happens at the call
-    // site (gpu_eval::kMinDepthForTranspositionSubmit); this only checks
-    // the master on/off switch.
-    if (!gpu_eval::active())
-        return;
-    submit_current_position_to_gpu(depth, tt_move, ply);
-}
-
-void SearchWorker::maybe_submit_pv_leaf_to_gpu_throttled(Move pv_root, int depth)
-{
-    if (depth < gpu_eval::mid_search_submit_min_depth())
-        return;
-
-    maybe_submit_pv_leaf_to_gpu(pv_root, depth);
-}
-
 int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 {
     max_extended_depth = 0;
@@ -438,12 +279,6 @@ void SearchWorker::iterative_deepening()
     {
         age_history();
         last_score = negamax_with_aspiration(depth, last_score);
-        // `board` is guaranteed back at the root here (every play() in
-        // negamax is paired with an unplay() on return) -- every
-        // worker, not just thread_id == 0 (which only handles UCI
-        // "info" reporting below), gets a chance to submit its own PV
-        // leaf to the GPU-eval queue.
-        maybe_submit_pv_leaf_to_gpu(best_root_move.get_value() != 0 ? best_root_move : out_move, depth);
 
         // "go depth N" : cette profondeur vient d'etre terminee, on s'arrete.
         // Teste ici, dans la MEME branche que l'arret par le temps, pour que

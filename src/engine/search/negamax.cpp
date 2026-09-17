@@ -276,84 +276,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (search::tt_cutoffs_enabled() && tt_move != excluded_move &&
             search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
             return tt_score;
-
-        // A TT hit here (that didn't already return above) is PROVEN to
-        // recur: this exact position was already reached via a different
-        // move order/search path. That makes it a much better bet for
-        // "will this be looked at again" than an arbitrary leaf -- unlike
-        // a near-alpha qsearch leaf (tried and discarded: measured at
-        // ~4% useful_hits, most such leaves are refuted branches
-        // alpha-beta walks away from and never revisits), a transposed
-        // position's odds of being probed again only grow as iterative
-        // deepening keeps re-walking the same shallow prefixes at
-        // increasing depth. Gated by depth so this doesn't fire on every
-        // trivially-shallow transposition (extremely frequent, least
-        // valuable per position).
-        //
-        // Second gate (see gpu_eval::submit_only_critical): CRITICALITY.
-        // A refined eval can only change what a node does if the node's
-        // decision is close. Two free signals here:
-        //  - is_pv: a PV node needs an exact value; a null-window node is
-        //    only being proved to fail high or low, and a 30cp refinement
-        //    of an eval that is 400cp from the bound changes nothing.
-        //  - |tt_score - beta| small: the node sits near its own cutoff
-        //    boundary, so a better eval flips the outcome.
-        // Measured via decision_flip_rate_percent() -- see qsearch.cpp.
-        //
-        // gpu_eval::active() d'abord, et tt_hit avant tout usage de
-        // tt_score : `critical` etait calcule avant le test tt_hit, donc il
-        // lisait tt_score meme quand probe() avait echoue sans jamais
-        // l'ecrire (voir TranspositionTable::probe, qui sort sans toucher au
-        // parametre de sortie quand aucune entree ne convient) -- lecture
-        // d'un int non initialise a chaque defaut de TT.
-        if (gpu_eval::active() && tt_hit &&
-            depth >= gpu_eval::transposition_submit_min_depth() &&
-            (!gpu_eval::submit_only_critical() || is_pv ||
-             std::abs(tt_score - beta) <= gpu_eval::kCriticalWindowMarginCp))
-            maybe_submit_transposition_to_gpu(depth, tt_move, ply);
-
-        // Phase 0, cote consommation (CHESS26_GPU_MEASURE=1) : ce noeud a
-        // maintenant un coup TT, donc la recherche a conclu. Si le thread GPU
-        // avait depose un hint pour lui -- ce qu'il ne fait QUE pour les
-        // noeuds soumis sans coup TT, la seule population ou un hint
-        // servirait -- on peut enfin departager les deux predicteurs sur la
-        // cible qu'ils essayaient de deviner.
-        if (gpu_eval::active() && gpu_eval::measure_diagnostics() && tt_move != 0)
-        {
-            int cnn_from, cnn_to, heur_from, heur_to, nnue_from, nnue_to;
-            if (gpu_eval::shared_gpu_tt().probe_ordering_hint(board.get_hash(), cnn_from, cnn_to,
-                                                              heur_from, heur_to, nnue_from, nnue_to))
-            {
-                const int target_from = tt_move.get_from_sq();
-                const int target_to = tt_move.get_to_sq();
-                gpu_eval::shared_gpu_tt().record_ordering_sample(
-                    cnn_from == target_from && cnn_to == target_to,
-                    heur_from == target_from && heur_to == target_to,
-                    nnue_from == target_from && nnue_to == target_to);
-            }
-        }
     }
 
     if (search::should_qsearch(depth, ply, in_check))
-    {
-        if constexpr (gpu_eval::active())
-        {
-            int16_t gpu_score;
-            std::uint8_t gpu_depth, gpu_age;
-            if (gpu_eval::shared_gpu_tt().probe(board.get_hash(), gpu_score, gpu_depth, gpu_age) &&
-                gpu_age == gpu_eval::shared_gpu_tt().current_age())
-            {
-                gpu_eval::shared_gpu_tt().record_useful_hit();
-                int score = gpu_score;
-                if (score > engine_constants::eval::MateScore - 256)
-                    score -= ply;
-                else if (score < -engine_constants::eval::MateScore + 256)
-                    score += ply;
-                return score;
-            }
-        }
         return qsearch<Us>(alpha, beta, ply);
-    }
 
     if (search::reverse_futility_pruning<Us>(board, depth, ply, in_check, is_pv, beta))
         return beta;
@@ -507,13 +433,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             if (score > alpha)
             {
                 alpha = score;
-            }
-            if constexpr (gpu_eval::active())
-            {
-                if (ply == 0)
-                {
-                    maybe_submit_pv_leaf_to_gpu_throttled(m, depth);
-                }
             }
         }
     }

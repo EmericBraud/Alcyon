@@ -20,7 +20,6 @@ class EngineManager;
 // re-recherche sur une TT deja remplie par une recherche de meme profondeur.
 // Sans ce drapeau la seconde recherche gagnerait surtout par ses coupures, ce
 // qui surestimerait massivement l'apport de l'ordonnancement.
-// Voir docs/gpu-async-eval/ordering-hints-plan.md.
 namespace search
 {
     // Diagnostic (CHESS26_ORDER_STATS=1, affiche par la commande UCI
@@ -182,58 +181,6 @@ struct SearchWorker
     std::string get_pv_line(int depth);
     std::string get_pv_line_with_root(Move root_move, int depth);
     int negamax_with_aspiration(int depth, int last_score);
-
-    // Walks this worker's own PV (starting from pv_root, played on this
-    // worker's own board -- which the caller must guarantee is currently
-    // AT THE ROOT) down to its leaf and submits it (plus its top
-    // gpu_eval::kNumCandidateMoves replies, ranked with this worker's OWN
-    // heuristic tables so it benefits from continuation history/killers
-    // like real search move ordering would) to the GPU-eval queue. No-op,
-    // one atomic load, when gpu_eval::enabled is false. See
-    // src/engine/eval/gpu/gpu_queue.hpp.
-    //
-    // Called two ways:
-    //  - Unthrottled, once per completed iterative-deepening depth, by
-    //    EVERY worker (not just thread 0) -- see iterative_deepening().
-    //    Off the search hot path (called between depths, not per node).
-    //  - Throttled (see maybe_submit_pv_leaf_to_gpu_throttled below),
-    //    from negamax's ply==0 root-move loop every time the root's best
-    //    move improves -- board is ALSO guaranteed back at the root there
-    //    (play/unplay already balanced for the move just tried), so this
-    //    is safe to call from there too, and captures root PV changes
-    //    that happen mid-depth (aspiration re-searches, later root moves
-    //    beating earlier ones) that the once-per-depth call alone misses
-    //    entirely -- particularly relevant at long time controls, where
-    //    a single depth can run for seconds and see several such changes.
-    void maybe_submit_pv_leaf_to_gpu(Move pv_root, int depth);
-
-    // Hot-path wrapper: gated by gpu_eval::kMinDepthForMidSearchSubmit
-    // only (skip shallow nodes -- root moves improve too often there to
-    // be worth the move-gen + scoring cost on every one), on top of
-    // maybe_submit_pv_leaf_to_gpu's own gpu_eval::enabled check. No
-    // node-count throttle: measured to be safe (GpuQueue::push() drops
-    // silently on a full/contended queue, so worst case is more drops).
-    void maybe_submit_pv_leaf_to_gpu_throttled(Move pv_root, int depth);
-
-    // Shared tail end of the PV-leaf submission: assumes `board` is
-    // ALREADY at the position to submit (caller's responsibility to get
-    // there and unwind afterwards) -- ranks legal replies with this
-    // worker's own heuristics and pushes a GpuTask. Used by both
-    // maybe_submit_pv_leaf_to_gpu (after its PV walk) and
-    // maybe_submit_transposition_to_gpu (below, no walk needed).
-    void submit_current_position_to_gpu(int depth, Move tt_move, int ply);
-
-    // Called from negamax right after a TT probe that hit (see
-    // negamax.cpp) -- `board` is already the position that just proved
-    // to BE a transposition (reached via a different move order/search
-    // path before). That's a much better bet for "will this be looked at
-    // again" than an arbitrary leaf: a near-fail-low qsearch leaf was
-    // tried and measured at ~4% useful_hits (most are refuted branches
-    // alpha-beta abandons for good), while a transposed position's odds
-    // of recurring only grow as iterative deepening re-walks the same
-    // shallow prefixes at increasing depth. Gated by
-    // gpu_eval::kMinDepthForTranspositionSubmit at the call site.
-    void maybe_submit_transposition_to_gpu(int depth, Move tt_move, int ply);
 
     inline VBoard &get_board()
     {

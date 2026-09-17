@@ -23,32 +23,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
 
     if (!in_check)
     {
-
-        std::int16_t gpu_score;
-        std::uint8_t gpu_depth, gpu_age;
-        if constexpr (gpu_eval::active())
-        {
-            if (gpu_eval::shared_gpu_tt().probe(board.get_hash(), gpu_score, gpu_depth, gpu_age) &&
-                gpu_age == gpu_eval::shared_gpu_tt().current_age())
-            {
-                gpu_eval::shared_gpu_tt().record_useful_hit();
-                stand_pat = gpu_score;
-
-                if (gpu_eval::measure_diagnostics())
-                {
-                    const int nnue = Eval::eval_relative<Us>(board, alpha, beta);
-                    gpu_eval::shared_gpu_tt().record_decision_flip((gpu_score >= beta) != (nnue >= beta));
-                }
-            }
-            else
-            {
-                stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
-            }
-        }
-        else
-        {
-            stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
-        }
+        stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
         if (stand_pat >= beta)
             return beta;
         if (stand_pat > alpha)
