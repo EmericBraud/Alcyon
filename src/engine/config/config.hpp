@@ -40,36 +40,24 @@ namespace engine_constants
 
         namespace razoring
         {
-            // Razoring NEUTRALISE (MaxDepth = 0). Mesure : son ecart moyen
-            // depasse sa propre marge a toutes les profondeurs (+239 contre
-            // 100, +287 contre 200, +305 contre 300), et la depasse 51 a 66 %
-            // du temps. Sa marge corrigee sort donc NEGATIVE : le seuil que le
-            // SPSA avait valide est inatteignable avec une evaluation non
-            // biaisee. Autrement dit il n'elaguait pas sur un critere
-            // d'evaluation, il elaguait sur l'information que la tete PSQT
-            // omettait. Il n'y a rien a calibrer -- au tuner de le rouvrir
-            // s'il vaut quelque chose. Stockfish n'en garde qu'un test unique
-            // en profondeur 1.
-            PARAM_SPECIFIER int MaxDepth = 3;
-            PARAM_SPECIFIER int MarginDepthFactor = 100;
-            PARAM_SPECIFIER int MarginConst = 0;
+            // Valeurs SPSA (tune 15, 128 000 parties a 10+0.10, elagage sur
+            // le reseau complet). Le tuner a rouvert le razoring que la
+            // calibration avait neutralise, mais peu profond (1.73 -> 2),
+            // comme Stockfish.
+            PARAM_SPECIFIER int MaxDepth = 2;
+            PARAM_SPECIFIER int MarginDepthFactor = 131;
+            PARAM_SPECIFIER int MarginConst = 105;
         }
         namespace reverse_futility_pruning
         {
+            // Valeurs SPSA (tune 15). Le +250 que la calibration avait
+            // ajoute a MarginConst pour compenser le biais de la tete PSQT
+            // est rejete : le tuner l'a pousse jusqu'a son plancher (0) et a
+            // repris la pente a la place (73 -> 85). La marge du RFP est donc
+            // purement proportionnelle a la profondeur.
             PARAM_SPECIFIER int MaxDepth = 4;
-            // MarginConst = 61 + 250, le +250 etant MESURE : sur la
-            // population du RFP la tete PSQT lisait ~250 a 335 centipions
-            // sous le reseau complet, donc le seuil reellement valide par le
-            // SPSA etait full >= beta + margin + 250. Le passage au reseau
-            // complet retire ce decalage implicite, il faut le remettre dans
-            // la marge.
-            PARAM_SPECIFIER int MarginDepthFactor = 73;
-            PARAM_SPECIFIER int MarginConst = 311;
-            // Seconde passe du RFP, sur le reseau complet. On teste d'abord
-            // la tete PSQT (~30x moins chere : 32 octets par ligne
-            // d'accumulateur contre 1024) ; si elle n'elague pas, on refait
-            // le MEME test avec le reseau complet, sous sa propre marge.
-            //
+            PARAM_SPECIFIER int MarginDepthFactor = 85;
+            PARAM_SPECIFIER int MarginConst = 0;
         }
         namespace iterative_deepening
         {
@@ -84,14 +72,11 @@ namespace engine_constants
         }
         namespace futility_pruning
         {
-            // MarginConst = 95 - 90, le -90 etant l'ecart mesure sur la
-            // population de la futility (+49 a +139 selon la profondeur,
-            // bien plus faible que celui du razoring et du RFP, et ne
-            // depassant ses marges que 3 a 20 % du temps -- c'est le
-            // mecanisme le plus sain des trois).
-            PARAM_SPECIFIER int MaxDepth = 8;
-            PARAM_SPECIFIER int MarginConst = 5;
-            PARAM_SPECIFIER int MarginDepthFactor = 105;
+            // Valeurs SPSA (tune 15). MarginConst passe sous zero : la marge
+            // de la futility est elle aussi purement proportionnelle.
+            PARAM_SPECIFIER int MaxDepth = 9;
+            PARAM_SPECIFIER int MarginConst = -45;
+            PARAM_SPECIFIER int MarginDepthFactor = 97;
         }
         namespace singular
         {
