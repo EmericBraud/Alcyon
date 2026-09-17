@@ -376,22 +376,33 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
             continue;
         }
 
+        // Recherche avortee en cours de route : `score` n'est pas une
+        // evaluation, c'est le residu d'un parcours incomplet. Le dernier
+        // score digne de confiance est celui de la profondeur precedente.
         if (shared_stop.load(std::memory_order_relaxed))
-            return score;
+            return last_score;
 
-        if (manager.should_stop())
-        {
-            shared_stop.store(true, std::memory_order_relaxed);
-            return score;
-            // 2. Vérification de pseudo-légalité AVANT de toucher au board
-            // Cela évite les asserts ou crashs dans is_move_legal si m est corrompu
-        }
-
-        // Succès : score dans la fenêtre
+        // Succes : score dans la fenetre. A valider AVANT de constater que le
+        // temps est ecoule -- sinon une iteration complete etait jetee (et
+        // best_root_move laisse sur l'iteration precedente) au seul motif que
+        // l'horloge a expire juste apres l'avoir terminee.
         if (score > alpha && score < beta)
         {
             best_root_move = out_move;
+            if (manager.should_stop())
+                shared_stop.store(true, std::memory_order_relaxed);
             return score;
+        }
+
+        // Fail-low ou fail-high, et plus de temps pour la re-recherche qui
+        // aurait resolu la fenetre : `score` est une borne (<= alpha ou
+        // >= beta), pas une evaluation. La renvoyer faussait le centrage de la
+        // fenetre suivante et le score rapporte en UCI, qui alimente la
+        // gestion du temps.
+        if (manager.should_stop())
+        {
+            shared_stop.store(true, std::memory_order_relaxed);
+            return last_score;
         }
 
         // Ajustement delta intelligent
