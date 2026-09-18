@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <experimental/simd>
 
 namespace stdx = std::experimental;

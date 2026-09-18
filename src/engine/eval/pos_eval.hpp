@@ -5,7 +5,6 @@
 
 #include "common/mask.hpp"
 #include "core/piece/color.hpp"
-#include "core/piece/piece.hpp"
 
 #include "engine/config/eval.hpp"
 #include "engine/eval/virtual_board.hpp"

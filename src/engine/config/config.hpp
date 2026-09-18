@@ -59,10 +59,13 @@ namespace engine_constants
             PARAM_SPECIFIER int MarginDepthFactor = 85;
             PARAM_SPECIFIER int MarginConst = 0;
         }
-        namespace iterative_deepening
+        namespace internal_iterative_reduction
         {
-            PARAM_SPECIFIER int MaxDepth = 6;
-            PARAM_SPECIFIER int NewDepthIncr = 4;
+            // Profondeur minimale a partir de laquelle un noeud sans coup TT
+            // perd un ply. Stockfish utilise 6, mais en restreignant aux
+            // noeuds PV et cut ; on applique partout, donc l'optimum est
+            // probablement plus haut. Au SPSA de le dire.
+            PARAM_SPECIFIER int MinDepth = 6;
         }
         namespace null_move_pruning
         {
@@ -187,10 +190,13 @@ namespace engine_constants
             PARAM_SPECIFIER int MarginDepthFactor = 57;
             PARAM_SPECIFIER int MarginConst = 55;
         }
-        namespace iterative_deepening
+        namespace internal_iterative_reduction
         {
-            PARAM_SPECIFIER int MaxDepth = 6;
-            PARAM_SPECIFIER int NewDepthIncr = 4;
+            // Profondeur minimale a partir de laquelle un noeud sans coup TT
+            // perd un ply. Stockfish utilise 6, mais en restreignant aux
+            // noeuds PV et cut ; on applique partout, donc l'optimum est
+            // probablement plus haut. Au SPSA de le dire.
+            PARAM_SPECIFIER int MinDepth = 6;
         }
         namespace null_move_pruning
         {

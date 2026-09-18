@@ -78,15 +78,27 @@ namespace search
         return false;
     }
 
-    template <Color Us>
-    inline void iterative_deepening(SearchWorker &worker, Move &tt_move, int depth, int ply, bool is_pv, int alpha, int beta)
+    // Internal Iterative Reductions, en remplacement de l'IID.
+    //
+    // Les deux partent du meme constat -- pas de coup TT ici -- et en tirent
+    // la conclusion inverse. L'IID DEPENSAIT une recherche a depth - 4 pour
+    // se fabriquer un coup d'ordonnancement. L'IIR ECONOMISE un ply : un
+    // noeud sans coup TT n'a jamais ete recherche a profondeur suffisante
+    // pour en laisser un, il est donc statistiquement moins important, et le
+    // temps rendu profite au reste de l'arbre.
+    //
+    // Une seule borne a tuner. Stockfish restreint en plus aux noeuds PV et
+    // cut (`!allNode`) et exclut la PV de l'iteration precedente, deux
+    // distinctions qu'on ne sait pas faire faute de suivre cutNode et
+    // followPV. On applique donc partout, ce qui est PLUS agressif que la
+    // reference -- or son commentaire marque l'IIR (*Scaler) avec la note
+    // "Making IIR more aggressive scales poorly". Si c'est nuisible, le SPSA
+    // remontera MinDepth ; c'est exactement ce que la borne est la pour
+    // decider.
+    inline void internal_iterative_reduction(Move tt_move, int &depth)
     {
-        if (tt_move != 0 || depth < engine_constants::search::iterative_deepening::MaxDepth || !is_pv)
-            return;
-
-        int new_depth = depth - engine_constants::search::iterative_deepening::NewDepthIncr;
-        worker.negamax<Us>(new_depth, alpha, beta, ply, true);
-        tt_move = worker.get_tt().get_move(worker.get_board().get_hash());
+        if (tt_move == 0 && depth >= engine_constants::search::internal_iterative_reduction::MinDepth)
+            --depth;
     }
 
     template <Color Us>
@@ -286,13 +298,16 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     // =============================== Search ===============================
 
-    search::iterative_deepening<Us>(*this, tt_move, depth, ply, is_pv, alpha, beta);
-
     {
         int return_score;
         if (search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score))
             return return_score;
     }
+
+    // Place APRES le null move, comme Stockfish (son etape 11 suit l'etape
+    // 10) : le NMP calcule sa reduction sur la profondeur pleine, l'IIR
+    // reduit ensuite ce qui reste a explorer.
+    search::internal_iterative_reduction(tt_move, depth);
 
     const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_pv, is_mate_node, alpha);
 
