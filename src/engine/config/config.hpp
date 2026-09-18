@@ -55,9 +55,9 @@ namespace engine_constants
             // est rejete : le tuner l'a pousse jusqu'a son plancher (0) et a
             // repris la pente a la place (73 -> 85). La marge du RFP est donc
             // purement proportionnelle a la profondeur.
-            PARAM_SPECIFIER int MaxDepth = 4;
-            PARAM_SPECIFIER int MarginDepthFactor = 85;
-            PARAM_SPECIFIER int MarginConst = 0;
+            PARAM_SPECIFIER int MaxDepth = 6;
+            PARAM_SPECIFIER int MarginDepthFactor = 79;
+            PARAM_SPECIFIER int MarginConst = -7;
         }
         namespace internal_iterative_reduction
         {
@@ -66,12 +66,12 @@ namespace engine_constants
             // !followPV, donc son optimum n'est pas forcement le sien. C'est
             // l'un des trois leviers qui expriment "pas de coup TT => cherche
             // moins" : ce seuil, cette reduction, et NoTTMoveBonus cote LMR.
-            PARAM_SPECIFIER int Reduction = 1;
+            PARAM_SPECIFIER int Reduction = 2;
             // Profondeur minimale a partir de laquelle un noeud sans coup TT
             // perd un ply. Stockfish utilise 6, mais en restreignant aux
             // noeuds PV et cut ; on applique partout, donc l'optimum est
             // probablement plus haut. Au SPSA de le dire.
-            PARAM_SPECIFIER int MinDepth = 6;
+            PARAM_SPECIFIER int MinDepth = 5;
         }
         namespace null_move_pruning
         {
