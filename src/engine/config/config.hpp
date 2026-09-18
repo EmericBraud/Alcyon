@@ -61,6 +61,12 @@ namespace engine_constants
         }
         namespace internal_iterative_reduction
         {
+            // De combien de plys on retire. Stockfish code 1 en dur ; on le
+            // rend tunable parce que notre IIR n'a pas sa condition
+            // !followPV, donc son optimum n'est pas forcement le sien. C'est
+            // l'un des trois leviers qui expriment "pas de coup TT => cherche
+            // moins" : ce seuil, cette reduction, et NoTTMoveBonus cote LMR.
+            PARAM_SPECIFIER int Reduction = 1;
             // Profondeur minimale a partir de laquelle un noeud sans coup TT
             // perd un ply. Stockfish utilise 6, mais en restreignant aux
             // noeuds PV et cut ; on applique partout, donc l'optimum est
@@ -93,6 +99,12 @@ namespace engine_constants
         }
         namespace late_move_reduction
         {
+            // Reduction LMR supplementaire quand le noeud n'a pas de coup TT
+            // (Stockfish, "Increase reduction if ttMove is not present",
+            // r += 1127 soit ~1.1 ply). Defaut 0 : le mecanisme est ajoute
+            // ETEINT, c'est au SPSA de decider s'il vaut mieux que l'IIR --
+            // la LMR re-cherche en cas de doute, l'IIR non.
+            PARAM_SPECIFIER int NoTTMoveBonus = 0;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 1;
@@ -192,6 +204,12 @@ namespace engine_constants
         }
         namespace internal_iterative_reduction
         {
+            // De combien de plys on retire. Stockfish code 1 en dur ; on le
+            // rend tunable parce que notre IIR n'a pas sa condition
+            // !followPV, donc son optimum n'est pas forcement le sien. C'est
+            // l'un des trois leviers qui expriment "pas de coup TT => cherche
+            // moins" : ce seuil, cette reduction, et NoTTMoveBonus cote LMR.
+            PARAM_SPECIFIER int Reduction = 1;
             // Profondeur minimale a partir de laquelle un noeud sans coup TT
             // perd un ply. Stockfish utilise 6, mais en restreignant aux
             // noeuds PV et cut ; on applique partout, donc l'optimum est
@@ -222,6 +240,12 @@ namespace engine_constants
         }
         namespace late_move_reduction
         {
+            // Reduction LMR supplementaire quand le noeud n'a pas de coup TT
+            // (Stockfish, "Increase reduction if ttMove is not present",
+            // r += 1127 soit ~1.1 ply). Defaut 0 : le mecanisme est ajoute
+            // ETEINT, c'est au SPSA de decider s'il vaut mieux que l'IIR --
+            // la LMR re-cherche en cas de doute, l'IIR non.
+            PARAM_SPECIFIER int NoTTMoveBonus = 0;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 2;

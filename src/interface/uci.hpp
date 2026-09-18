@@ -450,6 +450,7 @@ public:
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginConst, "rfp_marg_const"),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
+            UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),
 
             UCIOption<int>(&engine_constants::search::null_move_pruning::MinDepth, "nmp_min_depth"),
             UCIOption<int>(&engine_constants::search::null_move_pruning::RConst, "nmp_r_const"),
@@ -467,6 +468,7 @@ public:
             UCIOption<int>(&engine_constants::search::late_move_reduction::MinDepth, "lmr_min_depth"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::MinMovesSearched, "lmr_min_moves_searched"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::MaxDepthReduction, "lmr_max_depth_reduction"),
+            UCIOption<int>(&engine_constants::search::late_move_reduction::NoTTMoveBonus, "lmr_no_tt_move_bonus"),
 
             UCIOption<int>(&engine_constants::search::see_pruning::MaxDepth, "see_pruning_max_depth"),
             UCIOption<int>(&engine_constants::search::see_pruning::ThresholdDepthFactor, "threshold_depth_factor"),

@@ -97,7 +97,7 @@ namespace search
     inline void internal_iterative_reduction(Move tt_move, bool all_node, int &depth)
     {
         if (!all_node && tt_move == 0 && depth >= engine_constants::search::internal_iterative_reduction::MinDepth)
-            --depth;
+            depth -= engine_constants::search::internal_iterative_reduction::Reduction;
     }
 
     template <Color Us>
@@ -205,11 +205,13 @@ namespace search
     }
 
     template <Color Us>
-    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, int alpha, int &score)
+    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, Move tt_move, int alpha, int &score)
     {
         if (depth >= engine_constants::search::late_move_reduction::MinDepth && moves_searched >= engine_constants::search::late_move_reduction::MinMovesSearched && !is_tactical && !in_check && extension == 0)
         {
             int r = static_cast<int>(worker.lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
+            if (tt_move == 0)
+                r += engine_constants::search::late_move_reduction::NoTTMoveBonus;
             r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
 
             // Sonde speculative : on ATTEND son echec, donc on declare
@@ -376,7 +378,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (ply + new_depth >= engine_constants::search::MaxDepth)
             new_depth = engine_constants::search::MaxDepth - ply;
 
-        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, alpha, score))
+        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, tt_move, alpha, score))
         {
             if (moves_searched > 1) // Null Window Search pour PVS
             {
