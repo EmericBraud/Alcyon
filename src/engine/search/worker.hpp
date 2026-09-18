@@ -140,14 +140,19 @@ struct SearchWorker
 
     // --- Méthodes de recherche ---
     template <Color Us>
-    int negamax(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move = 0);
+    // cut_node : PREDICTION du type de noeud au sens de Knuth-Moore, portee
+    // par la recursion PVS (voir les sites d'appel dans negamax.cpp). Elle a
+    // le droit de se tromper : elle ne pilote que des heuristiques, jamais un
+    // score ni une borne. Un noeud a fenetre nulle est cut ou all, et ce
+    // booleen est exactement le bit qui les distingue.
+    int negamax(int depth, int alpha, int beta, int ply, bool allow_null, bool cut_node, Move excluded_move = 0);
     inline int negamax(int depth, int alpha, int beta, int ply)
     {
         if (board.get_side_to_move() == WHITE)
         {
-            return negamax<WHITE>(depth, alpha, beta, ply, true);
+            return negamax<WHITE>(depth, alpha, beta, ply, true, false);
         }
-        return negamax<BLACK>(depth, alpha, beta, ply, true);
+        return negamax<BLACK>(depth, alpha, beta, ply, true, false);
     }
 
     template <Color Us>

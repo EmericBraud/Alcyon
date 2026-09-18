@@ -87,17 +87,16 @@ namespace search
     // pour en laisser un, il est donc statistiquement moins important, et le
     // temps rendu profite au reste de l'arbre.
     //
-    // Une seule borne a tuner. Stockfish restreint en plus aux noeuds PV et
-    // cut (`!allNode`) et exclut la PV de l'iteration precedente, deux
-    // distinctions qu'on ne sait pas faire faute de suivre cutNode et
-    // followPV. On applique donc partout, ce qui est PLUS agressif que la
-    // reference -- or son commentaire marque l'IIR (*Scaler) avec la note
-    // "Making IIR more aggressive scales poorly". Si c'est nuisible, le SPSA
-    // remontera MinDepth ; c'est exactement ce que la borne est la pour
-    // decider.
-    inline void internal_iterative_reduction(Move tt_move, int &depth)
+    // Restreint aux noeuds PV et cut (`!all_node`), comme Stockfish. Il lui
+    // reste une condition que nous n'avons pas, `!followPV`, qui protege la
+    // ligne principale de l'iteration precedente d'une perte cumulee : elle
+    // demande de memoriser cette PV indexee par ply, ce qu'on ne fait pas
+    // encore. Notre IIR reste donc un peu plus agressif que la reference, dont
+    // le commentaire porte la note (*Scaler) "Making IIR more aggressive
+    // scales poorly".
+    inline void internal_iterative_reduction(Move tt_move, bool all_node, int &depth)
     {
-        if (tt_move == 0 && depth >= engine_constants::search::internal_iterative_reduction::MinDepth)
+        if (!all_node && tt_move == 0 && depth >= engine_constants::search::internal_iterative_reduction::MinDepth)
             --depth;
     }
 
@@ -111,7 +110,7 @@ namespace search
             worker.get_board().play_null_move(stored_ep);
             int R = engine_constants::search::null_move_pruning::RConst + depth / engine_constants::search::null_move_pruning::RDiv;
             R = std::min(R, depth - 1);
-            int score = -worker.negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false);
+            int score = -worker.negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false, false);
             worker.get_board().unplay_null_move(stored_ep);
 
             if (score >= beta)
@@ -140,7 +139,7 @@ namespace search
     }
 
     template <Color Us>
-    inline bool is_singular_search(SearchWorker &worker, Move tt_move, int depth, int ply, bool in_check, Move excluded_move, Move m)
+    inline bool is_singular_search(SearchWorker &worker, Move tt_move, int depth, int ply, bool in_check, bool cut_node, Move excluded_move, Move m)
     {
         if (!in_check && depth >= engine_constants::search::singular::MinDepth && ply > 0 && m == tt_move && excluded_move == 0)
         {
@@ -153,7 +152,7 @@ namespace search
                 {
                     int singular_beta = tts - (depth * 2);
                     int singular_depth = (depth - 1) / 2;
-                    int score = worker.negamax<Us>(singular_depth, singular_beta - 1, singular_beta, ply, false, m);
+                    int score = worker.negamax<Us>(singular_depth, singular_beta - 1, singular_beta, ply, false, cut_node, m);
 
                     if (score < singular_beta)
                     {
@@ -206,18 +205,21 @@ namespace search
     }
 
     template <Color Us>
-    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, int alpha, int &score)
+    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, int alpha, int &score)
     {
         if (depth >= engine_constants::search::late_move_reduction::MinDepth && moves_searched >= engine_constants::search::late_move_reduction::MinMovesSearched && !is_tactical && !in_check && extension == 0)
         {
             int r = static_cast<int>(worker.lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
             r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
 
-            score = -worker.negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1, true);
+            // Sonde speculative : on ATTEND son echec, donc on declare
+            // l'enfant noeud cut quel que soit le parent, pour qu'il elague
+            // plus dur. La re-recherche ci-dessous rattrape si on se trompe.
+            score = -worker.negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1, true, true);
 
             // Re-search si le coup réduit semble bon
             if (score > alpha)
-                score = -worker.negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true);
+                score = -worker.negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true, !cut_node);
             return true;
         }
         return false;
@@ -247,7 +249,7 @@ inline int wdl_score(TableBase::WDL_Result r, int ply)
 }
 
 template <Color Us>
-int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move)
+int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null, bool cut_node, Move excluded_move)
 {
 
     // =============================== Quick return cases ===============================
@@ -274,6 +276,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         return Eval::lazy_eval_relative<Us>(board);
 
     const bool is_pv = (beta - alpha > 1);
+    // Classification de Knuth-Moore. Un noeud all doit epuiser tous ses coups
+    // pour PROUVER qu'aucun ne passe : lui retirer de la profondeur affaiblit
+    // une preuve qu'on devra croire. Et les noeuds all sont le gros de l'arbre,
+    // donc c'est la que la composition de l'IIR le long des chaines de noeuds
+    // sans coup TT frappe le plus fort. Stockfish les exclut, nous aussi.
+    const bool all_node = !(is_pv || cut_node);
     const bool in_check = board.is_king_attacked<Us>();
     const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
 
@@ -307,7 +315,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // Place APRES le null move, comme Stockfish (son etape 11 suit l'etape
     // 10) : le NMP calcule sa reduction sur la profondeur pleine, l'IIR
     // reduit ensuite ce qui reste a explorer.
-    search::internal_iterative_reduction(tt_move, depth);
+    search::internal_iterative_reduction(tt_move, all_node, depth);
 
     const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_pv, is_mate_node, alpha);
 
@@ -337,7 +345,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             continue;
 
         shared_tt.prefetch(board.get_hash_after(m));
-        bool is_singular = search::is_singular_search<Us>(*this, tt_move, depth, ply, in_check, excluded_move, m);
+        bool is_singular = search::is_singular_search<Us>(*this, tt_move, depth, ply, in_check, cut_node, excluded_move, m);
 
         int score;
         const bool is_tactical = list.current_is_tactical;
@@ -368,22 +376,22 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (ply + new_depth >= engine_constants::search::MaxDepth)
             new_depth = engine_constants::search::MaxDepth - ply;
 
-        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, alpha, score))
+        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, alpha, score))
         {
             if (moves_searched > 1) // Null Window Search pour PVS
             {
-                score = -negamax<!Us>(new_depth, -alpha - 1, -alpha, ply + 1, true);
+                score = -negamax<!Us>(new_depth, -alpha - 1, -alpha, ply + 1, true, !cut_node);
             }
             else // Full Window Search (seulement si moves_searched == 1 (donc pas de TT move))
             {
-                score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true);
+                score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true, false);
             }
         }
 
         // Si le score est dans la fenêtre mais pas une coupure, on re-cherche normalement
         if (score > alpha && score < beta && moves_searched > 1)
         {
-            score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true);
+            score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true, false);
         }
 
         board.unplay<Us>(m);
@@ -474,5 +482,5 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     return best_score;
 }
 
-template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move);
-template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move);
+template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply, bool allow_null, bool cut_node, Move excluded_move);
+template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply, bool allow_null, bool cut_node, Move excluded_move);
