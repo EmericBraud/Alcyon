@@ -2,7 +2,7 @@
 
 High-Performance Chess Engine in C++
 
-![Version](https://img.shields.io/badge/version-v5.2-blue)
+![Version](https://img.shields.io/badge/version-v5.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Language](https://img.shields.io/badge/language-C%2B%2B23-blue)
 
@@ -61,12 +61,28 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 |---|---|---|---|---|
 | v5.0 | 60s+0.2s | 300 | 91.0 / 300 (30.3%) — 37W / 155L / 108D | **-169 ± 29** † |
 | v5.1 | 60s+0.2s | 178 | 58.5 / 178 (32.9%) — 28W / 89L / 61D | **-124 ± 41** |
+| v5.3 | 60s+0.2s | 126 | 52.0 / 126 (41.3%) — 24W / 46L / 56D | **-61 ± 34** ‡ |
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
 The v5.0 figure above is its measured **-144.4 ± 28.7** shifted by that estimate
 so every row in the table faces the same opponent. The shift is an estimate, not
 a measurement.
+
+‡ v5.3 was measured on a 192-core Graviton4 at concurrency 32, not on the
+Mac at concurrency 3-4 like the rows above. That matters more than it sounds:
+chess26 loads a 111 MB NNUE network, so running many instances in parallel
+starves it of memory bandwidth in a way Stockfish 8 — whose eval is a few
+kilobytes — does not. Measured at 164 concurrent games, chess26 lost 58% of
+its speed against Stockfish 8's 20%, which moved the same match from -40 to
+-126 Elo. Sharing the network between processes via a read-only mmap
+recovered two thirds of that gap, and dropping to concurrency 32 most of the
+rest, but a residual bias remains — so **-61 is a lower bound**, and the true
+figure is likely better.
+
+v5.2 has no row here: it was only measured at 10s+0.1s (-52.5 ± 22.8 over
+520 games), a different time control. v5.3 beat it by **+18.0 ± 7.7** over
+3090 games at that control (SPRT passed, LLR 3.31).
 
 v5.1's run was stopped at 178 games, so its interval (±41) is wider than
 v5.0's (±29) and the two overlap: the gain is the direction the numbers point,
