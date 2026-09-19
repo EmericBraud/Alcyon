@@ -277,7 +277,6 @@ void SearchWorker::iterative_deepening()
     int stable_iterations = 0; // iterations consecutives sans changement du coup racine
     for (int depth = 1; depth < engine_constants::search::MaxDepth; ++depth)
     {
-        age_history();
         last_score = negamax_with_aspiration(depth, last_score);
 
         // "go depth N" : cette profondeur vient d'etre terminee, on s'arrete.

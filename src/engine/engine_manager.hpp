@@ -285,7 +285,6 @@ public:
         int score = 0;
         for (int d = 1; d <= fixed_depth; ++d)
         {
-            worker.age_history();
             score = worker.negamax(d, -engine_constants::eval::Inf, engine_constants::eval::Inf, 0);
             worker.best_root_move = worker.out_move;
         }

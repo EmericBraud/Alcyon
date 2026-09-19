@@ -105,6 +105,10 @@ namespace engine_constants
             // ETEINT, c'est au SPSA de decider s'il vaut mieux que l'IIR --
             // la LMR re-cherche en cas de doute, l'IIR non.
             PARAM_SPECIFIER int NoTTMoveBonus = 0;
+            // Un noeud cut est CENSE couper vite : on attend l'echec des
+            // coups tardifs, donc on les sonde moins profond. Stockfish en
+            // fait un des termes les plus lourds de r (r += 2 * cutNode).
+            PARAM_SPECIFIER int CutNodeBonus = 2;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 1;
@@ -246,6 +250,10 @@ namespace engine_constants
             // ETEINT, c'est au SPSA de decider s'il vaut mieux que l'IIR --
             // la LMR re-cherche en cas de doute, l'IIR non.
             PARAM_SPECIFIER int NoTTMoveBonus = 0;
+            // Un noeud cut est CENSE couper vite : on attend l'echec des
+            // coups tardifs, donc on les sonde moins profond. Stockfish en
+            // fait un des termes les plus lourds de r (r += 2 * cutNode).
+            PARAM_SPECIFIER int CutNodeBonus = 2;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 2;

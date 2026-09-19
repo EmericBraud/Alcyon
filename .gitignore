@@ -30,3 +30,6 @@ config.json
 
 # binaire compile par tools/build_inspect_binpack.sh
 tools/inspect_binpack
+
+# duplicata cree par la regle "cp -R build/data ./data" du Makefile
+data/data/

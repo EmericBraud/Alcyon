@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdlib>
 #include <chrono>
 
@@ -168,12 +169,16 @@ struct SearchWorker
         std::memset(continuation_hist_2, 0, sizeof(continuation_hist_2));
     }
 
-    void age_history()
+    // Gravite : l'entree est attiree vers 0 proportionnellement a sa valeur,
+    // donc bornee dans +/-HistMax sans clamp et auto-decroissante. Remplace
+    // l'ancien couple (bonus non borne, malus clampe) qui saturait les tables
+    // vers le haut et figeait l'ordonnancement en milieu de partie -- et du
+    // meme coup age_history() et son /= 8.
+    static constexpr int HistMax = 16384;
+    static void update_hist(int &entry, int bonus)
     {
-        for (int c = 0; c < 2; ++c)
-            for (int f = 0; f < 64; ++f)
-                for (int t = 0; t < 64; ++t)
-                    history_moves[c][f][t] /= 8;
+        bonus = std::clamp(bonus, -HistMax, HistMax);
+        entry += bonus - entry * std::abs(bonus) / HistMax;
     }
 
     // --- utilitaires ---

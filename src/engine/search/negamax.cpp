@@ -103,7 +103,14 @@ namespace search
     template <Color Us>
     inline bool nmp(SearchWorker &worker, int depth, int ply, bool allow_null, bool in_check, bool is_mate_node, int alpha, int beta, int &return_score)
     {
-        if (depth >= engine_constants::search::null_move_pruning::MinDepth && ply > 0 && allow_null && !in_check && !is_mate_node && beta < 9000 && alpha > -9000)
+        // Garde zugzwang : sans piece autre que les pions, "passer son tour"
+        // n'est pas une borne inferieure du vrai coup -- en finale de pions
+        // le trait est souvent un desavantage, et le null move prouve alors
+        // des coupures fausses. Correctness, pas vitesse.
+        const U64 non_pawn = worker.get_board().get_occupancy<Us>() &
+                             ~worker.get_board().template get_piece_bitboard<Us, PAWN>() &
+                             ~worker.get_board().template get_piece_bitboard<Us, KING>();
+        if (depth >= engine_constants::search::null_move_pruning::MinDepth && ply > 0 && allow_null && !in_check && !is_mate_node && beta < 9000 && alpha > -9000 && non_pawn != 0)
         {
             int stored_ep;
             worker.get_tt().prefetch(worker.get_board().get_hash());
@@ -212,6 +219,7 @@ namespace search
             int r = static_cast<int>(worker.lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
             if (tt_move == 0)
                 r += engine_constants::search::late_move_reduction::NoTTMoveBonus;
+            r += engine_constants::search::late_move_reduction::CutNodeBonus * cut_node;
             r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
 
             // Sonde speculative : on ATTEND son echec, donc on declare
@@ -414,7 +422,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                     int bonus = depth * depth;
 
                     // On récompense le coup gagnant
-                    history_moves[Us][m.get_from_sq()][m.get_to_sq()] += bonus;
+                    update_hist(history_moves[Us][m.get_from_sq()][m.get_to_sq()], bonus);
 
                     // Update continuation history
                     if (prev_m != 0)
@@ -422,14 +430,14 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                         const int prev_piece = prev_m.get_from_piece();
                         const int prev_to = prev_m.get_to_sq();
                         const int m_to = m.get_to_sq();
-                        continuation_hist_1[Us][prev_piece][prev_to][m_to] += bonus;
+                        update_hist(continuation_hist_1[Us][prev_piece][prev_to][m_to], bonus);
                     }
                     if (prev_prev_m != 0)
                     {
                         const int prev_prev_piece = prev_prev_m.get_from_piece();
                         const int prev_prev_to = prev_prev_m.get_to_sq();
                         const int m_to = m.get_to_sq();
-                        continuation_hist_2[Us][prev_prev_piece][prev_prev_to][m_to] += bonus;
+                        update_hist(continuation_hist_2[Us][prev_prev_piece][prev_prev_to][m_to], bonus);
                     }
 
                     for (int j = 0; j < list.index - 1; ++j)
@@ -437,7 +445,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                         Move failed_move = list.list.moves[j];
                         // On ne punit que les coups calmes (pas les captures/promotions)
 
-                        history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] = std::max(history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()] - bonus, -10000);
+                        update_hist(history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()], -bonus);
                     }
                 }
 
