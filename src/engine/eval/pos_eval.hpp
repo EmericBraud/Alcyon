@@ -103,6 +103,14 @@ namespace Eval
     //
     // En build HCE, lazy_eval_relative EST deja l'estimation complete de son
     // propre modele, et ses marges sont tunees pour elle : inchange.
+    // Declaration anticipee : la definition est plus bas dans ce fichier,
+    // mais prune_eval_relative l'appelle dans sa branche HCE. En build NNUE
+    // cette branche est ecartee par le #ifdef, donc l'absence de declaration
+    // passait inapercue -- le build HCE, lui, ne compilait plus depuis
+    // l'introduction de prune_eval_relative.
+    template <Color Us>
+    int lazy_eval_relative(const VBoard &board);
+
     template <Color Us>
     inline int prune_eval_relative(const VBoard &board, int alpha, int beta)
     {
