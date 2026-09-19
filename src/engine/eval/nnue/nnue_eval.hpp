@@ -49,6 +49,7 @@
 #include "core/board/board.hpp"
 #include "core/piece/color.hpp"
 #include "core/piece/piece.hpp"
+#include "common/mapped_file.hpp"
 #include "engine/eval/nnue/nnue_model.hpp"
 #include "engine/eval/nnue/full_threats_encoder.hpp"
 #include "engine/eval/nnue/full_threats_incremental.hpp"
@@ -795,6 +796,13 @@ namespace nnue
             if (!file)
                 FATAL("Could not open NNUE v2 file: " + path);
 
+            // Mapping partage du meme fichier, en plus du flux. Sert a adopter
+            // les deux gros tenseurs sans les copier (voir plus bas). Si le
+            // mapping echoue ou si les offsets sont desalignes, tout retombe
+            // sur la lecture classique : c'est une optimisation, pas une
+            // dependance.
+            const auto mapping = mapped::map_readonly(path);
+
             std::uint32_t version = 0;
             std::uint32_t hash = 0;
             std::uint32_t description_len = 0;
@@ -845,15 +853,32 @@ namespace nnue
             auto &psqt_weights = *psqt_weights_ptr;
 
             // Full_Threats segment: weight tensor read directly as int8 (no
-            // widening -- the file already stores it that way).
-            read_tensor_flat_into<std::int8_t>(file, threat_weights.data()->data(), static_cast<std::size_t>(NumFullThreatsFeatures) * L1, "ft weight (int8 segment)");
+            // widening -- the file already stores it that way). Sa disposition
+            // memoire est donc CELLE DU FICHIER, ce qui permet de l'adopter
+            // depuis le mapping au lieu de le copier : les 62 Mo deviennent
+            // des pages physiques partagees entre tous les processus.
+            using Int8Table = AlignedArray<std::array<std::int8_t, L1>, NumFullThreatsFeatures>;
+            using Int16Table = AlignedArray<std::array<std::int16_t, L1>, NumHalfkaFeatures>;
+            const auto off_int8 = static_cast<std::size_t>(file.tellg());
+            auto threat_view = mapped::view_at<Int8Table>(mapping, off_int8);
+            if (threat_view)
+                file.seekg(static_cast<std::streamoff>(sizeof(Int8Table)), std::ios::cur);
+            else
+                read_tensor_flat_into<std::int8_t>(file, threat_weights.data()->data(), static_cast<std::size_t>(NumFullThreatsFeatures) * L1, "ft weight (int8 segment)");
+            check(file, "ft weight (int8 segment)");
             read_tensor_flat_into<std::int32_t>(file, psqt_weights[0].data(), static_cast<std::size_t>(NumFullThreatsFeatures) * NumPsqtBuckets, "ft psqt weight (threats)");
 
             // HalfKAv2_hm^ segment: weight tensor stays int16, at row offset
             // NumFullThreatsFeatures within the combined PSQT table (its own
             // weight table is separate/zero-based, matching AccumulatorLayer's
             // halfka_weights indexing of feature - NumFullThreatsFeatures).
-            read_tensor_flat_into<std::int16_t>(file, halfka_weights.data()->data(), static_cast<std::size_t>(NumHalfkaFeatures) * L1, "ft weight (int16 segment)");
+            const auto off_int16 = static_cast<std::size_t>(file.tellg());
+            auto halfka_view = mapped::view_at<Int16Table>(mapping, off_int16);
+            if (halfka_view)
+                file.seekg(static_cast<std::streamoff>(sizeof(Int16Table)), std::ios::cur);
+            else
+                read_tensor_flat_into<std::int16_t>(file, halfka_weights.data()->data(), static_cast<std::size_t>(NumHalfkaFeatures) * L1, "ft weight (int16 segment)");
+            check(file, "ft weight (int16 segment)");
             read_tensor_flat_into<std::int32_t>(file, psqt_weights[NumFullThreatsFeatures].data(), static_cast<std::size_t>(NumHalfkaFeatures) * NumPsqtBuckets, "ft psqt weight (halfka)");
 
             std::vector<typename Model::LayerStackBucket> buckets;
@@ -870,6 +895,17 @@ namespace nnue
                 auto output = read_dense_layer<typename Model::OutputLayer, 2 * L2 + 2 * L3, 1>(file, "output bucket " + std::to_string(b));
 
                 buckets.emplace_back(std::move(l1), std::move(l2), std::move(output));
+            }
+
+            if (threat_view && halfka_view)
+            {
+                logs::debug << "[NNUE v2] poids FT adoptes depuis le mapping partage" << std::endl;
+                return Model(
+                    std::move(*accumulator_biases_ptr),
+                    std::move(threat_view),
+                    std::move(halfka_view),
+                    std::move(*psqt_weights_ptr),
+                    make_layer_stacks_array(buckets, std::make_index_sequence<NumLsBuckets>{}));
             }
 
             return Model(

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <type_traits>
+
 #include <cstdlib>
 #include <array>
 #include <cstdint>
@@ -163,13 +165,26 @@ private:
     }
 
 public:
+    // Chaque table arrive soit comme un tableau a copier dans le tas (chemin
+    // historique), soit comme un shared_ptr deja pret -- typiquement une vue
+    // sur un fichier mappe en lecture seule, partagee entre processus (voir
+    // common/mapped_file.hpp). Le second cas evite N copies physiques des
+    // 111 Mo de poids quand N instances du moteur tournent en parallele.
+    template <typename T, typename A>
+    static std::shared_ptr<const T> adopt_or_copy(A &&a)
+    {
+        if constexpr (std::is_same_v<std::decay_t<A>, std::shared_ptr<const T>>)
+            return std::forward<A>(a);
+        else
+            return std::make_shared<const T>(std::forward<A>(a));
+    }
+
     template <typename B, typename W8, typename W16>
     AccumulatorLayer(B &&b, W8 &&w8, W16 &&w16)
     {
-        // Allocation sur le tas et copie des données initiales
-        biases = std::make_shared<const BiasTable>(std::forward<B>(b));
-        threat_weights = std::make_shared<const Int8WeightTable>(std::forward<W8>(w8));
-        halfka_weights = std::make_shared<const Int16WeightTable>(std::forward<W16>(w16));
+        biases = adopt_or_copy<BiasTable>(std::forward<B>(b));
+        threat_weights = adopt_or_copy<Int8WeightTable>(std::forward<W8>(w8));
+        halfka_weights = adopt_or_copy<Int16WeightTable>(std::forward<W16>(w16));
         accumulators = std::make_unique<AccTable>();
         reset();
     }
