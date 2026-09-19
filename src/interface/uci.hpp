@@ -374,6 +374,34 @@ class UCI
             }
         }
 
+        // Second argument optionnel : un fichier de positions (une par ligne,
+        // FEN ou EPD). Les 16 FEN ci-dessus sont trop peu nombreuses pour
+        // qu'un compte de noeuds soit stable -- l'ordonnancement se propage
+        // en cascade et le total saute de 13 % d'une valeur de parametre a
+        // l'autre sans ordre stable. Quelques centaines de positions moyennent
+        // cette cascade.
+        std::vector<std::string> file_fens;
+        std::string fen_path;
+        if (is >> fen_path)
+        {
+            std::ifstream f(fen_path);
+            std::string line;
+            while (std::getline(f, line))
+            {
+                if (line.empty() || line[0] == '#')
+                    continue;
+                // EPD : on garde les 4 premiers champs et on force les
+                // compteurs, les opcodes suivants ne nous interessent pas.
+                std::istringstream ls(line);
+                std::string board, stm, castle, ep;
+                if (!(ls >> board >> stm >> castle >> ep))
+                    continue;
+                file_fens.push_back(board + " " + stm + " " + castle + " " + ep + " 0 1");
+            }
+            if (file_fens.empty())
+                logs::uci << "info string bench: no position read from " << fen_path << std::endl;
+        }
+
         if (bench_depth < 1)
             bench_depth = 1;
         if (bench_depth >= engine_constants::search::MaxDepth)
@@ -385,19 +413,21 @@ class UCI
         long long total_nodes = 0;
         long long total_time_ms = 0;
 
-        logs::uci << "info string bench start depth " << bench_depth << " positions " << bench_fens.size() << std::endl;
+        const size_t n_pos = file_fens.empty() ? bench_fens.size() : file_fens.size();
 
-        for (size_t i = 0; i < bench_fens.size(); ++i)
+        logs::uci << "info string bench start depth " << bench_depth << " positions " << n_pos << std::endl;
+
+        for (size_t i = 0; i < n_pos; ++i)
         {
             VBoard bench_board;
-            bench_board.load_fen(bench_fens[i]);
+            bench_board.load_fen(file_fens.empty() ? bench_fens[i] : file_fens[i].c_str());
             e.clear();
 
             auto result = e.run_benchmark_fixed_depth(bench_board, bench_depth);
             total_nodes += result.nodes;
             total_time_ms += result.elapsed_ms;
 
-            logs::uci << "info string bench " << (i + 1) << "/" << bench_fens.size()
+            logs::uci << "info string bench " << (i + 1) << "/" << n_pos
                       << " nodes " << result.nodes
                       << " nps " << result.nps
                       << " time " << result.elapsed_ms << "ms"
