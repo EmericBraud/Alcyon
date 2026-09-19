@@ -205,6 +205,14 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
 
         if (abs(score) >= engine_constants::eval::MateScore - depth)
         {
+            // Mat trouve a cette profondeur : il faut adopter le coup qui va
+            // avec, sinon on annonce la PV de cette iteration et on joue le
+            // coup de la precedente (fastchess : "Bestmove does not match
+            // beginning of last PV"). Meme condition que le chemin de succes
+            // ci-dessous : hors fenetre, out_move est le residu d'un fail-high
+            // et ne vaut pas mieux que ce qu'on a deja.
+            if (score > alpha && score < beta)
+                best_root_move = out_move;
             return score;
         }
         if (abs(score) >= engine_constants::eval::MateScore - engine_constants::search::aspiration::MateWindowMargin)
