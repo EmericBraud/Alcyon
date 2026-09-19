@@ -1,4 +1,5 @@
 #include "worker.hpp"
+#include <atomic>
 
 #include "engine/utils/random.hpp"
 #include "engine/engine_manager.hpp"
@@ -23,7 +24,7 @@ namespace search
         if (in_check || is_pv || depth > engine_constants::search::razoring::MaxDepth || ply == 0)
             return false;
 
-        int static_eval = Eval::lazy_eval_relative<Us>(board);
+        int static_eval = Eval::prune_eval_relative<Us>(board, alpha - 1, alpha);
         int margin = engine_constants::search::razoring::MarginDepthFactor * depth + engine_constants::search::razoring::MarginConst;
         return static_eval + margin <= alpha;
     }
@@ -43,12 +44,15 @@ namespace search
     template <Color Us>
     inline bool reverse_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, int beta)
     {
-        if (depth <= engine_constants::search::reverse_futility_pruning::MaxDepth && !in_check && ply > 0 && !is_pv)
+        namespace rfp = engine_constants::search::reverse_futility_pruning;
+        if (depth <= rfp::MaxDepth && !in_check && ply > 0 && !is_pv)
         {
-            int static_eval = Eval::lazy_eval_relative<Us>(board);
-            int margin = engine_constants::search::reverse_futility_pruning::MarginDepthFactor * depth + engine_constants::search::reverse_futility_pruning::MarginConst;
-            if (static_eval - margin >= beta)
-                return true;
+            // Un seul test, sur le reseau complet (voir
+            // Eval::prune_eval_relative). La seconde passe qui existait ici
+            // n'avait d'objet que pour rattraper la tete PSQT ; elle
+            // disparait avec elle.
+            const int margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
+            return Eval::prune_eval_relative<Us>(board, beta - 1, beta) - margin >= beta;
         }
         return false;
     }
@@ -74,15 +78,26 @@ namespace search
         return false;
     }
 
-    template <Color Us>
-    inline void iterative_deepening(SearchWorker &worker, Move &tt_move, int depth, int ply, bool is_pv, int alpha, int beta)
+    // Internal Iterative Reductions, en remplacement de l'IID.
+    //
+    // Les deux partent du meme constat -- pas de coup TT ici -- et en tirent
+    // la conclusion inverse. L'IID DEPENSAIT une recherche a depth - 4 pour
+    // se fabriquer un coup d'ordonnancement. L'IIR ECONOMISE un ply : un
+    // noeud sans coup TT n'a jamais ete recherche a profondeur suffisante
+    // pour en laisser un, il est donc statistiquement moins important, et le
+    // temps rendu profite au reste de l'arbre.
+    //
+    // Restreint aux noeuds PV et cut (`!all_node`), comme Stockfish. Il lui
+    // reste une condition que nous n'avons pas, `!followPV`, qui protege la
+    // ligne principale de l'iteration precedente d'une perte cumulee : elle
+    // demande de memoriser cette PV indexee par ply, ce qu'on ne fait pas
+    // encore. Notre IIR reste donc un peu plus agressif que la reference, dont
+    // le commentaire porte la note (*Scaler) "Making IIR more aggressive
+    // scales poorly".
+    inline void internal_iterative_reduction(Move tt_move, bool all_node, int &depth)
     {
-        if (tt_move != 0 || depth < engine_constants::search::iterative_deepening::MaxDepth || !is_pv)
-            return;
-
-        int new_depth = depth - engine_constants::search::iterative_deepening::NewDepthIncr;
-        worker.negamax<Us>(new_depth, alpha, beta, ply, true);
-        tt_move = worker.get_tt().get_move(worker.get_board().get_hash());
+        if (!all_node && tt_move == 0 && depth >= engine_constants::search::internal_iterative_reduction::MinDepth)
+            depth -= engine_constants::search::internal_iterative_reduction::Reduction;
     }
 
     template <Color Us>
@@ -95,7 +110,7 @@ namespace search
             worker.get_board().play_null_move(stored_ep);
             int R = engine_constants::search::null_move_pruning::RConst + depth / engine_constants::search::null_move_pruning::RDiv;
             R = std::min(R, depth - 1);
-            int score = -worker.negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false);
+            int score = -worker.negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false, false);
             worker.get_board().unplay_null_move(stored_ep);
 
             if (score >= beta)
@@ -113,7 +128,7 @@ namespace search
         if (depth <= engine_constants::search::futility_pruning::MaxDepth && !in_check && !is_pv && ply > 0 && !is_mate_node)
         {
             int futil_margin = engine_constants::search::futility_pruning::MarginConst + engine_constants::search::futility_pruning::MarginDepthFactor * depth;
-            int static_eval = Eval::lazy_eval_relative<Us>(board);
+            int static_eval = Eval::prune_eval_relative<Us>(board, alpha - 1, alpha);
 
             if (static_eval + futil_margin <= alpha)
             {
@@ -124,7 +139,7 @@ namespace search
     }
 
     template <Color Us>
-    inline bool is_singular_search(SearchWorker &worker, Move tt_move, int depth, int ply, bool in_check, Move excluded_move, Move m)
+    inline bool is_singular_search(SearchWorker &worker, Move tt_move, int depth, int ply, bool in_check, bool cut_node, Move excluded_move, Move m)
     {
         if (!in_check && depth >= engine_constants::search::singular::MinDepth && ply > 0 && m == tt_move && excluded_move == 0)
         {
@@ -137,7 +152,7 @@ namespace search
                 {
                     int singular_beta = tts - (depth * 2);
                     int singular_depth = (depth - 1) / 2;
-                    int score = worker.negamax<Us>(singular_depth, singular_beta - 1, singular_beta, ply, false, m);
+                    int score = worker.negamax<Us>(singular_depth, singular_beta - 1, singular_beta, ply, false, cut_node, m);
 
                     if (score < singular_beta)
                     {
@@ -190,18 +205,23 @@ namespace search
     }
 
     template <Color Us>
-    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, int alpha, int &score)
+    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, Move tt_move, int alpha, int &score)
     {
         if (depth >= engine_constants::search::late_move_reduction::MinDepth && moves_searched >= engine_constants::search::late_move_reduction::MinMovesSearched && !is_tactical && !in_check && extension == 0)
         {
             int r = static_cast<int>(worker.lmr_table[std::min(depth, 63)][std::min(moves_searched, 63)]);
+            if (tt_move == 0)
+                r += engine_constants::search::late_move_reduction::NoTTMoveBonus;
             r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
 
-            score = -worker.negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1, true);
+            // Sonde speculative : on ATTEND son echec, donc on declare
+            // l'enfant noeud cut quel que soit le parent, pour qu'il elague
+            // plus dur. La re-recherche ci-dessous rattrape si on se trompe.
+            score = -worker.negamax<!Us>(depth - 1 - r, -alpha - 1, -alpha, ply + 1, true, true);
 
             // Re-search si le coup réduit semble bon
             if (score > alpha)
-                score = -worker.negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true);
+                score = -worker.negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true, !cut_node);
             return true;
         }
         return false;
@@ -231,7 +251,7 @@ inline int wdl_score(TableBase::WDL_Result r, int ply)
 }
 
 template <Color Us>
-int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move)
+int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null, bool cut_node, Move excluded_move)
 {
 
     // =============================== Quick return cases ===============================
@@ -258,6 +278,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         return Eval::lazy_eval_relative<Us>(board);
 
     const bool is_pv = (beta - alpha > 1);
+    // Classification de Knuth-Moore. Un noeud all doit epuiser tous ses coups
+    // pour PROUVER qu'aucun ne passe : lui retirer de la profondeur affaiblit
+    // une preuve qu'on devra croire. Et les noeuds all sont le gros de l'arbre,
+    // donc c'est la que la composition de l'IIR le long des chaines de noeuds
+    // sans coup TT frappe le plus fort. Stockfish les exclut, nous aussi.
+    const bool all_node = !(is_pv || cut_node);
     const bool in_check = board.is_king_attacked<Us>();
     const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
 
@@ -272,111 +298,26 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (search::tt_cutoffs_enabled() && tt_move != excluded_move &&
             search::should_use_tt(tt_hit, ply, is_pv, flag, tt_score, beta))
             return tt_score;
-
-        // A TT hit here (that didn't already return above) is PROVEN to
-        // recur: this exact position was already reached via a different
-        // move order/search path. That makes it a much better bet for
-        // "will this be looked at again" than an arbitrary leaf -- unlike
-        // a near-alpha qsearch leaf (tried and discarded: measured at
-        // ~4% useful_hits, most such leaves are refuted branches
-        // alpha-beta walks away from and never revisits), a transposed
-        // position's odds of being probed again only grow as iterative
-        // deepening keeps re-walking the same shallow prefixes at
-        // increasing depth. Gated by depth so this doesn't fire on every
-        // trivially-shallow transposition (extremely frequent, least
-        // valuable per position).
-        //
-        // Second gate (see gpu_eval::submit_only_critical): CRITICALITY.
-        // A refined eval can only change what a node does if the node's
-        // decision is close. Two free signals here:
-        //  - is_pv: a PV node needs an exact value; a null-window node is
-        //    only being proved to fail high or low, and a 30cp refinement
-        //    of an eval that is 400cp from the bound changes nothing.
-        //  - |tt_score - beta| small: the node sits near its own cutoff
-        //    boundary, so a better eval flips the outcome.
-        // Measured via decision_flip_rate_percent() -- see qsearch.cpp.
-        //
-        // gpu_eval::active() d'abord, et tt_hit avant tout usage de
-        // tt_score : `critical` etait calcule avant le test tt_hit, donc il
-        // lisait tt_score meme quand probe() avait echoue sans jamais
-        // l'ecrire (voir TranspositionTable::probe, qui sort sans toucher au
-        // parametre de sortie quand aucune entree ne convient) -- lecture
-        // d'un int non initialise a chaque defaut de TT.
-        if (gpu_eval::active() && tt_hit &&
-            depth >= gpu_eval::transposition_submit_min_depth() &&
-            (!gpu_eval::submit_only_critical() || is_pv ||
-             std::abs(tt_score - beta) <= gpu_eval::kCriticalWindowMarginCp))
-            maybe_submit_transposition_to_gpu(depth, tt_move, ply);
-
-        // Phase 0, cote consommation (CHESS26_GPU_MEASURE=1) : ce noeud a
-        // maintenant un coup TT, donc la recherche a conclu. Si le thread GPU
-        // avait depose un hint pour lui -- ce qu'il ne fait QUE pour les
-        // noeuds soumis sans coup TT, la seule population ou un hint
-        // servirait -- on peut enfin departager les deux predicteurs sur la
-        // cible qu'ils essayaient de deviner.
-        if (gpu_eval::active() && gpu_eval::measure_diagnostics() && tt_move != 0)
-        {
-            int cnn_from, cnn_to, heur_from, heur_to, nnue_from, nnue_to;
-            if (gpu_eval::shared_gpu_tt().probe_ordering_hint(board.get_hash(), cnn_from, cnn_to,
-                                                             heur_from, heur_to, nnue_from, nnue_to))
-            {
-                const int target_from = tt_move.get_from_sq();
-                const int target_to = tt_move.get_to_sq();
-                gpu_eval::shared_gpu_tt().record_ordering_sample(
-                    cnn_from == target_from && cnn_to == target_to,
-                    heur_from == target_from && heur_to == target_to,
-                    nnue_from == target_from && nnue_to == target_to);
-            }
-        }
     }
 
     if (search::should_qsearch(depth, ply, in_check))
-    {
-        // Consult the GPU tt directly here, right before dropping into
-        // qsearch -- this is the frontier-node case (no main-TT entry
-        // for this key yet, e.g. a PV-leaf child freshly precomputed by
-        // the GPU queue). Trusted UNCONDITIONALLY: the GPU-prep thread
-        // already compared this score against NNUE (agreeing outright,
-        // or resolving a disagreement with its own bounded search)
-        // BEFORE storing it -- see gpu_queue.cpp's run(). Doing that
-        // comparison again here, live (an extra NNUE eval, plus a search
-        // extension on disagreement), used to run on this search thread
-        // and was measured to net LOSE ~23 Elo in a real match: that
-        // cost competed with the rest of the search tree for the same
-        // time budget. Moving it to the (otherwise idle) GPU-prep thread
-        // keeps this a cheap O(1) lookup again. See
-        // docs/gpu-async-eval/consultative-eval-measurements.md.
-        if (gpu_eval::active())
-        {
-            int16_t gpu_score;
-            std::uint8_t gpu_depth, gpu_age;
-            if (gpu_eval::shared_gpu_tt().probe(board.get_hash(), gpu_score, gpu_depth, gpu_age) &&
-                gpu_age == gpu_eval::shared_gpu_tt().current_age())
-            {
-                gpu_eval::shared_gpu_tt().record_useful_hit();
-                int score = gpu_score;
-                if (score > engine_constants::eval::MateScore - 256)
-                    score -= ply;
-                else if (score < -engine_constants::eval::MateScore + 256)
-                    score += ply;
-                return score;
-            }
-        }
         return qsearch<Us>(alpha, beta, ply);
-    }
 
     if (search::reverse_futility_pruning<Us>(board, depth, ply, in_check, is_pv, beta))
         return beta;
 
     // =============================== Search ===============================
 
-    search::iterative_deepening<Us>(*this, tt_move, depth, ply, is_pv, alpha, beta);
-
     {
         int return_score;
         if (search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score))
             return return_score;
     }
+
+    // Place APRES le null move, comme Stockfish (son etape 11 suit l'etape
+    // 10) : le NMP calcule sa reduction sur la profondeur pleine, l'IIR
+    // reduit ensuite ce qui reste a explorer.
+    search::internal_iterative_reduction(tt_move, all_node, depth);
 
     const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_pv, is_mate_node, alpha);
 
@@ -406,7 +347,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             continue;
 
         shared_tt.prefetch(board.get_hash_after(m));
-        bool is_singular = search::is_singular_search<Us>(*this, tt_move, depth, ply, in_check, excluded_move, m);
+        bool is_singular = search::is_singular_search<Us>(*this, tt_move, depth, ply, in_check, cut_node, excluded_move, m);
 
         int score;
         const bool is_tactical = list.current_is_tactical;
@@ -437,22 +378,22 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (ply + new_depth >= engine_constants::search::MaxDepth)
             new_depth = engine_constants::search::MaxDepth - ply;
 
-        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, alpha, score))
+        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, tt_move, alpha, score))
         {
             if (moves_searched > 1) // Null Window Search pour PVS
             {
-                score = -negamax<!Us>(new_depth, -alpha - 1, -alpha, ply + 1, true);
+                score = -negamax<!Us>(new_depth, -alpha - 1, -alpha, ply + 1, true, !cut_node);
             }
             else // Full Window Search (seulement si moves_searched == 1 (donc pas de TT move))
             {
-                score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true);
+                score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true, false);
             }
         }
 
         // Si le score est dans la fenêtre mais pas une coupure, on re-cherche normalement
         if (score > alpha && score < beta && moves_searched > 1)
         {
-            score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true);
+            score = -negamax<!Us>(new_depth, -beta, -alpha, ply + 1, true, false);
         }
 
         board.unplay<Us>(m);
@@ -518,20 +459,6 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             {
                 alpha = score;
             }
-
-            // The root's best-known move just changed -- board is back
-            // at the root here (board.unplay<Us>(m) already ran above),
-            // same precondition as the once-per-depth call from
-            // iterative_deepening(), but this fires mid-depth, on every
-            // improvement, not just once the whole depth (including any
-            // aspiration re-searches) has finished. See gpu_config.hpp's
-            // kMinDepthForMidSearchSubmit/kMinNodesBetweenGpuSubmits for
-            // why this needs throttling and the once-per-depth call
-            // doesn't.
-            if (ply == 0)
-            {
-                maybe_submit_pv_leaf_to_gpu_throttled(m, depth);
-            }
         }
     }
     if (ply == 0)
@@ -557,5 +484,5 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     return best_score;
 }
 
-template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move);
-template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply, bool allow_null, Move excluded_move);
+template int SearchWorker::negamax<WHITE>(int depth, int alpha, int beta, int ply, bool allow_null, bool cut_node, Move excluded_move);
+template int SearchWorker::negamax<BLACK>(int depth, int alpha, int beta, int ply, bool allow_null, bool cut_node, Move excluded_move);

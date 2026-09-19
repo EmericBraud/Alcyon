@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdlib>
 #include <array>
 #include <cstdint>
 #include <utility>
@@ -51,12 +52,38 @@ private:
     std::shared_ptr<const Int8WeightTable> threat_weights;
     std::shared_ptr<const Int16WeightTable> halfka_weights;
 
-    // HalfKAv2_hm^ rows are already int16 -- straight vectorizable add/sub,
-    // same as before the int8 split.
+    // HalfKAv2_hm^ rows are already int16 -- pas de conversion a faire, mais
+    // la boucle etait laissee scalaire et confiee a l'auto-vectorisation, la
+    // ou le chemin int8 est explicitement vectorise. Le profil (xctrace,
+    // accumulator_layer.hpp:62 et :64) la donne a 12,4 % du temps du moteur,
+    // donc elle merite le meme traitement : SIMD explicite, deroule par deux.
     template <bool activate>
     static void apply_row(std::array<std::int16_t, NNeurons> &acc, const std::array<std::int16_t, NNeurons> &w_row)
     {
-        for (int j = 0; j < NNeurons; ++j)
+        constexpr std::size_t W = simd::SimdSize16;
+
+        std::size_t j = 0;
+        for (; j + 2 * W <= static_cast<std::size_t>(NNeurons); j += 2 * W)
+        {
+            simd::int16_v w0, w1, a0, a1;
+            w0.copy_from(w_row.data() + j, stdx::element_aligned);
+            w1.copy_from(w_row.data() + j + W, stdx::element_aligned);
+            a0.copy_from(acc.data() + j, stdx::element_aligned);
+            a1.copy_from(acc.data() + j + W, stdx::element_aligned);
+            if constexpr (activate)
+            {
+                a0 += w0;
+                a1 += w1;
+            }
+            else
+            {
+                a0 -= w0;
+                a1 -= w1;
+            }
+            a0.copy_to(acc.data() + j, stdx::element_aligned);
+            a1.copy_to(acc.data() + j + W, stdx::element_aligned);
+        }
+        for (; j < static_cast<std::size_t>(NNeurons); ++j)
         {
             if constexpr (activate)
                 acc[j] += w_row[j];
@@ -76,8 +103,42 @@ private:
     static void apply_row(std::array<std::int16_t, NNeurons> &acc, const std::array<std::int8_t, NNeurons> &w_row)
     {
         using int8_n = stdx::fixed_size_simd<std::int8_t, simd::SimdSize16>;
+        constexpr std::size_t W = simd::SimdSize16;
 
         std::size_t j = 0;
+
+        // Deroulage par deux : cette boucle ne chargeait que
+        // SimdSize16 = 8 octets de poids par iteration, soit la moitie d'un
+        // registre NEON (native_simd<int8_t> en tient 16), parce que sa
+        // largeur est calee sur le vecteur int16 de sortie. Deux chargements
+        // contigus par iteration laissent le compilateur les fusionner en un
+        // seul acces 16 octets, et divisent par deux le nombre d'iterations
+        // de la boucle la plus chaude du moteur (27 % du temps au profil).
+        for (; j + 2 * W <= static_cast<std::size_t>(NNeurons); j += 2 * W)
+        {
+            int8_n r0, r1;
+            r0.copy_from(w_row.data() + j, stdx::element_aligned);
+            r1.copy_from(w_row.data() + j + W, stdx::element_aligned);
+            const simd::int16_v w0 = stdx::simd_cast<simd::int16_v>(r0);
+            const simd::int16_v w1 = stdx::simd_cast<simd::int16_v>(r1);
+
+            simd::int16_v a0, a1;
+            a0.copy_from(acc.data() + j, stdx::element_aligned);
+            a1.copy_from(acc.data() + j + W, stdx::element_aligned);
+            if constexpr (activate)
+            {
+                a0 += w0;
+                a1 += w1;
+            }
+            else
+            {
+                a0 -= w0;
+                a1 -= w1;
+            }
+            a0.copy_to(acc.data() + j, stdx::element_aligned);
+            a1.copy_to(acc.data() + j + W, stdx::element_aligned);
+        }
+
         for (; j + simd::SimdSize16 <= static_cast<std::size_t>(NNeurons); j += simd::SimdSize16)
         {
             int8_n raw;

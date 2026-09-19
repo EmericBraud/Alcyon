@@ -7,11 +7,11 @@
 #include "core/move/move.hpp"
 #include "engine/config/config.hpp"
 
-// NOTE: probe() used to consult the GPU-eval score cache
-// (engine/eval/gpu/gpu_tt.hpp) and override its own score with it. All of
-// that is gone -- see the note inside probe(). The GPU score is consulted
-// only at frontier nodes now, in negamax.cpp's should_qsearch branch.
-// See docs/gpu-async-eval/consultative-eval-measurements.md.
+// NOTE: probe() used to consult an asynchronous GPU-eval score cache and
+// override its own score with it. That whole subsystem was removed after
+// measurement (no positive Elo in any of its three integrations) -- its
+// results live on in docs/gpu-async-eval/, and the code at the
+// gpu-eval-experiment tag.
 
 enum TTFlag : std::uint8_t
 {

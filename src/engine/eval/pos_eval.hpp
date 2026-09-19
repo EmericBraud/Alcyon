@@ -90,6 +90,31 @@ namespace Eval
         return -score;
     }
 
+    // Evaluation utilisee par les mecanismes d'elagage (razoring,
+    // reverse_futility_pruning, futility_pruning dans negamax.cpp).
+    //
+    // En build NNUE c'est le RESEAU COMPLET, pas la tete PSQT. Mesure sur les
+    // populations de ces trois mecanismes : la tete PSQT lit de +49 a +335
+    // centipions SOUS le reseau complet, et cet ecart depasse la marge du
+    // mecanisme 50 a 66 % du temps pour le razoring et le RFP. Une marge
+    // deplace un seuil, elle n'affute pas un signal emousse -- d'ou ce
+    // basculement, et la recalibration des trois marges qui l'accompagne
+    // (voir config.hpp).
+    //
+    // En build HCE, lazy_eval_relative EST deja l'estimation complete de son
+    // propre modele, et ses marges sont tunees pour elle : inchange.
+    template <Color Us>
+    inline int prune_eval_relative(const VBoard &board, int alpha, int beta)
+    {
+#ifdef NNUE_EVAL
+        return eval_relative<Us>(board, alpha, beta);
+#else
+        (void)alpha;
+        (void)beta;
+        return lazy_eval_relative<Us>(board);
+#endif
+    }
+
     inline int get_piece_score(int piece)
     {
         return engine_constants::eval::pieces_score[piece];

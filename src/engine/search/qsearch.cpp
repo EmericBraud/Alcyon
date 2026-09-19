@@ -7,14 +7,13 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     if (check_stop())
         return alpha;
 
-    // 2. Sondage de la Transposition Table (TT)
-    // Utilisation du ply pour normaliser les scores de mat récupérés
+    if (ply >= engine_constants::search::MaxDepth)
+        return Eval::lazy_eval_relative<Us>(board);
+
     int tt_score;
     TTFlag flag;
     Move tt_move = 0;
-    // La coupure qsearch est desactivee avec CHESS26_TT_NO_CUTOFF : sinon la
-    // re-recherche sur TT pre-remplie gagnerait ici aussi par coupure, et
-    // l'isolation de l'ordonnancement serait fausse. Le coup TT reste lu.
+
     if (shared_tt.probe(board.get_hash(), 0, ply, alpha, beta, tt_score, tt_move, flag) &&
         search::tt_cutoffs_enabled())
         return tt_score;
@@ -22,51 +21,9 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     bool in_check = board.is_king_attacked<Us>();
     int stand_pat = -engine_constants::eval::Inf;
 
-    // 3. Standing Pat (Évaluation statique)
-    // On ne l'utilise que si on n'est pas en échec, car une position en échec est instable
     if (!in_check)
     {
-        // The GPU-eval queue precomputes CNN scores for the CHILDREN of PV
-        // leaves (see gpu_queue.cpp), and those children are reached right
-        // here, inside qsearch -- not in negamax. Consuming them anywhere
-        // else measured at ~10 useful hits per multi-million-node search,
-        // i.e. the subsystem was invisible to the search.
-        //
-        // Used as the stand-pat, which is where it belongs: what gets
-        // stored is a quiesced value (the position is settled before it is
-        // encoded), so it is the same KIND of quantity as the static eval
-        // it replaces, only computed off-thread. No bound semantics
-        // attached to it -- a stand-pat is an eval, not an alpha/beta
-        // certificate. See docs/gpu-async-eval/consultative-eval-measurements.md.
-        std::int16_t gpu_score;
-        std::uint8_t gpu_depth, gpu_age;
-        if (gpu_eval::active() &&
-            gpu_eval::shared_gpu_tt().probe(board.get_hash(), gpu_score, gpu_depth, gpu_age) &&
-            gpu_age == gpu_eval::shared_gpu_tt().current_age())
-        {
-            gpu_eval::shared_gpu_tt().record_useful_hit();
-            stand_pat = gpu_score;
-
-            // Measurement mode (CHESS26_GPU_MEASURE=1): of the GPU
-            // scores the search actually reads, how many CHANGE what this
-            // node does? A score that lands on the same side of beta as
-            // the eval it replaced delivered nothing, however accurate it
-            // was. This is the number that says whether the subsystem
-            // should chase volume or selectivity -- usage_ratio_percent()
-            // only says the score was read, not that it mattered.
-            //
-            // Off by default: it costs the very NNUE eval the GPU score
-            // was there to avoid, so it is a diagnostic, not a feature.
-            if (gpu_eval::measure_diagnostics())
-            {
-                const int nnue = Eval::eval_relative<Us>(board, alpha, beta);
-                gpu_eval::shared_gpu_tt().record_decision_flip((gpu_score >= beta) != (nnue >= beta));
-            }
-        }
-        else
-        {
-            stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
-        }
+        stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
         if (stand_pat >= beta)
             return beta;
         if (stand_pat > alpha)
@@ -172,15 +129,11 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
 // Dans SearchWorker (ou inline)
 inline int SearchWorker::score_capture(const Move &move) const
 {
-    // Utilisation directe de la table pour éviter les calculs
-    // On suppose que MvvLvaTable est accessible (namespace config ou membre)
-    // format: MvvLvaTable[victim][attacker]
 
     int score = 0;
 
     if (move.get_flags() == Move::EN_PASSANT_CAP)
     {
-        // Pion mange Pion en passant
         score = engine_constants::eval::MvvLvaTable[PAWN][PAWN];
     }
     else

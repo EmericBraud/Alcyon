@@ -40,20 +40,38 @@ namespace engine_constants
 
         namespace razoring
         {
-            PARAM_SPECIFIER int MaxDepth = 3;
-            PARAM_SPECIFIER int MarginDepthFactor = 100;
-            PARAM_SPECIFIER int MarginConst = 0;
+            // Valeurs SPSA (tune 15, 128 000 parties a 10+0.10, elagage sur
+            // le reseau complet). Le tuner a rouvert le razoring que la
+            // calibration avait neutralise, mais peu profond (1.73 -> 2),
+            // comme Stockfish.
+            PARAM_SPECIFIER int MaxDepth = 2;
+            PARAM_SPECIFIER int MarginDepthFactor = 131;
+            PARAM_SPECIFIER int MarginConst = 105;
         }
         namespace reverse_futility_pruning
         {
-            PARAM_SPECIFIER int MaxDepth = 4;
-            PARAM_SPECIFIER int MarginDepthFactor = 73;
-            PARAM_SPECIFIER int MarginConst = 61;
-        }
-        namespace iterative_deepening
-        {
+            // Valeurs SPSA (tune 15). Le +250 que la calibration avait
+            // ajoute a MarginConst pour compenser le biais de la tete PSQT
+            // est rejete : le tuner l'a pousse jusqu'a son plancher (0) et a
+            // repris la pente a la place (73 -> 85). La marge du RFP est donc
+            // purement proportionnelle a la profondeur.
             PARAM_SPECIFIER int MaxDepth = 6;
-            PARAM_SPECIFIER int NewDepthIncr = 4;
+            PARAM_SPECIFIER int MarginDepthFactor = 79;
+            PARAM_SPECIFIER int MarginConst = -7;
+        }
+        namespace internal_iterative_reduction
+        {
+            // De combien de plys on retire. Stockfish code 1 en dur ; on le
+            // rend tunable parce que notre IIR n'a pas sa condition
+            // !followPV, donc son optimum n'est pas forcement le sien. C'est
+            // l'un des trois leviers qui expriment "pas de coup TT => cherche
+            // moins" : ce seuil, cette reduction, et NoTTMoveBonus cote LMR.
+            PARAM_SPECIFIER int Reduction = 2;
+            // Profondeur minimale a partir de laquelle un noeud sans coup TT
+            // perd un ply. Stockfish utilise 6, mais en restreignant aux
+            // noeuds PV et cut ; on applique partout, donc l'optimum est
+            // probablement plus haut. Au SPSA de le dire.
+            PARAM_SPECIFIER int MinDepth = 5;
         }
         namespace null_move_pruning
         {
@@ -63,9 +81,11 @@ namespace engine_constants
         }
         namespace futility_pruning
         {
-            PARAM_SPECIFIER int MaxDepth = 8;
-            PARAM_SPECIFIER int MarginConst = 95;
-            PARAM_SPECIFIER int MarginDepthFactor = 105;
+            // Valeurs SPSA (tune 15). MarginConst passe sous zero : la marge
+            // de la futility est elle aussi purement proportionnelle.
+            PARAM_SPECIFIER int MaxDepth = 9;
+            PARAM_SPECIFIER int MarginConst = -45;
+            PARAM_SPECIFIER int MarginDepthFactor = 97;
         }
         namespace singular
         {
@@ -79,6 +99,12 @@ namespace engine_constants
         }
         namespace late_move_reduction
         {
+            // Reduction LMR supplementaire quand le noeud n'a pas de coup TT
+            // (Stockfish, "Increase reduction if ttMove is not present",
+            // r += 1127 soit ~1.1 ply). Defaut 0 : le mecanisme est ajoute
+            // ETEINT, c'est au SPSA de decider s'il vaut mieux que l'IIR --
+            // la LMR re-cherche en cas de doute, l'IIR non.
+            PARAM_SPECIFIER int NoTTMoveBonus = 0;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 1;
@@ -176,10 +202,19 @@ namespace engine_constants
             PARAM_SPECIFIER int MarginDepthFactor = 57;
             PARAM_SPECIFIER int MarginConst = 55;
         }
-        namespace iterative_deepening
+        namespace internal_iterative_reduction
         {
-            PARAM_SPECIFIER int MaxDepth = 6;
-            PARAM_SPECIFIER int NewDepthIncr = 4;
+            // De combien de plys on retire. Stockfish code 1 en dur ; on le
+            // rend tunable parce que notre IIR n'a pas sa condition
+            // !followPV, donc son optimum n'est pas forcement le sien. C'est
+            // l'un des trois leviers qui expriment "pas de coup TT => cherche
+            // moins" : ce seuil, cette reduction, et NoTTMoveBonus cote LMR.
+            PARAM_SPECIFIER int Reduction = 1;
+            // Profondeur minimale a partir de laquelle un noeud sans coup TT
+            // perd un ply. Stockfish utilise 6, mais en restreignant aux
+            // noeuds PV et cut ; on applique partout, donc l'optimum est
+            // probablement plus haut. Au SPSA de le dire.
+            PARAM_SPECIFIER int MinDepth = 6;
         }
         namespace null_move_pruning
         {
@@ -205,6 +240,12 @@ namespace engine_constants
         }
         namespace late_move_reduction
         {
+            // Reduction LMR supplementaire quand le noeud n'a pas de coup TT
+            // (Stockfish, "Increase reduction if ttMove is not present",
+            // r += 1127 soit ~1.1 ply). Defaut 0 : le mecanisme est ajoute
+            // ETEINT, c'est au SPSA de decider s'il vaut mieux que l'IIR --
+            // la LMR re-cherche en cas de doute, l'IIR non.
+            PARAM_SPECIFIER int NoTTMoveBonus = 0;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 2;

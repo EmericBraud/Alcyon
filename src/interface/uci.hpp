@@ -16,8 +16,6 @@
 
 #include "core/board/zobrist.hpp"
 #include "engine/eval/book.hpp"
-#include "engine/eval/gpu/gpu_backend.hpp"
-#include "engine/eval/gpu/gpu_queue.hpp"
 #include "engine/engine_manager.hpp"
 #include "engine/config/config.hpp"
 
@@ -224,16 +222,6 @@ class UCI
                             depth > 0 ? depth : 0, soft_ms);
     }
 
-    // The two backends read different files: the Metal/MPSGraph path parses
-    // the raw exported weights, the ANE/CoreML path needs its own converted
-    // .mlpackage (see tools/export_coreml.py).
-    static std::string gpu_model_path()
-    {
-        return gpu_eval::GpuBackend::instance().active() == gpu_eval::Backend::Ane
-                   ? file::get_data_path("gpu/v3_model.mlpackage")
-                   : file::get_data_path("gpu/v3_weights.bin");
-    }
-
     void set_option(std::istringstream &is)
     {
         std::string word, name, value, option;
@@ -329,49 +317,6 @@ class UCI
         else if (name == "OwnBook ")
         {
             own_book = (value == "true ");
-            handled = true;
-        }
-        else if (name == "gpubackend ")
-        {
-            // Which inference implementation gpueval uses. Set this BEFORE
-            // switching gpueval on -- it decides which model file gets
-            // loaded. See gpu_backend.hpp.
-            if (value == "metal ")
-            {
-                gpu_eval::GpuBackend::instance().select(gpu_eval::Backend::Metal);
-            }
-            else if (value == "ane ")
-            {
-                gpu_eval::GpuBackend::instance().select(gpu_eval::Backend::Ane);
-            }
-            else
-            {
-                logs::uci << "info string error: gpubackend must be 'ane' or 'metal'" << std::endl;
-            }
-            handled = true;
-        }
-        else if (name == "gpueval ")
-        {
-            const bool on = (value == "true ");
-            if (on)
-            {
-                if (!gpu_eval::GpuBackend::instance().is_ready())
-                {
-                    const std::string weights_path = gpu_model_path();
-                    if (!gpu_eval::shared_gpu_queue().start(weights_path))
-                    {
-                        logs::uci << "info string error: gpueval weights failed to load, staying disabled" << std::endl;
-                        gpu_eval::enabled.store(false, std::memory_order_relaxed);
-                        handled = true;
-                        return;
-                    }
-                }
-            }
-            else
-            {
-                gpu_eval::shared_gpu_queue().stop();
-            }
-            gpu_eval::enabled.store(on, std::memory_order_relaxed);
             handled = true;
         }
 
@@ -504,8 +449,8 @@ public:
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_d_fact"),
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginConst, "rfp_marg_const"),
 
-            UCIOption<int>(&engine_constants::search::iterative_deepening::MaxDepth, "itd_max_depth"),
-            UCIOption<int>(&engine_constants::search::iterative_deepening::NewDepthIncr, "itd_new_depth_inc"),
+            UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
+            UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),
 
             UCIOption<int>(&engine_constants::search::null_move_pruning::MinDepth, "nmp_min_depth"),
             UCIOption<int>(&engine_constants::search::null_move_pruning::RConst, "nmp_r_const"),
@@ -523,6 +468,7 @@ public:
             UCIOption<int>(&engine_constants::search::late_move_reduction::MinDepth, "lmr_min_depth"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::MinMovesSearched, "lmr_min_moves_searched"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::MaxDepthReduction, "lmr_max_depth_reduction"),
+            UCIOption<int>(&engine_constants::search::late_move_reduction::NoTTMoveBonus, "lmr_no_tt_move_bonus"),
 
             UCIOption<int>(&engine_constants::search::see_pruning::MaxDepth, "see_pruning_max_depth"),
             UCIOption<int>(&engine_constants::search::see_pruning::ThresholdDepthFactor, "threshold_depth_factor"),
@@ -558,8 +504,6 @@ public:
                 logs::uci << "option name Move Overhead type spin default 100 min 0 max 1000" << std::endl;
                 logs::uci << "option name Ponder type check default " << (ponder_enabled ? "true" : "false") << std::endl;
                 logs::uci << "option name OwnBook type check default true" << std::endl;
-                logs::uci << "option name gpueval type check default false" << std::endl;
-                logs::uci << "option name gpubackend type combo default ane var ane var metal" << std::endl;
 
 #ifdef SPSA_TUNING
                 for (auto int_option : int_options)
@@ -611,32 +555,6 @@ public:
             {
                 run_eval(is);
             }
-            else if (token == "gpuevalstats")
-            {
-                logs::uci << "info string gpuevalstats stores=" << gpu_eval::shared_gpu_tt().stores()
-                          << " useful_hits=" << gpu_eval::shared_gpu_tt().useful_hits()
-                          << " ratio=" << gpu_eval::shared_gpu_tt().usage_ratio_percent() << "%"
-                          << " agreements=" << gpu_eval::shared_gpu_tt().agreements()
-                          << " disagreements=" << gpu_eval::shared_gpu_tt().disagreements()
-                          << " disagreement_rate=" << gpu_eval::shared_gpu_tt().disagreement_rate_percent() << "%"
-                          << " avg_cnn_minus_nnue=" << gpu_eval::shared_gpu_tt().avg_cnn_minus_nnue_cp() << "cp"
-                          << " avg_cnn=" << gpu_eval::shared_gpu_tt().avg_cnn_cp() << "cp"
-                          << " avg_nnue=" << gpu_eval::shared_gpu_tt().avg_nnue_cp() << "cp"
-                          << " cnn_to_nnue_slope=" << gpu_eval::shared_gpu_tt().cnn_to_nnue_slope()
-                          << " cnn_to_nnue_intercept=" << gpu_eval::shared_gpu_tt().cnn_to_nnue_intercept_cp() << "cp"
-                          << " cnn_nnue_corr=" << gpu_eval::shared_gpu_tt().cnn_nnue_correlation()
-                          << " gpu_thread_busy=" << gpu_eval::shared_gpu_tt().gpu_thread_busy_percent() << "%"
-                          << " decision_flip_rate=" << gpu_eval::shared_gpu_tt().decision_flip_rate_percent() << "%"
-                          << " ordering_samples=" << gpu_eval::shared_gpu_tt().ordering_samples()
-                          << " ordering_cnn=" << gpu_eval::shared_gpu_tt().ordering_cnn_percent() << "%"
-                          << " ordering_heuristic=" << gpu_eval::shared_gpu_tt().ordering_heuristic_percent() << "%"
-                          << " ordering_nnue=" << gpu_eval::shared_gpu_tt().ordering_nnue_percent() << "%"
-                          << " redundant=" << gpu_eval::shared_gpu_tt().redundant_stores()
-                          << " redundant_rate=" << gpu_eval::shared_gpu_tt().redundant_rate_percent() << "%"
-                          << " collisions=" << gpu_eval::shared_gpu_tt().collisions()
-                          << " collision_rate=" << gpu_eval::shared_gpu_tt().collision_rate_percent() << "%"
-                          << " capacity=" << gpu_eval::shared_gpu_tt().capacity() << std::endl;
-            }
             else if (token == "orderstats")
             {
                 // Histogramme des rangs de coupure -- voir search::record_cutoff.
@@ -667,71 +585,8 @@ public:
                 }
                 logs::uci << " queue_calme_rang5+=" << (total ? 100.0 * tail_quiet / total : 0.0) << "%" << std::endl;
             }
-            else if (token == "gpubench")
-            {
-                // Raw GpuBackend::infer_batch() throughput, isolated from
-                // search/encoding overhead -- repeated iterations per batch
-                // size to amortize timer and dispatch overhead.
-                //
-                // Runs BOTH implementations (ANE via CoreML, GPU via
-                // MPSGraph), loading whichever is not loaded yet, and
-                // restores the previously selected one at the end. Also
-                // prints each backend's score for one fixed pseudo-random
-                // input: they must agree to within fp16 noise, since the
-                // CoreML model is an fp16 conversion of the same weights --
-                // a large gap means the export or the plane layout is wrong,
-                // and any throughput number below is then meaningless.
-                {
-                    static const int kBatchSizes[] = {1, 8, 32, 64, 128, 256};
-                    static float planes[256 * gpu_eval::kNumPlanesV3 * gpu_eval::kPlaneSize];
-                    static int piece_counts[256];
-                    static std::int32_t scores[256];
-                    std::fill(std::begin(piece_counts), std::end(piece_counts), 8);
-                    // Deterministic non-zero input: zero planes are a
-                    // degenerate case both backends can agree on trivially.
-                    std::uint32_t seed = 12345;
-                    for (float &v : planes)
-                    {
-                        seed = seed * 1664525u + 1013904223u;
-                        v = static_cast<float>((seed >> 16) & 0xFF) / 255.0f;
-                    }
-
-                    const gpu_eval::Backend previous = gpu_eval::GpuBackend::instance().active();
-                    for (gpu_eval::Backend backend : {gpu_eval::Backend::Ane, gpu_eval::Backend::Metal})
-                    {
-                        const char *label = (backend == gpu_eval::Backend::Ane) ? "ane" : "metal";
-                        gpu_eval::GpuBackend::instance().select(backend);
-                        if (!gpu_eval::GpuBackend::instance().is_ready() &&
-                            !gpu_eval::GpuBackend::instance().load_weights(gpu_model_path()))
-                        {
-                            logs::uci << "info string gpubench backend=" << label << " unavailable (load failed)" << std::endl;
-                            continue;
-                        }
-
-                        gpu_eval::GpuBackend::instance().infer_batch(planes, piece_counts, 1, scores);
-                        logs::uci << "info string gpubench backend=" << label
-                                  << " probe_score_cp=" << scores[0] << std::endl;
-
-                        for (int bs : kBatchSizes)
-                        {
-                            constexpr int kIters = 30;
-                            const auto t0 = std::chrono::steady_clock::now();
-                            for (int it = 0; it < kIters; ++it)
-                                gpu_eval::GpuBackend::instance().infer_batch(planes, piece_counts, bs, scores);
-                            const auto t1 = std::chrono::steady_clock::now();
-                            const double secs = std::chrono::duration<double>(t1 - t0).count();
-                            const double positions_per_sec = (kIters / secs) * bs;
-                            logs::uci << "info string gpubench backend=" << label << " batch=" << bs
-                                      << " ms_per_call=" << (secs * 1000.0 / kIters)
-                                      << " positions_per_sec=" << static_cast<long long>(positions_per_sec) << std::endl;
-                        }
-                    }
-                    gpu_eval::GpuBackend::instance().select(previous);
-                }
-            }
             else if (token == "quit")
             {
-                gpu_eval::shared_gpu_queue().stop();
                 break;
             }
 #ifdef CHESS26_HAS_GUI
