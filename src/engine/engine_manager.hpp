@@ -396,8 +396,26 @@ private:
 
         best_move = workers[0].best_root_move;
 
-        if (best_move.get_value() == 0) [[unlikely]]
+        // Le coup racine est verifie AVANT d'etre emis, pas seulement teste
+        // contre zero. Des parties perdues sur "illegal move" ont ete
+        // observees en tournoi (112 occurrences depuis le 17/09, sur les deux
+        // versions testees) : best_root_move contenait une valeur non nulle
+        // mais illegale pour la position courante, donc le mode panique ne se
+        // declenchait pas -- aucun journal ne contient "PANICK MODE". La cause
+        // interne n'est pas encore identifiee et n'a pas pu etre reproduite en
+        // isolation ; ce garde ferme la sortie en attendant, et journalise de
+        // quoi la diagnostiquer a la prochaine occurrence.
+        const bool root_move_ok =
+            best_move.get_value() != 0 &&
+            main_board.is_move_pseudo_legal(best_move) &&
+            main_board.is_move_legal(best_move);
+
+        if (!root_move_ok) [[unlikely]]
         {
+            if (best_move.get_value() != 0)
+                logs::uci << "info string ILLEGAL ROOT MOVE " << best_move.to_uci()
+                          << " value=" << best_move.get_value()
+                          << " hash=" << main_board.get_hash() << std::endl;
             logs::uci << "PANICK MODE" << std::endl;
             // Panick mode : we try to find the best possible legal move
             // First attempt : transp table
