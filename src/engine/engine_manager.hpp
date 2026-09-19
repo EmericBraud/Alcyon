@@ -100,6 +100,17 @@ public:
         stop_search.store(true, std::memory_order_relaxed);
     }
 
+    // Arrete la recherche ET attend sa fin. stop() ne fait que lever des
+    // drapeaux : le thread de recherche continue de lire la table de
+    // transposition jusqu'a ce qu'il les constate. Tout ce qui REALLOUE de
+    // l'etat partage doit donc joindre, pas seulement demander l'arret.
+    void stop_and_join()
+    {
+        stop();
+        if (search_thread.joinable())
+            search_thread.join();
+    }
+
     void clear()
     {
         tt.clear();

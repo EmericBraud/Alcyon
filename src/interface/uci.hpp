@@ -224,6 +224,22 @@ class UCI
 
     void set_option(std::istringstream &is)
     {
+        // La recherche tourne sur un thread de fond (engine_manager.hpp) et la
+        // boucle UCI continue de lire l'entree pendant ce temps. Or plusieurs
+        // options REALLOUENT de l'etat partage -- "Hash" remplace la table de
+        // transposition par un make_unique, liberant celle que le thread de
+        // recherche est en train de lire et d'ecrire. Usage apres liberation,
+        // dont le resultat observe est soit un coup corrompu (34 parties
+        // perdues sur "illegal move"), soit un abandon du processus (15
+        // parties), les deux uniquement sous forte charge -- plus le moteur
+        // met de temps a finir, plus la fenetre est large.
+        //
+        // Le gestionnaire de "position" appelait deja e.stop() ; celui de
+        // "setoption" ne le faisait pas. On attend ici la FIN reelle de la
+        // recherche, une fois pour toutes les options : en regler une en plein
+        // calcul n'a de toute facon aucun sens.
+        e.stop_and_join();
+
         std::string word, name, value, option;
         std::string content = is.str();
         bool handled = false;
