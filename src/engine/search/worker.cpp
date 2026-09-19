@@ -55,13 +55,13 @@ int SearchWorker::score_move(const Move &move, const Move &tt_move, int ply, con
 
     // 2. Coups calmes prioritaires
     if (move_val == killer_moves[ply][0].get_value())
-        return 8000;
+        return engine_constants::search::move_ordering::KillerScore;
     if (move_val == killer_moves[ply][1].get_value())
-        return 8000;
+        return engine_constants::search::move_ordering::KillerScore;
 
     // Counter-move
     if (ply > 0 && prev_move != 0 && move_val == counter_moves[Us][prev_move.get_from_piece()][prev_move.get_to_sq()].get_value())
-        return 7500;
+        return engine_constants::search::move_ordering::CounterScore;
 
     // Bonus spécial pour les échecs "calmes" (Crucial pour mat en 11)
     // Attention : nécessite que ta MoveGen ou une fonction légère détecte l'échec

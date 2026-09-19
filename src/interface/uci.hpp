@@ -485,6 +485,11 @@ public:
             UCIOption<int>(&engine_constants::search::late_move_reduction::MinMovesSearched, "lmr_min_moves_searched"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::MaxDepthReduction, "lmr_max_depth_reduction"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::NoTTMoveBonus, "lmr_no_tt_move_bonus"),
+            UCIOption<int>(&engine_constants::search::late_move_reduction::CutNodeBonus, "lmr_cut_node_bonus", 0, 6),
+
+            UCIOption<int>(&engine_constants::search::move_ordering::HistMax, "hist_max", 256, 65536),
+            UCIOption<int>(&engine_constants::search::move_ordering::KillerScore, "killer_score", 0, 65536),
+            UCIOption<int>(&engine_constants::search::move_ordering::CounterScore, "counter_score", 0, 65536),
 
             UCIOption<int>(&engine_constants::search::see_pruning::MaxDepth, "see_pruning_max_depth"),
             UCIOption<int>(&engine_constants::search::see_pruning::ThresholdDepthFactor, "threshold_depth_factor"),

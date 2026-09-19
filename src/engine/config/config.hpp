@@ -116,6 +116,20 @@ namespace engine_constants
             PARAM_SPECIFIER double TableInitConst = 0.63065940599962;
             PARAM_SPECIFIER double TableInitDiv = 2.301959991800665;
         }
+
+        // Echelle de l'ordonnancement des coups calmes. HistMax est a la fois
+        // la borne des tables d'history et leur taux d'apprentissage (le pas
+        // vaut bonus / HistMax) ; KillerScore et CounterScore se comparent
+        // directement a une valeur d'history, donc les trois doivent etre
+        // tunes ensemble -- borner l'history sans bouger les seuils change le
+        // poids relatif des killers.
+        namespace move_ordering
+        {
+            PARAM_SPECIFIER int HistMax = 16384;
+            PARAM_SPECIFIER int KillerScore = 8000;
+            PARAM_SPECIFIER int CounterScore = 7500;
+        }
+
         namespace time
         {
             // Gestion du temps. Le moteur n'avait qu'UNE limite, donc il
@@ -261,6 +275,20 @@ namespace engine_constants
             PARAM_SPECIFIER double TableInitConst = 0.6295;
             PARAM_SPECIFIER double TableInitDiv = 2.3783;
         }
+
+        // Echelle de l'ordonnancement des coups calmes. HistMax est a la fois
+        // la borne des tables d'history et leur taux d'apprentissage (le pas
+        // vaut bonus / HistMax) ; KillerScore et CounterScore se comparent
+        // directement a une valeur d'history, donc les trois doivent etre
+        // tunes ensemble -- borner l'history sans bouger les seuils change le
+        // poids relatif des killers.
+        namespace move_ordering
+        {
+            PARAM_SPECIFIER int HistMax = 16384;
+            PARAM_SPECIFIER int KillerScore = 8000;
+            PARAM_SPECIFIER int CounterScore = 7500;
+        }
+
         namespace time
         {
             // Gestion du temps. Le moteur n'avait qu'UNE limite, donc il

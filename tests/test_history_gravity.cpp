@@ -8,7 +8,7 @@ TEST(HistoryGravity, StaysBoundedUnderRepeatedBonus)
     int e = 0;
     for (int i = 0; i < 10000; ++i)
         SearchWorker::update_hist(e, 400); // depth*depth pour depth=20
-    EXPECT_LE(e, SearchWorker::HistMax); // point fixe = +HistMax exactement
+    EXPECT_LE(e, engine_constants::search::move_ordering::HistMax); // point fixe = +HistMax exactement
     EXPECT_GT(e, 0);
 }
 
@@ -17,7 +17,7 @@ TEST(HistoryGravity, StaysBoundedUnderRepeatedMalus)
     int e = 0;
     for (int i = 0; i < 10000; ++i)
         SearchWorker::update_hist(e, -400);
-    EXPECT_GE(e, -SearchWorker::HistMax); // point fixe = -HistMax exactement
+    EXPECT_GE(e, -engine_constants::search::move_ordering::HistMax); // point fixe = -HistMax exactement
     EXPECT_LT(e, 0);
 }
 
@@ -27,14 +27,14 @@ TEST(HistoryGravity, SaturatingBonusIsAbsorbed)
 {
     int e = 0;
     SearchWorker::update_hist(e, 1 << 20);
-    EXPECT_LE(std::abs(e), SearchWorker::HistMax);
+    EXPECT_LE(std::abs(e), engine_constants::search::move_ordering::HistMax);
 }
 
 // Une entree haute doit decroitre quand le coup cesse d'etre bon : c'est ce
 // que faisait age_history(), desormais porte par le terme de gravite.
 TEST(HistoryGravity, DecaysWhenMoveStopsBeingGood)
 {
-    int e = SearchWorker::HistMax / 2;
+    int e = engine_constants::search::move_ordering::HistMax / 2;
     const int before = e;
     SearchWorker::update_hist(e, -100);
     EXPECT_LT(e, before);
