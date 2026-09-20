@@ -2,7 +2,7 @@
 
 High-Performance Chess Engine in C++
 
-![Version](https://img.shields.io/badge/version-v5.3-blue)
+![Version](https://img.shields.io/badge/version-v5.4-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Language](https://img.shields.io/badge/language-C%2B%2B23-blue)
 
@@ -57,6 +57,19 @@ figure is likely better.
 v5.2 has no row here: it was only measured at 10s+0.1s (-52.5 ± 22.8 over
 520 games), a different time control. v5.3 beat it by **+18.0 ± 7.7** over
 3090 games at that control (SPRT passed, LLR 3.31).
+
+v5.4 has no Stockfish 8 row yet either. It adds a per-ply search stack, which
+does two things: it caches the static evaluation so razoring, reverse futility
+and futility share one network pass per node instead of up to three, and it
+enables the `improving` heuristic by comparing a node's evaluation to its
+ply-2 ancestor's. Measured against v5.3 at 10s+0.1s, the search stack and
+`improving` at their default values gave **+20 Elo** over 1488 games, and a
+7-parameter SPSA re-tune on top of it passed at **+18.6 Elo** over 4250 games
+(LLR 2.99). The tuner's verdict on `improving` itself is worth recording: it
+kept it only on late move pruning and switched it off on the other three
+mechanisms, paying for it by cutting both pruning-margin slopes — the reverse
+futility slope by 42%, the futility slope by 19%. Those slopes had been tuned
+in a world without `improving` and were measurably off once it existed.
 
 v5.1's run was stopped at 178 games, so its interval (±41) is wider than
 v5.0's (±29) and the two overlap: the gain is the direction the numbers point,
