@@ -281,7 +281,7 @@ namespace search
     }
 
     template <Color Us>
-    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, bool improving, Move tt_move, int alpha, int &score)
+    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, bool improving, Move tt_move, Move m, Move prev_m, Move prev_prev_m, int alpha, int &score)
     {
         if (depth >= engine_constants::search::late_move_reduction::MinDepth && moves_searched >= engine_constants::search::late_move_reduction::MinMovesSearched && !is_tactical && !in_check && extension == 0)
         {
@@ -292,6 +292,25 @@ namespace search
             // Position qui ne s'ameliore pas : rien n'indique que ces coups
             // tardifs meritent leur profondeur, on reduit plus fort.
             r += engine_constants::search::late_move_reduction::NotImprovingBonus * !improving;
+
+            // Modulation par l'history du COUP. Jusqu'ici r ne regardait que
+            // la position du coup dans la liste : deux coups calmes au meme
+            // rang etaient reduits pareil, que l'un ait coupe cent fois dans
+            // cette partie et l'autre jamais. Les tables savaient les
+            // distinguer -- elles servaient a l'ORDONNANCEMENT -- mais la
+            // recherche jetait l'information juste apres s'en etre servie.
+            //
+            // On recalcule ici plutot que de relire list.scores[] : ce
+            // tableau porte le bruit de diversification SMP (+/-1024 pour
+            // les threads != 0, voir MovePicker) et des constantes plates
+            // pour les killers et counters (8000/7900/7500), qui ne sont pas
+            // des valeurs d'history. Trois lectures de table, le prix est
+            // nul devant un noeud.
+            const int hist = worker.score_quiet_history(
+                worker.history_moves[Us][m.get_from_sq()][m.get_to_sq()],
+                m, prev_m, prev_prev_m, Us);
+            r -= hist / engine_constants::search::late_move_reduction::HistDivisor;
+
             r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
 
             // Sonde speculative : on ATTEND son echec, donc on declare
@@ -474,7 +493,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (ply + new_depth >= engine_constants::search::MaxDepth)
             new_depth = engine_constants::search::MaxDepth - ply;
 
-        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, improving, tt_move, alpha, score))
+        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, improving, tt_move, m, prev_m, prev_prev_m, alpha, score))
         {
             if (moves_searched > 1) // Null Window Search pour PVS
             {

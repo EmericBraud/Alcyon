@@ -123,6 +123,24 @@ namespace engine_constants
             // Reduction supplementaire quand la position ne s'ameliore pas
             // (Stockfish : r += !improving). 0 = eteint.
             PARAM_SPECIFIER int NotImprovingBonus = 0;
+            // Diviseur de la modulation LMR par l'history du coup.
+            //
+            // Le chiffre vient d'une MESURE, pas du raisonnement sur les
+            // bornes -- lequel donne faux. HistMax vaut 4096, donc on
+            // attendrait une amplitude utile de cet ordre ; en realite la
+            // gravite maintient les entrees bien en dessous de leur borne et
+            // les |hist| rencontres au site LMR se comptent en centaines.
+            // Balayage au bench profondeur 13 (noeuds) :
+            //     64 -> 1 750 201   (-33 %)
+            //    128 -> 2 042 554   (-22 %)
+            //    256 -> 2 260 453   (-14 %)
+            //    512 -> 2 574 070   (-1,8 %)
+            //  >=1024 -> 2 621 677   (identique au bench sans modulation)
+            // Au-dela de 1024 la division entiere rend 0 partout : le
+            // mecanisme est purement et simplement eteint. La plage SPSA est
+            // bornee en consequence -- l'ouvrir plus haut ferait explorer au
+            // tuner un demi-espace de no-ops.
+            PARAM_SPECIFIER int HistDivisor = 256;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 1;
@@ -296,6 +314,24 @@ namespace engine_constants
             // Reduction supplementaire quand la position ne s'ameliore pas
             // (Stockfish : r += !improving). 0 = eteint.
             PARAM_SPECIFIER int NotImprovingBonus = 1;
+            // Diviseur de la modulation LMR par l'history du coup.
+            //
+            // Le chiffre vient d'une MESURE, pas du raisonnement sur les
+            // bornes -- lequel donne faux. HistMax vaut 4096, donc on
+            // attendrait une amplitude utile de cet ordre ; en realite la
+            // gravite maintient les entrees bien en dessous de leur borne et
+            // les |hist| rencontres au site LMR se comptent en centaines.
+            // Balayage au bench profondeur 13 (noeuds) :
+            //     64 -> 1 750 201   (-33 %)
+            //    128 -> 2 042 554   (-22 %)
+            //    256 -> 2 260 453   (-14 %)
+            //    512 -> 2 574 070   (-1,8 %)
+            //  >=1024 -> 2 621 677   (identique au bench sans modulation)
+            // Au-dela de 1024 la division entiere rend 0 partout : le
+            // mecanisme est purement et simplement eteint. La plage SPSA est
+            // bornee en consequence -- l'ouvrir plus haut ferait explorer au
+            // tuner un demi-espace de no-ops.
+            PARAM_SPECIFIER int HistDivisor = 256;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 2;
