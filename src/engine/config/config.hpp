@@ -125,7 +125,7 @@ namespace engine_constants
         // poids relatif des killers.
         namespace move_ordering
         {
-            PARAM_SPECIFIER int HistMax = 16384;
+            PARAM_SPECIFIER int HistMax = 4096;
             PARAM_SPECIFIER int KillerScore = 8000;
             PARAM_SPECIFIER int CounterScore = 7500;
         }
@@ -284,7 +284,7 @@ namespace engine_constants
         // poids relatif des killers.
         namespace move_ordering
         {
-            PARAM_SPECIFIER int HistMax = 16384;
+            PARAM_SPECIFIER int HistMax = 4096;
             PARAM_SPECIFIER int KillerScore = 8000;
             PARAM_SPECIFIER int CounterScore = 7500;
         }
