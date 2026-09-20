@@ -36,7 +36,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 | v5.0 | 60s+0.2s | 300 | 91.0 / 300 (30.3%) — 37W / 155L / 108D | **-169 ± 29** † |
 | v5.1 | 60s+0.2s | 178 | 58.5 / 178 (32.9%) — 28W / 89L / 61D | **-124 ± 41** |
 | v5.3 | 60s+0.2s | 126 | 52.0 / 126 (41.3%) — 24W / 46L / 56D | **-61 ± 34** ‡ |
-| v5.4 | 60s+0.2s | 644 | 282.5 / 644 (43.9%) — 161W / 240L / 243D | **-42.8 ± 20.0** ‡§ |
+| v5.4 | 60s+0.2s | 982 | 452.5 / 982 (46.1%) — 265W / 342L / 375D | **-27.3 ± 15.8** ‡§ |
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
@@ -55,8 +55,8 @@ recovered two thirds of that gap, and dropping to concurrency 32 most of the
 rest, but a residual bias remains — so **-61 is a lower bound**, and the true
 figure is likely better.
 
-§ The v5.4 run is still in progress (644 of 2000 games) and its residual
-concurrency bias has been measured rather than estimated. Running the same
+§ The v5.4 run was stopped at 982 games, and its residual concurrency bias
+has been measured rather than estimated. Running the same
 fixed-depth benchmark at 1 and at 32 simultaneous instances on the test
 machine: chess26 drops from 432k to 336k nps (**-22.2%**) while Stockfish 8
 goes from 2.217M to 2.342M nps (**+5.6%**, i.e. no degradation at all — its
