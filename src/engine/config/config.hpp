@@ -115,14 +115,14 @@ namespace engine_constants
             // r += 1127 soit ~1.1 ply). Defaut 0 : le mecanisme est ajoute
             // ETEINT, c'est au SPSA de decider s'il vaut mieux que l'IIR --
             // la LMR re-cherche en cas de doute, l'IIR non.
-            PARAM_SPECIFIER int NoTTMoveBonus = 0;
+            PARAM_SPECIFIER int NoTTMoveBonus = 1;
             // Un noeud cut est CENSE couper vite : on attend l'echec des
             // coups tardifs, donc on les sonde moins profond. Stockfish en
             // fait un des termes les plus lourds de r (r += 2 * cutNode).
             PARAM_SPECIFIER int CutNodeBonus = 2;
             // Reduction supplementaire quand la position ne s'ameliore pas
             // (Stockfish : r += !improving). 0 = eteint.
-            PARAM_SPECIFIER int NotImprovingBonus = 0;
+            PARAM_SPECIFIER int NotImprovingBonus = 1;
             // Diviseur de la modulation LMR par l'history du coup.
             //
             // Le chiffre vient d'une MESURE, pas du raisonnement sur les
@@ -140,7 +140,7 @@ namespace engine_constants
             // mecanisme est purement et simplement eteint. La plage SPSA est
             // bornee en consequence -- l'ouvrir plus haut ferait explorer au
             // tuner un demi-espace de no-ops.
-            PARAM_SPECIFIER int HistDivisor = 256;
+            PARAM_SPECIFIER int HistDivisor = 271;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 1;
