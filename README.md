@@ -14,6 +14,10 @@ Chess 26 is a complete UCI chess engine written from scratch in modern C++, comb
 
 It supports the UCI protocol and connects to [lichess.org](https://lichess.org) via [lichess-bot](https://github.com/lichess-bot-devs/lichess-bot) — you can play against it live at **[lichess.org/@/Chess26_BOT](https://lichess.org/@/Chess26_BOT/all)**.
 
+📖 **[Project wiki — emericbraud.github.io](https://emericbraud.github.io)** — write-ups of what
+I learned building this engine: the techniques, the measurements behind them, and what did and
+didn't work.
+
 ## ⚙️ Technologies & Core Concepts
 
 - **Language:** C++23
@@ -22,36 +26,6 @@ It supports the UCI protocol and connects to [lichess.org](https://lichess.org) 
 - **Evaluation:** NNUE (default) with an incrementally-updated accumulator, and a legacy hand-crafted evaluation (HCE) build target
 - **Tuning:** SPSA parameter tuning via OpenBench; Texel tuning for the HCE evaluation
 - **Endgame:** Syzygy tablebase probing via [Fathom](https://github.com/jdart1/Fathom)
-
-## 🔬 Technical Details
-
-### Bitboards & Move Generation
-
-The board is represented with 64-bit bitboards, one per piece type/color. Sliding-piece attacks (bishop/rook/queen) use magic bitboards with a PEXT fast path on supporting CPUs. Move generation produces fully legal moves (castling, en passant, promotions included), filtering pseudo-legal moves by king-safety.
-
-### Search
-
-The search core is alpha-beta (negamax) with iterative deepening, run across multiple threads (`std::thread::hardware_concurrency()` by default). Implemented heuristics include:
-
-- Transposition table
-- Killer moves & history heuristic for move ordering
-- Null-move pruning, late move reductions (LMR), aspiration windows
-- Quiescence search with Static Exchange Evaluation (SEE)
-- Syzygy tablebase probing in the search tree and at the root
-
-### Evaluation: NNUE
-
-The default evaluation is a NNUE network (Full_Threats + HalfKAv2_hm^ feature sets, L1=1024, 8 PSQT/layer-stack buckets), trained externally and quantized (int8/int16) for fast inference. On the engine side, the accumulator is:
-
-- **Incrementally updated** per move (no full recompute), using per-piece feature toggles and a scoped threat-feature diff instead of a full-board rescan
-- **Lazily materialized**: a move's accumulator update is only applied when an evaluation is actually requested, so branches that are cut off by the search (TT hits, pruning, etc.) never pay for it
-- **SIMD-accelerated** (`std::experimental::simd`) with software-prefetching tuned empirically on the incremental-update hot path
-
-A hand-crafted evaluation (material, PST, mobility, pawn structure, king safety, Texel-tuned) is available as an alternative build (`make hce`), primarily kept as a baseline/fallback and for engines/hardware where NNUE inference isn't worth its cost.
-
-### Parameter Tuning
-
-Search and (HCE) evaluation constants are tunable via SPSA, using [OpenBench](https://github.com/AndyGrant/OpenBench) to run distributed self-play matches and optimize parameters empirically rather than by hand — the same methodology used by Stockfish and other top engines.
 
 ## 📊 Playing Strength
 
@@ -118,12 +92,6 @@ Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdo
 - 178 games gives a wide confidence interval (±41 Elo just from sampling)
 
 An actual CCRL-comparable number would require running on CCRL's reference hardware/time control (or submitting the engine to CCRL directly, which accepts community submissions) and a fully optimized reference build for every opponent.
-
-## 🚀 Planned Features
-
-- Further search enhancements (multi-cut, more selective pruning)
-- Improved NNUE architecture/training pipeline
-- Windows support (untested — multithreading primitives are POSIX-oriented)
 
 ## 🛠️ Build & Run
 
