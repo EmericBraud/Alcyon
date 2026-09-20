@@ -56,12 +56,12 @@ namespace engine_constants
             // repris la pente a la place (73 -> 85). La marge du RFP est donc
             // purement proportionnelle a la profondeur.
             PARAM_SPECIFIER int MaxDepth = 6;
-            PARAM_SPECIFIER int MarginDepthFactor = 79;
+            PARAM_SPECIFIER int MarginDepthFactor = 46;
             PARAM_SPECIFIER int MarginConst = -7;
             // Nombre de plys de marge retires quand la position s'ameliore
             // (Stockfish : "depth - improving"). 0 restaure exactement le
             // comportement d'avant improving, donc le SPSA peut l'eteindre.
-            PARAM_SPECIFIER int ImprovingDepthBonus = 1;
+            PARAM_SPECIFIER int ImprovingDepthBonus = 0;
         }
         namespace internal_iterative_reduction
         {
@@ -89,11 +89,11 @@ namespace engine_constants
             // de la futility est elle aussi purement proportionnelle.
             PARAM_SPECIFIER int MaxDepth = 9;
             PARAM_SPECIFIER int MarginConst = -45;
-            PARAM_SPECIFIER int MarginDepthFactor = 97;
+            PARAM_SPECIFIER int MarginDepthFactor = 79;
             // Plys de marge AJOUTES quand la position s'ameliore -- la
             // futility echoue bas, donc improving la freine au lieu de
             // l'accelerer (voir should_futility_pruning). 0 = eteint.
-            PARAM_SPECIFIER int ImprovingDepthBonus = 1;
+            PARAM_SPECIFIER int ImprovingDepthBonus = 0;
         }
         namespace singular
         {
@@ -102,11 +102,11 @@ namespace engine_constants
         namespace null_move_reduction
         {
             PARAM_SPECIFIER int MaxDepth = 4;
-            PARAM_SPECIFIER int MaxMovesConst = 8;
+            PARAM_SPECIFIER int MaxMovesConst = 13;
             PARAM_SPECIFIER int MaxMovesDepthSqFactor = 2;
             // Diviseur du nombre de coups tolere quand la position ne
             // s'ameliore pas (Stockfish divise par 2). 1 = eteint.
-            PARAM_SPECIFIER int NotImprovingDiv = 2;
+            PARAM_SPECIFIER int NotImprovingDiv = 3;
         }
         namespace late_move_reduction
         {
@@ -122,7 +122,7 @@ namespace engine_constants
             PARAM_SPECIFIER int CutNodeBonus = 2;
             // Reduction supplementaire quand la position ne s'ameliore pas
             // (Stockfish : r += !improving). 0 = eteint.
-            PARAM_SPECIFIER int NotImprovingBonus = 1;
+            PARAM_SPECIFIER int NotImprovingBonus = 0;
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 1;
