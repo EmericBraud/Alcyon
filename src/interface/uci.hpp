@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <fstream>
 #include <chrono>
 #include <expected>
 #include <iostream>
@@ -516,6 +517,11 @@ public:
             UCIOption<int>(&engine_constants::search::late_move_reduction::MaxDepthReduction, "lmr_max_depth_reduction"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::NoTTMoveBonus, "lmr_no_tt_move_bonus"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::CutNodeBonus, "lmr_cut_node_bonus", 0, 6),
+            UCIOption<int>(&engine_constants::search::late_move_reduction::NotImprovingBonus, "lmr_not_improving_bonus", 0, 3),
+
+            UCIOption<int>(&engine_constants::search::reverse_futility_pruning::ImprovingDepthBonus, "rfp_improving_d_bonus", 0, 3),
+            UCIOption<int>(&engine_constants::search::futility_pruning::ImprovingDepthBonus, "fp_improving_d_bonus", 0, 3),
+            UCIOption<int>(&engine_constants::search::null_move_reduction::NotImprovingDiv, "nmr_not_improving_div", 1, 4),
 
             UCIOption<int>(&engine_constants::search::move_ordering::HistMax, "hist_max", 256, 65536),
             UCIOption<int>(&engine_constants::search::move_ordering::KillerScore, "killer_score", 0, 65536),

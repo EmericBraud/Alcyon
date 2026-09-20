@@ -11,6 +11,46 @@
 
 namespace search
 {
+    // Evaluation statique du noeud, calculee AU PLUS UNE FOIS par noeud et
+    // memorisee dans la pile de recherche (voir SearchWorker).
+    //
+    // La fenetre passee a prune_eval_relative est ignoree par les deux
+    // builds (NNUE : eval() ne la lit pas ; HCE : lazy_eval_relative ne la
+    // prend meme pas), donc la valeur ne depend que de la position et le
+    // cache est exact. Si une eval paresseuse fenetree revenait un jour, ce
+    // cache deviendrait faux -- d'ou la fenetre infinie explicite ici, qui
+    // documente l'hypothese au lieu de la cacher.
+    template <Color Us>
+    inline int node_static_eval(SearchWorker &worker, int ply)
+    {
+        int &slot = worker.static_eval_stack[ply];
+        if (slot == SearchWorker::kEvalNone)
+            slot = Eval::prune_eval_relative<Us>(worker.get_board(),
+                                                 -engine_constants::eval::Inf,
+                                                 engine_constants::eval::Inf);
+        return slot;
+    }
+
+    // "Notre position s'ameliore-t-elle ?" -- l'eval de ce noeud comparee a
+    // celle de l'ancetre ply-2, qui est le dernier noeud ou c'etait deja
+    // notre trait.
+    //
+    // Renvoie true quand l'information manque (racine, ancetre en echec, ou
+    // ancetre qui n'a jamais eu besoin d'evaluer : le remplissage est
+    // paresseux). C'est la convention de Stockfish, et elle est deliberee --
+    // "improving" est la valeur qui elague le MOINS du cote alpha, donc
+    // l'inconnu ne se paie pas en coups jetes.
+    inline bool is_improving(const SearchWorker &worker, int ply)
+    {
+        if (ply < 2)
+            return true;
+        const int cur = worker.static_eval_stack[ply];
+        const int prev = worker.static_eval_stack[ply - 2];
+        if (cur == SearchWorker::kEvalNone || prev == SearchWorker::kEvalNone)
+            return true;
+        return cur > prev;
+    }
+
     inline bool is_null(const VBoard &board, int ply)
     {
         if (ply == 0)
@@ -19,12 +59,12 @@ namespace search
     }
 
     template <Color Us>
-    inline bool razoring(const VBoard &board, int depth, int alpha, bool is_pv, bool in_check, int ply)
+    inline bool razoring(SearchWorker &worker, int depth, int alpha, bool is_pv, bool in_check, int ply)
     {
         if (in_check || is_pv || depth > engine_constants::search::razoring::MaxDepth || ply == 0)
             return false;
 
-        int static_eval = Eval::prune_eval_relative<Us>(board, alpha - 1, alpha);
+        const int static_eval = node_static_eval<Us>(worker, ply);
         int margin = engine_constants::search::razoring::MarginDepthFactor * depth + engine_constants::search::razoring::MarginConst;
         return static_eval + margin <= alpha;
     }
@@ -42,7 +82,7 @@ namespace search
     }
 
     template <Color Us>
-    inline bool reverse_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, int beta)
+    inline bool reverse_futility_pruning(SearchWorker &worker, int depth, int ply, bool in_check, bool is_pv, int beta, int &return_score)
     {
         namespace rfp = engine_constants::search::reverse_futility_pruning;
         if (depth <= rfp::MaxDepth && !in_check && ply > 0 && !is_pv)
@@ -51,8 +91,25 @@ namespace search
             // Eval::prune_eval_relative). La seconde passe qui existait ici
             // n'avait d'objet que pour rattraper la tete PSQT ; elle
             // disparait avec elle.
-            const int margin = rfp::MarginDepthFactor * depth + rfp::MarginConst;
-            return Eval::prune_eval_relative<Us>(board, beta - 1, beta) - margin >= beta;
+            const int static_eval = node_static_eval<Us>(worker, ply);
+
+            // improving RETIRE de la marge ici. Le RFP echoue haut : il
+            // parie que la position est deja si bonne qu'aucun coup ne la
+            // fera passer sous beta. Si en plus elle s'ameliore depuis deux
+            // plys, le pari est plus sur, donc on exige moins de marge et on
+            // coupe plus souvent. C'est le "depth - improving" de Stockfish.
+            const int improving = is_improving(worker, ply) ? engine_constants::search::reverse_futility_pruning::ImprovingDepthBonus : 0;
+            const int margin = rfp::MarginDepthFactor * (depth - improving) + rfp::MarginConst;
+            if (static_eval - margin >= beta)
+            {
+                // Fail-HARD, comme avant : on rend beta, pas static_eval.
+                // Le fail-soft est une amelioration separee (bornes TT plus
+                // informatives) qui deplace l'arbre a elle seule -- mesure a
+                // +20 % de noeuds a profondeur fixe -- donc elle merite son
+                // propre SPRT et n'a rien a faire dans le lot improving.
+                return_score = beta;
+                return true;
+            }
         }
         return false;
     }
@@ -130,12 +187,18 @@ namespace search
     }
 
     template <Color Us>
-    bool should_futility_pruning(const VBoard &board, int depth, int ply, bool in_check, bool is_pv, bool is_mate_node, int alpha)
+    bool should_futility_pruning(SearchWorker &worker, int depth, int ply, bool in_check, bool is_pv, bool is_mate_node, int alpha)
     {
         if (depth <= engine_constants::search::futility_pruning::MaxDepth && !in_check && !is_pv && ply > 0 && !is_mate_node)
         {
-            int futil_margin = engine_constants::search::futility_pruning::MarginConst + engine_constants::search::futility_pruning::MarginDepthFactor * depth;
-            int static_eval = Eval::prune_eval_relative<Us>(board, alpha - 1, alpha);
+            // improving AJOUTE a la marge ici -- signe oppose au RFP, et ce
+            // n'est pas une incoherence. La futility echoue BAS : elle jette
+            // des coups calmes en pariant qu'aucun ne remontera jusqu'a
+            // alpha. Une position qui s'ameliore rend ce pari moins sur,
+            // donc on exige une marge plus grande et on jette moins.
+            const int improving = is_improving(worker, ply) ? engine_constants::search::futility_pruning::ImprovingDepthBonus : 0;
+            const int futil_margin = engine_constants::search::futility_pruning::MarginConst + engine_constants::search::futility_pruning::MarginDepthFactor * (depth + improving);
+            const int static_eval = node_static_eval<Us>(worker, ply);
 
             if (static_eval + futil_margin <= alpha)
             {
@@ -171,11 +234,17 @@ namespace search
         return false;
     }
 
-    bool should_lmp(bool in_check, int depth, bool is_tactical, int moves_searched)
+    bool should_lmp(bool in_check, int depth, bool is_tactical, int moves_searched, bool improving)
     {
         if (!in_check && depth <= engine_constants::search::null_move_reduction::MaxDepth && !is_tactical)
         {
             int max_moves = engine_constants::search::null_move_reduction::MaxMovesConst + (depth * depth * engine_constants::search::null_move_reduction::MaxMovesDepthSqFactor);
+            // Position qui ne s'ameliore pas : on s'autorise a regarder
+            // moins de coups avant de couper la liste. Stockfish divise par
+            // deux ; le diviseur est tunable, et 1 rend le comportement
+            // d'avant improving.
+            if (!improving)
+                max_moves /= engine_constants::search::null_move_reduction::NotImprovingDiv;
             if (moves_searched >= max_moves)
             {
                 return true;
@@ -212,7 +281,7 @@ namespace search
     }
 
     template <Color Us>
-    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, Move tt_move, int alpha, int &score)
+    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, bool improving, Move tt_move, int alpha, int &score)
     {
         if (depth >= engine_constants::search::late_move_reduction::MinDepth && moves_searched >= engine_constants::search::late_move_reduction::MinMovesSearched && !is_tactical && !in_check && extension == 0)
         {
@@ -220,6 +289,9 @@ namespace search
             if (tt_move == 0)
                 r += engine_constants::search::late_move_reduction::NoTTMoveBonus;
             r += engine_constants::search::late_move_reduction::CutNodeBonus * cut_node;
+            // Position qui ne s'ameliore pas : rien n'indique que ces coups
+            // tardifs meritent leur profondeur, on reduit plus fort.
+            r += engine_constants::search::late_move_reduction::NotImprovingBonus * !improving;
             r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
 
             // Sonde speculative : on ATTEND son echec, donc on declare
@@ -285,6 +357,11 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (ply >= engine_constants::search::MaxDepth)
         return Eval::lazy_eval_relative<Us>(board);
 
+    // Ce ply est reutilise par toutes les branches deja explorees a cette
+    // profondeur : l'eval memorisee appartient a une AUTRE position. On
+    // invalide avant le premier mecanisme qui pourrait la lire.
+    static_eval_stack[ply] = kEvalNone;
+
     const bool is_pv = (beta - alpha > 1);
     // Classification de Knuth-Moore. Un noeud all doit epuiser tous ses coups
     // pour PROUVER qu'aucun ne passe : lui retirer de la profondeur affaiblit
@@ -295,7 +372,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const bool in_check = board.is_king_attacked<Us>();
     const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
 
-    if (search::razoring<Us>(board, depth, alpha, is_pv, in_check, ply))
+    if (search::razoring<Us>(*this, depth, alpha, is_pv, in_check, ply))
         return qsearch<Us>(alpha, beta, ply);
 
     Move tt_move = 0;
@@ -311,8 +388,14 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (search::should_qsearch(depth, ply, in_check))
         return qsearch<Us>(alpha, beta, ply);
 
-    if (search::reverse_futility_pruning<Us>(board, depth, ply, in_check, is_pv, beta))
-        return beta;
+    {
+        // Fail-hard conserve : le helper rend beta (voir son commentaire).
+        // Le score passe par une sortie pour laisser la place au fail-soft,
+        // qui fera l'objet d'un SPRT separe.
+        int rfp_score;
+        if (search::reverse_futility_pruning<Us>(*this, depth, ply, in_check, is_pv, beta, rfp_score))
+            return rfp_score;
+    }
 
     // =============================== Search ===============================
 
@@ -327,7 +410,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // reduit ensuite ce qui reste a explorer.
     search::internal_iterative_reduction(tt_move, all_node, depth);
 
-    const bool futil_pruning = search::should_futility_pruning<Us>(board, depth, ply, in_check, is_pv, is_mate_node, alpha);
+    const bool futil_pruning = search::should_futility_pruning<Us>(*this, depth, ply, in_check, is_pv, is_mate_node, alpha);
+
+    // Calcule APRES razoring/RFP/futility, qui sont les mecanismes capables
+    // de remplir static_eval_stack[ply] : le lire avant reviendrait a lire
+    // kEvalNone et a retomber systematiquement sur le defaut "true".
+    const bool improving = search::is_improving(*this, ply);
 
     const auto *history = board.get_history();
     const Move prev_m = ply > 0 ? history->back().move : 0;
@@ -359,7 +447,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         int score;
         const bool is_tactical = list.current_is_tactical;
-        if (search::should_lmp(in_check, depth, is_tactical, moves_searched))
+        if (search::should_lmp(in_check, depth, is_tactical, moves_searched, improving))
             continue;
 
         if (futil_pruning && moves_searched >= 1 && !is_tactical)
@@ -386,7 +474,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (ply + new_depth >= engine_constants::search::MaxDepth)
             new_depth = engine_constants::search::MaxDepth - ply;
 
-        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, tt_move, alpha, score))
+        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, improving, tt_move, alpha, score))
         {
             if (moves_searched > 1) // Null Window Search pour PVS
             {

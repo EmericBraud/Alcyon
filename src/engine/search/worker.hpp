@@ -103,6 +103,26 @@ struct SearchWorker
     int continuation_hist_2[2][7][64][64]; // [side][piece][from][to] for 2-ply continuation
     std::array<Move, engine_constants::search::MaxDepth> move_stack;
 
+    // Pile de recherche : une evaluation statique par ply.
+    //
+    // Deux roles, et le second est celui qui justifie la structure :
+    //  1. CACHE. Razoring, RFP et futility appelaient chacun
+    //     Eval::prune_eval_relative sur la MEME position -- soit jusqu'a
+    //     trois passes reseau identiques par noeud, puisque eval() ignore
+    //     la fenetre alpha/beta qu'on lui passe (voir
+    //     nnue/pos_eval.cpp : elle ne sert plus depuis la suppression de
+    //     l'eval paresseuse). Le remplissage est PARESSEUX : un noeud qui
+    //     n'evaluait pas n'evalue toujours pas, donc l'operation ne peut
+    //     qu'enlever des evals, jamais en ajouter.
+    //  2. improving. Comparer l'eval de ce noeud a celle de l'ancetre
+    //     ply-2 (meme camp au trait) dit si notre position s'ameliore.
+    //     Impossible sans garder les evals des ancetres.
+    //
+    // kEvalNone marque "pas encore calculee" : hors de portee d'un score
+    // reel, tous bornes par eval::Inf.
+    static constexpr int kEvalNone = 1 << 30;
+    int static_eval_stack[engine_constants::search::MaxDepth + 8];
+
     // Métriques locales
     long long local_nodes = 0;
     int thread_id;
@@ -167,6 +187,8 @@ struct SearchWorker
         std::memset(counter_moves, 0, sizeof(counter_moves));
         std::memset(continuation_hist_1, 0, sizeof(continuation_hist_1));
         std::memset(continuation_hist_2, 0, sizeof(continuation_hist_2));
+        for (int i = 0; i < engine_constants::search::MaxDepth + 8; ++i)
+            static_eval_stack[i] = kEvalNone;
     }
 
     // Gravite : l'entree est attiree vers 0 proportionnellement a sa valeur,
