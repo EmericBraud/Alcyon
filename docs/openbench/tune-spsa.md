@@ -103,7 +103,7 @@ mille ailleurs. **Le wiki donne la valeur de reference : `r_end = 0.002`.**
 | `a_ratio` | 0.1 | ne pas toucher |
 | `pairs_per` | 8 | bon compromis |
 | `reporting` | BATCHED | |
-| `distribution` | SINGLE | superieur a MULTIPLE (moins de coeurs oisifs) |
+| `distribution` | **MULTIPLE** sur machine unique | voir la section dediee ; SINGLE n'a de sens qu'avec une flotte |
 | `iterations` | voir ci-dessous | parties = `iterations * pairs_per * 2` |
 
 `c_end` : environ **1/20e de la plage raisonnable**.
@@ -117,6 +117,65 @@ plages.
 **`c_value` et `a_value` sont figes a la creation.** Changer `iterations` ou
 `pairs_per` impose de recreer le tune. En revanche `min_value`, `max_value` et
 `scale_nps` sont modifiables a chaud.
+
+## Ne jamais faire partir un parametre sur une borne
+
+La mise a jour du serveur est :
+
+```python
+param.value = max(param.min_value, min(param.max_value, param.value + delta))
+```
+
+Sur une borne, les deltas qui pointent vers l'exterieur sont ecrases et ceux
+qui pointent vers l'interieur sont conserves. **Sous bruit pur, sans aucun
+gradient reel, l'esperance de la valeur derive donc vers l'interieur.** Un
+parametre parti de 0 et fini a 0.4 ne prouve rien : c'est peut-etre la seule
+trace du mur.
+
+S'ajoute une perte de sensibilite. A `value == min`, la perturbation `-c` est
+ramenee a la borne, donc les deux camps jouent `min` contre `min + c` : la
+separation effective est `c` et non `2c`, alors que le pas applique reste
+calibre pour `2c`.
+
+Le signe, lui, reste correct : le delta ne depend que du `flip`, pas des
+valeurs reellement jouees, et le flip encode bien quel camp portait la valeur
+haute.
+
+Donc faire partir chaque parametre **strictement a l'interieur** de sa plage.
+Un atterrissage sur une borne devient alors un signal -- le parametre a du
+parcourir la distance -- au lieu d'un artefact.
+
+## Distribution : SINGLE ou MULTIPLE ?
+
+Le wiki recommande SINGLE. **Cette recommandation suppose une flotte de
+machines** : chaque machine tire son propre workload, donc N machines = N
+points SPSA evalues en parallele.
+
+Sur **une seule machine**, SINGLE donne un point a la fois, et la taille du
+workload croissant avec la concurrency, ce point est evalue par des milliers
+de parties au lieu des `2 * pairs_per` prevues. Mesure sur un tune a
+concurrency 164 : **6 workloads pour 17 448 parties**, soit six directions de
+gradient echantillonnees. Le compteur d'iterations du serveur, lui, avance
+aux parties :
+
+```python
+iteration = 1 + games / (pairs_per * 2)
+```
+
+Il croyait donc etre a l'iteration 1024 sur 2000 et avait fait decroitre `c`
+et `r` en consequence : le pas s'eteint pendant que l'exploration n'a pas eu
+lieu.
+
+En MULTIPLE, `permutations = runner_count` et chaque runner recoit son propre
+point. Le client lance alors une copie du match runner par point, a
+concurrency 2 : a concurrency 160, **80 points distincts en vol**. C'est le
+bon reglage pour une machine unique.
+
+Verification apres lancement :
+
+```sh
+grep -c "Workload \[" ~/worker.log     # doit croitre regulierement
+```
 
 ## Parametres empoisonnes
 
