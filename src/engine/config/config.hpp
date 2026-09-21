@@ -124,11 +124,11 @@ namespace engine_constants
             // (Stockfish : r += !improving). 0 = eteint.
             PARAM_SPECIFIER int NotImprovingBonus = 0;
             PARAM_SPECIFIER int MinDepth = 3;
-            PARAM_SPECIFIER int MinMovesSearched = 5;
+            PARAM_SPECIFIER int MinMovesSearched = 6;
             PARAM_SPECIFIER int MaxDepthReduction = 1;
 
-            PARAM_SPECIFIER double TableInitConst = 0.63065940599962;
-            PARAM_SPECIFIER double TableInitDiv = 2.301959991800665;
+            PARAM_SPECIFIER double TableInitConst = 0.64;
+            PARAM_SPECIFIER double TableInitDiv = 2.22;
         }
 
         // Echelle de l'ordonnancement des coups calmes. HistMax est a la fois
