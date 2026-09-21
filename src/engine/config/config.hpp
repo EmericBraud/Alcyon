@@ -81,7 +81,7 @@ namespace engine_constants
         {
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int RConst = 4;
-            PARAM_SPECIFIER int RDiv = 3;
+            PARAM_SPECIFIER int RDiv = 4;
         }
         namespace futility_pruning
         {
