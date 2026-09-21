@@ -31,19 +31,25 @@ didn't work.
 Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 `UHO_4060_v2` opening book, [fastchess](https://github.com/Disservin/fastchess)):
 
-| Version | Time control | Games | Chess26 score | Elo (vs SF8) |
-|---|---|---|---|---|
-| v5.0 | 60s+0.2s | 300 | 30.3% | **-169 ± 29** |
-| v5.1 | 60s+0.2s | 178 | 32.9% | **-124 ± 41** |
-| v5.3 | 60s+0.2s | 126 | 41.3% | **-61 ± 34** |
-| v5.4 | 60s+0.2s | 982 | 46.1% | **-27.3 ± 15.8** |
-| v5.5 | 60s+0.2s | 1224 | 49.6% | **-2.6 ± 13.9** |
+| Version | Time control | Games | Chess26 score | Elo (vs SF8) | Estimated CCRL * |
+|---|---|---|---|---|---|
+| v5.0 | 60s+0.2s | 300 | 30.3% | **-169 ± 29** | ~3190 |
+| v5.1 | 60s+0.2s | 178 | 32.9% | **-124 ± 41** | ~3235 |
+| v5.3 | 60s+0.2s | 126 | 41.3% | **-61 ± 34** | ~3298 |
+| v5.4 | 60s+0.2s | 982 | 46.1% | **-27.3 ± 15.8** | ~3332 |
+| v5.5 | 60s+0.2s | 1224 | 49.6% | **-2.6 ± 13.9** | **~3356** |
 
-v5.5 plays **on par with Stockfish 8** at this time control. Two caveats worth
-stating up front: the reference Stockfish 8 is built `ARCH=general-64`, without
-popcnt or prefetch, which understates it; and the matches run at concurrency 32,
-which costs chess26 more speed than Stockfish (a 111 MB network against a
-few-kilobyte evaluation), so the figure is if anything pessimistic.
+v5.5 plays **on par with Stockfish 8** at this time control.
+
+\* The CCRL column offsets Stockfish 8's
+[CCRL 40/15](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html) rating of
+~3359 by the measured gap. It is **not a CCRL rating**: CCRL runs a longer time
+control on different hardware, and the number inherits every caveat of the match
+it comes from. Two of those caveats both point the same way — the reference
+Stockfish 8 is built `ARCH=general-64`, without popcnt or prefetch, and the
+matches run at concurrency 32, which costs chess26 more speed than Stockfish (a
+111 MB network against a few-kilobyte evaluation). So if anything these figures
+understate the engine.
 
 **[docs/strength-measurements.md](docs/strength-measurements.md)** records every
 match in full — what each version changed, the self-play SPRTs behind it, and the
