@@ -31,15 +31,21 @@ didn't work.
 Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 `UHO_4060_v2` opening book, [fastchess](https://github.com/Disservin/fastchess)):
 
-| Version | Time control | Games | Chess26 score | Elo (vs SF8) | Estimated CCRL * |
+| Version | Time control | Games | LOS (vs SF8) † | Elo (vs SF8) | Estimated CCRL * |
 |---|---|---|---|---|---|
-| v5.0 | 60s+0.2s | 300 | 30.3% | **-169 ± 29** | ~3190 |
-| v5.1 | 60s+0.2s | 178 | 32.9% | **-124 ± 41** | ~3235 |
-| v5.3 | 60s+0.2s | 126 | 41.3% | **-61 ± 34** | ~3298 |
-| v5.4 | 60s+0.2s | 982 | 46.1% | **-27.3 ± 15.8** | ~3332 |
-| v5.5 | 60s+0.2s | 1224 | 49.6% | **-2.6 ± 13.9** | **~3356** |
+| v5.0 | 60s+0.2s | 300 | <0.01% | **-169 ± 29** | ~3190 |
+| v5.1 | 60s+0.2s | 178 | <0.01% | **-124 ± 41** | ~3235 |
+| v5.3 | 60s+0.2s | 126 | 3.2% | **-61 ± 34** | ~3298 |
+| v5.4 | 60s+0.2s | 982 | 1.4% | **-27.3 ± 15.8** | ~3332 |
+| v5.5 | 60s+0.2s | 1224 | **41.1%** | **-2.6 ± 13.9** | **~3356** |
 
 v5.5 plays **on par with Stockfish 8** at this time control.
+
+† LOS — likelihood of superiority — is the probability that chess26 is the
+stronger engine, from the decisive games only: `Φ((W−L)/√(2(W+L)))`. It answers
+"could this gap be luck?" where the Elo column answers "how big is it?". At 41%
+v5.5 is statistically indistinguishable from Stockfish 8; below 5% the gap is
+real.
 
 \* The CCRL column offsets Stockfish 8's
 [CCRL 40/15](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html) rating of
