@@ -366,6 +366,12 @@ private:
 
     void start_workers()
     {
+        // Reconstruite a chaque recherche, pas seulement au demarrage : sinon
+        // TableInitConst et TableInitDiv sont morts des qu'on les change par
+        // setoption, et un SPSA les explorerait sans aucun effet (verifie :
+        // init_div 230 ou 400 donnaient le meme bench au noeud pres).
+        // 4096 paires de log par recherche, soit ~0.2 ms : negligeable.
+        init_lmr_table();
 
         const int num_threads = num_threads_config;
         Move best_move;
