@@ -2,7 +2,7 @@
 
 High-Performance Chess Engine in C++
 
-![Version](https://img.shields.io/badge/version-v5.4-blue)
+![Version](https://img.shields.io/badge/version-v5.5-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Language](https://img.shields.io/badge/language-C%2B%2B23-blue)
 
@@ -37,6 +37,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 | v5.1 | 60s+0.2s | 178 | 58.5 / 178 (32.9%) — 28W / 89L / 61D | **-124 ± 41** |
 | v5.3 | 60s+0.2s | 126 | 52.0 / 126 (41.3%) — 24W / 46L / 56D | **-61 ± 34** ‡ |
 | v5.4 | 60s+0.2s | 982 | 452.5 / 982 (46.1%) — 265W / 342L / 375D | **-27.3 ± 15.8** ‡§ |
+| v5.5 | 60s+0.2s | 1224 | 607.5 / 1224 (49.6%) — 394W / 403L / 427D | **-2.6 ± 13.9** ‡§ |
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
@@ -55,8 +56,8 @@ recovered two thirds of that gap, and dropping to concurrency 32 most of the
 rest, but a residual bias remains — so **-61 is a lower bound**, and the true
 figure is likely better.
 
-§ The v5.4 run was stopped at 982 games, and its residual concurrency bias
-has been measured rather than estimated. Running the same
+§ The v5.4 and v5.5 runs were stopped at 982 and 1224 games, and their
+residual concurrency bias has been measured rather than estimated. Running the same
 fixed-depth benchmark at 1 and at 32 simultaneous instances on the test
 machine: chess26 drops from 432k to 336k nps (**-22.2%**) while Stockfish 8
 goes from 2.217M to 2.342M nps (**+5.6%**, i.e. no degradation at all — its
@@ -75,6 +76,35 @@ them, but not strictly the same control as the rows above.
 v5.2 has no row here: it was only measured at 10s+0.1s (-52.5 ± 22.8 over
 520 games), a different time control. v5.3 beat it by **+18.0 ± 7.7** over
 3090 games at that control (SPRT passed, LLR 3.31).
+
+v5.5 changes nothing in the search: it is the same engine as v5.4 with a
+retrained network. The original net had only ever been trained on Stockfish's
+static evaluation, never on game results, and its training had stopped at
+epoch 15 with the learning rate still at 88% of its initial value — so the
+weights had never been annealed either. Retraining addressed both, in two
+phases from the original checkpoint: nine epochs on a blended objective
+(`pt = eval_winrate * λ + game_result * (1-λ)`, λ = 0.6 constant), then four
+epochs of annealing at lr 1e-4 with gamma 0.75.
+
+Measured in self-play at 10s+0.1s, the result is **+19.0 ± 6.7** over the old
+network (4386 games, SPRT passed, LLR 2.98) — and against Stockfish 8 it moves
+the row from -27.3 to -2.6, essentially parity.
+
+The decomposition is the interesting part, and it is a warning. An
+intermediate network was kept after the WDL phase but before annealing, and
+measured separately: annealing alone is worth **+41.0 ± 16.1**, which by
+difference puts the WDL phase at **-21.9 ± 17.5**. Training on game results at
+λ = 0.6 *degraded* the network; annealing recovered that and more. Three
+observations pointed the same way without being connected at the time: the
+validation loss oscillated instead of descending during the WDL phase, the
+WDL-only network searched *more* nodes than its parent (20110 vs 18584, i.e.
+less decisive evaluations), and λ = 0.6 sits at the aggressive end of the
+usual 0.5-0.7 range. Annealing, by contrast, cut the epoch-to-epoch
+oscillation of the validation loss by a factor of fifteen — the network
+settles instead of vibrating.
+
+The obvious follow-up, untested: annealing the *original* network with no WDL
+at all should be worth around +40 rather than +19.
 
 v5.4 has no Stockfish 8 row yet either. It adds a per-ply search stack, which
 does two things: it caches the static evaluation so razoring, reverse futility
@@ -116,11 +146,11 @@ analytical calibration that preceded it: both margin constants were driven to
 or below zero and the depth slopes picked the work up instead, leaving both
 margins purely proportional to depth.
 
-Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3235 Elo** for Chess26 (v5.1) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
+Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3356 Elo** for Chess26 (v5.5) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
 
 - CCRL's list runs at a longer time control (40 moves/15 min) and typically multi-core, vs. our single-threaded 60+0.2 test
 - The reference Stockfish 8 is built from source at tag `sf_8` with `ARCH=general-64`, so it has neither `popcnt` nor prefetch — likely *understating* its actual strength, so the true gap is probably larger
-- 178 games gives a wide confidence interval (±41 Elo just from sampling)
+- 1224 games still leaves a wide confidence interval (±13.9 Elo from sampling alone)
 
 An actual CCRL-comparable number would require running on CCRL's reference hardware/time control (or submitting the engine to CCRL directly, which accepts community submissions) and a fully optimized reference build for every opponent.
 
