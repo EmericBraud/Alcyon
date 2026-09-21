@@ -79,9 +79,9 @@ namespace engine_constants
         }
         namespace null_move_pruning
         {
-            PARAM_SPECIFIER int MinDepth = 2;
+            PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int RConst = 4;
-            PARAM_SPECIFIER int RDiv = 4;
+            PARAM_SPECIFIER int RDiv = 3;
         }
         namespace futility_pruning
         {
