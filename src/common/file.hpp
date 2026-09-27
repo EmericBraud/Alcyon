@@ -35,7 +35,7 @@ namespace file
 
     inline std::filesystem::path get_data_dir()
     {
-        if (const char *override_dir = std::getenv("CHESS26_DATA_DIR"))
+        if (const char *override_dir = std::getenv("ALCYON_DATA_DIR"))
         {
             if (*override_dir != '\0')
                 return std::filesystem::path{override_dir};

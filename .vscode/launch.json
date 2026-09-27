@@ -5,7 +5,7 @@
       "name": "GDB Debug (C++20 & Makefile)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/chess26",
+      "program": "${workspaceFolder}/build/alcyon",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",

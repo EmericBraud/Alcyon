@@ -389,7 +389,7 @@ def main():
         score = score.to(device).squeeze(-1)
         result = result.to(device).squeeze(-1)
         piece_count = piece_count.to(device)
-        # nnue_score is a precomputed constant from the loader (chess26's
+        # nnue_score is a precomputed constant from the loader (Alcyon's
         # own NNUE, evaluated once per position) -- never has requires_grad,
         # so no explicit .detach() is needed for it to act as a frozen
         # additive term in the model (see model.py's forward()).

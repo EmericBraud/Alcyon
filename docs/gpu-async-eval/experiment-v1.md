@@ -154,7 +154,7 @@ ci-dessous.**
   initiale)
 - Taux de victoire du CNN vs NNUE **brute (non calibrée)** : 88.5%
   (208/235) — chiffre trompeur, voir ci-dessous.
-- **La NNUE de chess26 s'est révélée, elle aussi, non calibrée** : ses
+- **La NNUE d'Alcyon s'est révélée, elle aussi, non calibrée** : ses
   sorties brutes sont ~3,4× plus grandes que l'eval statique Stockfish
   (ex: NNUE=901 vs Stockfish=263). Une fois recalibrée par la même
   méthode (moindres carrés cross-validés sur WAC), son MAE s'effondre

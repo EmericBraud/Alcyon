@@ -32,7 +32,7 @@ struct PlaneBatchCView {
 // physically cutting the binpack file.
 //
 // nnue_path: path to the .nnue weight file used to compute nnue_score
-// per position (see plane_batch.h's PlaneBatch::nnue_score) — chess26's
+// per position (see plane_batch.h's PlaneBatch::nnue_score) — Alcyon's
 // own NNUE, evaluated once per position, non-incrementally.
 //
 // rank/world_size: shards the binpack across multiple processes for

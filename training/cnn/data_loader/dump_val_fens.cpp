@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
 
     auto predicate = [val_percent](const binpack::TrainingDataEntry& e) {
         const bool in_validation_split =
-            (chess26::cnn::hash_position(e.pos) % 100) < static_cast<std::uint64_t>(val_percent);
+            (alcyon::cnn::hash_position(e.pos) % 100) < static_cast<std::uint64_t>(val_percent);
         return !in_validation_split;  // skip unless it's in the validation split
     };
 

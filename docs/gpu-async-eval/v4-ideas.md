@@ -9,7 +9,7 @@ suivante, avec leur statut de décision.
 
 ## Contexte : pourquoi la NNUE reste devant
 
-La NNUE de chess26 n'est pas "petite" malgré l'inférence rapide :
+La NNUE d'Alcyon n'est pas "petite" malgré l'inférence rapide :
 sa table de features (`HalfKAv2_hm`, 22 528 features → 1024 neurones)
 pèse à elle seule ~23M de paramètres, plus ~0,5M pour les 8 buckets
 de layer-stack et de PSQT — soit **~23,5M au total, contre ~6,9M**

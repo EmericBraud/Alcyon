@@ -1,6 +1,8 @@
-# ♟️ Chess 26
+# ♟️ Alcyon
 
 High-Performance Chess Engine in C++
+
+<sub>Formerly known as Chess26.</sub>
 
 ![Version](https://img.shields.io/badge/version-v5.5-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -10,7 +12,7 @@ High-Performance Chess Engine in C++
 
 ## 💡 Project Overview
 
-Chess 26 is a complete UCI chess engine written from scratch in modern C++, combining a **NNUE neural network evaluation** with a classical alpha-beta search. Beyond gameplay, this project is a technical showcase of low-level C++ performance work: cache-friendly data layout, SIMD, lazy incremental evaluation, and empirical (SPSA) parameter tuning via [OpenBench](https://github.com/AndyGrant/OpenBench).
+Alcyon is a complete UCI chess engine written from scratch in modern C++, combining a **NNUE neural network evaluation** with a classical alpha-beta search. Beyond gameplay, this project is a technical showcase of low-level C++ performance work: cache-friendly data layout, SIMD, lazy incremental evaluation, and empirical (SPSA) parameter tuning via [OpenBench](https://github.com/AndyGrant/OpenBench).
 
 It supports the UCI protocol and connects to [lichess.org](https://lichess.org) via [lichess-bot](https://github.com/lichess-bot-devs/lichess-bot) — you can play against it live at **[lichess.org/@/Chess26_BOT](https://lichess.org/@/Chess26_BOT/all)**.
 
@@ -41,7 +43,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 
 v5.5 plays **on par with Stockfish 8** at this time control.
 
-† LOS — likelihood of superiority — is the probability that chess26 is the
+† LOS — likelihood of superiority — is the probability that Alcyon is the
 stronger engine, from the decisive games only: `Φ((W−L)/√(2(W+L)))`. It answers
 "could this gap be luck?" where the Elo column answers "how big is it?". At 41%
 v5.5 is statistically indistinguishable from Stockfish 8; below 5% the gap is
@@ -53,7 +55,7 @@ real.
 control on different hardware, and the number inherits every caveat of the match
 it comes from. Two of those caveats both point the same way — the reference
 Stockfish 8 is built `ARCH=general-64`, without popcnt or prefetch, and the
-matches run at concurrency 32, which costs chess26 more speed than Stockfish (a
+matches run at concurrency 32, which costs Alcyon more speed than Stockfish (a
 111 MB network against a few-kilobyte evaluation). So if anything these figures
 understate the engine.
 
@@ -74,7 +76,7 @@ results lost 22 Elo, and annealing its weights won back 41.
 ```bash
 git clone https://github.com/EmericBraud/chess26.git
 cd chess26
-make        # builds ./chess26 (NNUE + SPSA tuning enabled by default)
+make        # builds ./alcyon (NNUE + SPSA tuning enabled by default)
 ```
 
 Other Makefile targets:
@@ -89,7 +91,7 @@ make test-hce   # build HCE + run the unit test suite
 Run the engine (UCI protocol):
 
 ```bash
-./chess26
+./alcyon
 ```
 
 ### Running Tests

@@ -7,7 +7,7 @@
 #include "core/move/generator/move_generator.hpp"
 #include "engine/eval/nnue/nnue_eval.hpp"
 
-namespace chess26::cnn {
+namespace alcyon::cnn {
 
 namespace {
 
@@ -45,4 +45,4 @@ std::int32_t compute_nnue_score(const std::string& fen, const std::string& nnue_
     return cached_eval->evaluate_abs(board);
 }
 
-}  // namespace chess26::cnn
+}  // namespace alcyon::cnn

@@ -15,14 +15,14 @@ La liste des options SPSA est **maintenue a la main** dans
 n'y figure pas est intunable, silencieusement.
 
 ```sh
-printf 'uci\nquit\n' | ./chess26 | grep "option name <nom>"
+printf 'uci\nquit\n' | ./alcyon | grep "option name <nom>"
 ```
 
 Verifier aussi qu'il n'est pas **mort** : changer sa valeur doit changer
 l'arbre.
 
 ```sh
-printf 'setoption name <nom> value <autre>\nbench\nquit\n' | ./chess26 | tail -1
+printf 'setoption name <nom> value <autre>\nbench\nquit\n' | ./alcyon | tail -1
 ```
 
 Si le compte de noeuds ne bouge pas, le parametre n'est pas lu sur le chemin
@@ -216,7 +216,7 @@ r = s.get(S + "/tune/new/", timeout=15)
 tok = s.cookies.get("csrftoken") or re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', r.text).group(1)
 form = {
     "csrfmiddlewaretoken": tok,
-    "dev_engine": "Chess26", "dev_repo": "https://github.com/EmericBraud/chess26",
+    "dev_engine": "Alcyon", "dev_repo": "https://github.com/EmericBraud/chess26",
     "dev_branch": "<SHA complet, pousse sur GitHub>", "dev_bench": "<bench exact>",
     "dev_options": "Threads=1 Hash=8", "dev_network": "",
     "dev_time_control": "10.0+0.10", "book_name": "UHO_4060_v2.epd",

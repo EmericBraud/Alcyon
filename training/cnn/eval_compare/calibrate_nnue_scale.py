@@ -1,4 +1,4 @@
-"""Calibrates chess26's own raw NNUE score into a logit, for v5's
+"""Calibrates Alcyon's own raw NNUE score into a logit, for v5's
 residual-correction training (see model.py,
 docs/gpu-async-eval/v5-hybrid-nnue-cnn.md).
 

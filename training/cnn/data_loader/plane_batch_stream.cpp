@@ -5,7 +5,7 @@
 
 #include "plane_batch.h"
 
-namespace chess26::cnn {
+namespace alcyon::cnn {
 
 namespace {
 
@@ -123,4 +123,4 @@ PlaneBatch* PlaneBatchStream::next() {
     return nullptr;  // m_stop or m_exhausted with an empty queue
 }
 
-}  // namespace chess26::cnn
+}  // namespace alcyon::cnn

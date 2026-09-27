@@ -21,7 +21,7 @@ process moteur, séquentiel.
 
 Usage:
   tools/make_openings.py --count 5000 --out data/openings.epd \\
-      --engine build_metal/chess26
+      --engine build_metal/alcyon
 """
 
 import argparse

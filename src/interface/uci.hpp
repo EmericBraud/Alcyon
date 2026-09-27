@@ -20,7 +20,7 @@
 #include "engine/engine_manager.hpp"
 #include "engine/config/config.hpp"
 
-#ifdef CHESS26_HAS_GUI
+#ifdef ALCYON_HAS_GUI
 #include "interface/gui.hpp"
 #endif
 #ifdef SPSA_TUNING
@@ -554,7 +554,7 @@ public:
             {
                 int default_threads = std::thread::hardware_concurrency();
 
-                logs::uci << "id name Chess26" << std::endl;
+                logs::uci << "id name Alcyon" << std::endl;
                 logs::uci << "id author Emeric" << std::endl;
                 logs::uci << "option name Threads type spin default " << default_threads << " min 1 max " << std::thread::hardware_concurrency() << std::endl;
                 logs::uci << "option name Hash type spin default 512 min 1 max 2048" << std::endl;
@@ -622,7 +622,7 @@ public:
                 if (!search::order_stats_enabled())
                 {
                     logs::uci << "info string orderstats unavailable: rebuild with "
-                                 "-DENABLE_SEARCH_EXPERIMENTS=ON and set CHESS26_ORDER_STATS=1"
+                                 "-DENABLE_SEARCH_EXPERIMENTS=ON and set ALCYON_ORDER_STATS=1"
                               << std::endl;
                     continue;
                 }
@@ -646,7 +646,7 @@ public:
             {
                 break;
             }
-#ifdef CHESS26_HAS_GUI
+#ifdef ALCYON_HAS_GUI
             else if (token == "gui")
             {
                 GUI g{b};

@@ -1,12 +1,12 @@
 # Obligatoire pour OpenBench
-EXE := chess26
+EXE := alcyon
 
 NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
 all:
 	cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_GUI=OFF -DENABLE_SPSA_TUNING=ON
 	cmake --build build -j$(NPROC)
-	cp build/chess26 ./$(EXE)
+	cp build/alcyon ./$(EXE)
 	cp -R build/data ./data
 
 # Compile avec l'évaluation NNUE (defaut)

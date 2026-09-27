@@ -14,7 +14,7 @@
 
 class EngineManager;
 
-// Diagnostic (CHESS26_TT_NO_CUTOFF=1) : la TT ne fournit plus que des COUPS,
+// Diagnostic (ALCYON_TT_NO_CUTOFF=1) : la TT ne fournit plus que des COUPS,
 // plus aucune coupure de score -- ni dans negamax ni dans qsearch. Sert a
 // borner le gain maximal qu'un ordonnancement parfait pourrait rapporter : on
 // compare le nombre de noeuds d'une recherche a TT vide a celui d'une
@@ -23,7 +23,7 @@ class EngineManager;
 // qui surestimerait massivement l'apport de l'ordonnancement.
 namespace search
 {
-    // Diagnostic (CHESS26_ORDER_STATS=1, affiche par la commande UCI
+    // Diagnostic (ALCYON_ORDER_STATS=1, affiche par la commande UCI
     // "orderstats") : a quel RANG se trouve le coup qui provoque un
     // fail-high, et est-il tactique ou calme ?
     //
@@ -38,17 +38,17 @@ namespace search
     inline std::atomic<long long> cutoff_tactical[kCutoffBuckets] = {};
     inline std::atomic<long long> cutoff_quiet[kCutoffBuckets] = {};
 
-    // CHESS26_SEARCH_EXPERIMENTS (option CMake, off par defaut) : ces deux
+    // ALCYON_SEARCH_EXPERIMENTS (option CMake, off par defaut) : ces deux
     // interrupteurs n'existent que pour les mesures ci-dessus et pour
     // l'experience d'oracle d'ordonnancement. Ils etaient lus par
     // getenv une fois, mais la fonction restait un appel avec son garde
     // d'initialisation de static local -- teste a CHAQUE noeud pour
     // tt_cutoffs_enabled(). Hors build d'experimentation ils deviennent des
     // constantes, donc les conditions qui les portent disparaissent.
-#ifdef CHESS26_SEARCH_EXPERIMENTS
+#ifdef ALCYON_SEARCH_EXPERIMENTS
     inline bool order_stats_enabled()
     {
-        static const bool on = std::getenv("CHESS26_ORDER_STATS") != nullptr;
+        static const bool on = std::getenv("ALCYON_ORDER_STATS") != nullptr;
         return on;
     }
 #else
@@ -69,10 +69,10 @@ namespace search
         (is_tactical ? cutoff_tactical : cutoff_quiet)[b].fetch_add(1, std::memory_order_relaxed);
     }
 
-#ifdef CHESS26_SEARCH_EXPERIMENTS
+#ifdef ALCYON_SEARCH_EXPERIMENTS
     inline bool tt_cutoffs_enabled()
     {
-        static const bool on = std::getenv("CHESS26_TT_NO_CUTOFF") == nullptr;
+        static const bool on = std::getenv("ALCYON_TT_NO_CUTOFF") == nullptr;
         return on;
     }
 #else

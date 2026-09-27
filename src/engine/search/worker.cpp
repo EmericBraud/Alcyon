@@ -135,7 +135,7 @@ std::string SearchWorker::get_pv_line_with_root(Move root_move, int depth)
 
     pv_line += " ";
     board.play(root_move);
-    auto guard = CHESS26_SCOPE_EXIT([&]()
+    auto guard = ALCYON_SCOPE_EXIT([&]()
                                     { board.unplay(root_move); });
 
     std::vector<Move> moves_to_unplay;

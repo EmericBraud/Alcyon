@@ -3,7 +3,7 @@
 Value-only network (no policy head — move search stays in the C++
 alpha-beta engine). Predicts a correction on top of a precomputed,
 frozen NNUE score: `logit_final = trunk_logits + nnue_logit`, where
-`nnue_logit` is supplied by the data loader (chess26's own NNUE,
+`nnue_logit` is supplied by the data loader (Alcyon's own NNUE,
 evaluated once per position, treated as a non-trainable constant —
 no gradient flows into it). Trained against the same lambda-blended
 target of the Stockfish search score and the actual game result as

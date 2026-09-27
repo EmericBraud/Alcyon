@@ -7,7 +7,7 @@
 #include "chess.h"
 #include "training_data_entry.h"
 
-namespace chess26::cnn {
+namespace alcyon::cnn {
 
 // Must match the plane layout documented in training/cnn/model.py
 // (NUM_PLANES and the comment above it) — keep the two in sync.
@@ -76,7 +76,7 @@ enum PlaneIndex : int {
 // the ctypes wrapper on the Python side follows the same pattern.
 struct PlaneBatch final {
     // nnue_path: path to the .nnue weight file used to fill nnue_score
-    // below (see nnue_bridge.h) — chess26's own NNUE, evaluated once per
+    // below (see nnue_bridge.h) — Alcyon's own NNUE, evaluated once per
     // position, non-incrementally.
     PlaneBatch(const std::vector<binpack::TrainingDataEntry>& entries, const std::string& nnue_path);
     ~PlaneBatch();
@@ -106,7 +106,7 @@ struct PlaneBatch final {
     // they're always exactly 2 and carry no phase information.
     int* piece_count;
 
-    // size. chess26's own NNUE static evaluation, from the side-to-move's
+    // size. Alcyon's own NNUE static evaluation, from the side-to-move's
     // perspective (see nnue_bridge.h) — a precomputed, non-incremental
     // score used by v5's residual-correction training (see
     // docs/gpu-async-eval/v5-hybrid-nnue-cnn.md). Not yet converted to a
@@ -127,4 +127,4 @@ private:
 // the same file with complementary predicates never overlap.
 std::uint64_t hash_position(const chess::Position& pos);
 
-}  // namespace chess26::cnn
+}  // namespace alcyon::cnn

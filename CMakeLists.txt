@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(Chess26 VERSION 1.0 LANGUAGES C CXX)
+project(Alcyon VERSION 1.0 LANGUAGES C CXX)
 
 # --- 1. GESTION DU MODE DE COMPILATION PAR DÉFAUT ---
 if(NOT CMAKE_BUILD_TYPE)
@@ -18,7 +18,7 @@ option(BUILD_TESTING "Build unit tests" ON)
 # desactivation des coupures TT pour l'experience d'oracle d'ordonnancement).
 # Off par defaut : ils sont testes sur le chemin chaud et ne servent qu'a
 # mesurer. Voir namespace search dans src/engine/search/worker.hpp.
-option(ENABLE_SEARCH_EXPERIMENTS "Build the search measurement switches (CHESS26_ORDER_STATS, CHESS26_TT_NO_CUTOFF)" OFF)
+option(ENABLE_SEARCH_EXPERIMENTS "Build the search measurement switches (ALCYON_ORDER_STATS, ALCYON_TT_NO_CUTOFF)" OFF)
 
 include(CheckCXXCompilerFlag)
 include(CheckIPOSupported)
@@ -73,62 +73,62 @@ option(ENABLE_NNUE_EVAL "Enable NNUE evaluation" ON)
 target_compile_definitions(chess_core PUBLIC NDEBUG)
 
 # --- 5. EXÉCUTABLE PRINCIPAL ---
-add_executable(chess26 src/main.cpp)
+add_executable(alcyon src/main.cpp)
 
 # On lie les objets et les dépendances
-target_link_libraries(chess26 PRIVATE 
+target_link_libraries(alcyon PRIVATE 
     $<TARGET_OBJECTS:chess_core> 
     $<TARGET_OBJECTS:fathom> 
     Threads::Threads
 )
 
 # On s'assure que main.cpp trouve aussi les headers
-target_include_directories(chess26 PRIVATE src lib/fathom)
-target_compile_options(chess26 PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
+target_include_directories(alcyon PRIVATE src lib/fathom)
+target_compile_options(alcyon PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
 
 
 if(ENABLE_TEXEL_TUNING)
     target_compile_definitions(chess_core PUBLIC TEXEL_TUNING)
-    target_compile_definitions(chess26 PRIVATE TEXEL_TUNING)
+    target_compile_definitions(alcyon PRIVATE TEXEL_TUNING)
 endif()
 
 if(ENABLE_SPSA_TUNING)
     target_compile_definitions(chess_core PUBLIC SPSA_TUNING)
-    target_compile_definitions(chess26 PRIVATE SPSA_TUNING)
+    target_compile_definitions(alcyon PRIVATE SPSA_TUNING)
 endif()
 
 if(ENABLE_NNUE_EVAL)
     target_compile_definitions(chess_core PUBLIC NNUE_EVAL)
-    target_compile_definitions(chess26 PRIVATE NNUE_EVAL)
+    target_compile_definitions(alcyon PRIVATE NNUE_EVAL)
 endif()
 
 if(ENABLE_SEARCH_EXPERIMENTS)
-    target_compile_definitions(chess_core PUBLIC CHESS26_SEARCH_EXPERIMENTS)
-    target_compile_definitions(chess26 PRIVATE CHESS26_SEARCH_EXPERIMENTS)
+    target_compile_definitions(chess_core PUBLIC ALCYON_SEARCH_EXPERIMENTS)
+    target_compile_definitions(alcyon PRIVATE ALCYON_SEARCH_EXPERIMENTS)
 endif()
 
 if(ENABLE_GUI)
     find_package(SFML 2.5 REQUIRED COMPONENTS graphics window system)
-    target_link_libraries(chess26 PRIVATE sfml-graphics sfml-window sfml-system)
-    target_compile_definitions(chess_core PUBLIC CHESS26_HAS_GUI)
+    target_link_libraries(alcyon PRIVATE sfml-graphics sfml-window sfml-system)
+    target_compile_definitions(chess_core PUBLIC ALCYON_HAS_GUI)
 endif()
 
 # --- 6. OPTIMISATIONS AVANCÉES (LTO/IPO) ---
 check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_ERROR)
 if(IPO_SUPPORTED)
-    set_property(TARGET chess26 PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    set_property(TARGET alcyon PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
     message(STATUS "LTO/IPO is enabled and active.")
 else()
     message(WARNING "LTO not supported: ${IPO_ERROR}")
 endif()
 
 # --- 7. DONNÉES (CORRECTIF BLOQUAGE) ---
-set(CHESS26_RUNTIME_DATA_DIR "${CMAKE_CURRENT_BINARY_DIR}/data")
+set(ALCYON_RUNTIME_DATA_DIR "${CMAKE_CURRENT_BINARY_DIR}/data")
 
 add_custom_command(
-    TARGET chess26 POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CHESS26_RUNTIME_DATA_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${CHESS26_RUNTIME_DATA_DIR}
+    TARGET alcyon POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ALCYON_RUNTIME_DATA_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${ALCYON_RUNTIME_DATA_DIR}
     COMMENT "Mise à jour du dossier data dans le build..."
 )
 
@@ -151,45 +151,45 @@ include(CTest)
 
     file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
 
-    add_executable(chess26_tests ${TEST_SOURCES})
+    add_executable(alcyon_tests ${TEST_SOURCES})
 
-    target_link_libraries(chess26_tests PRIVATE
+    target_link_libraries(alcyon_tests PRIVATE
         $<TARGET_OBJECTS:chess_core>
         $<TARGET_OBJECTS:fathom>
         Threads::Threads
         GTest::gtest_main
     )
 
-    target_include_directories(chess26_tests PRIVATE
+    target_include_directories(alcyon_tests PRIVATE
         src
         lib/fathom
         tests
     )
 
-    target_compile_definitions(chess26_tests PRIVATE CHESS26_UNIT_TESTING)
+    target_compile_definitions(alcyon_tests PRIVATE ALCYON_UNIT_TESTING)
 
     if(ENABLE_SEARCH_EXPERIMENTS)
-        target_compile_definitions(chess26_tests PRIVATE CHESS26_SEARCH_EXPERIMENTS)
+        target_compile_definitions(alcyon_tests PRIVATE ALCYON_SEARCH_EXPERIMENTS)
     endif()
     # Enable NNUE_EVAL for tests only when NNUE support is enabled for the main build
     if(ENABLE_NNUE_EVAL)
-        target_compile_definitions(chess26_tests PRIVATE NNUE_EVAL)
+        target_compile_definitions(alcyon_tests PRIVATE NNUE_EVAL)
     endif()
 
-    target_compile_options(chess26_tests PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
+    target_compile_options(alcyon_tests PRIVATE ${COMMON_FLAGS} ${PROFILING_FLAGS})
 
     if(ENABLE_TEXEL_TUNING)
-        target_compile_definitions(chess26_tests PRIVATE TEXEL_TUNING)
+        target_compile_definitions(alcyon_tests PRIVATE TEXEL_TUNING)
     endif()
 
     if(ENABLE_SPSA_TUNING)
-        target_compile_definitions(chess26_tests PRIVATE SPSA_TUNING)
+        target_compile_definitions(alcyon_tests PRIVATE SPSA_TUNING)
     endif()
 
     if(ENABLE_GUI)
-        target_compile_definitions(chess26_tests PRIVATE CHESS26_HAS_GUI)
+        target_compile_definitions(alcyon_tests PRIVATE ALCYON_HAS_GUI)
     endif()
 
     include(GoogleTest)
-    gtest_discover_tests(chess26_tests)
+    gtest_discover_tests(alcyon_tests)
 endif()

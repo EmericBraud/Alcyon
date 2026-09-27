@@ -1,7 +1,7 @@
 # Monter un serveur worker OpenBench
 
 Procedure pour brancher une instance EC2 neuve sur l'OpenBench local et y
-faire tourner des matchs chess26. Ecrite apres plusieurs mises en place ou
+faire tourner des matchs Alcyon. Ecrite apres plusieurs mises en place ou
 les memes pieges ont coute des heures : chacun est signale par **PIEGE**.
 
 ## Le modele
@@ -78,7 +78,7 @@ wc -l < ~/UHO_4060_v2.epd    # doit donner 242201
 
 ## 4. Donnees du moteur : le piege principal
 
-chess26 cherche son dossier `data/` **a cote de son executable**. OpenBench ne
+Alcyon cherche son dossier `data/` **a cote de son executable**. OpenBench ne
 copie que le binaire dans `Client/Engines/`. Sans rien faire, tout moteur
 compile meurt sur :
 
@@ -99,13 +99,13 @@ Puis designer ce dossier par variable d'environnement — plus robuste qu'un
 lien symbolique dans `Client/Engines/`, qu'un nettoyage d'OpenBench effacerait :
 
 ```sh
-export CHESS26_DATA_DIR=$HOME/sweep/data
+export ALCYON_DATA_DIR=$HOME/sweep/data
 ```
 
 Verification avant de lancer quoi que ce soit :
 
 ```sh
-CHESS26_DATA_DIR=$HOME/sweep/data ~/Client/Engines/<Binaire> bench | tail -1
+ALCYON_DATA_DIR=$HOME/sweep/data ~/Client/Engines/<Binaire> bench | tail -1
 ```
 
 Le nombre de noeuds doit etre **exactement** celui du bench local du meme
@@ -119,7 +119,7 @@ mesure sera fausse.
 # Une partie = 4 tuyaux. A 164 parties simultanees la limite Ubuntu par
 # defaut (1024) est depassee, d'ou "pipe() failed" dans fastchess.
 ulimit -n 65536
-export CHESS26_DATA_DIR=$HOME/sweep/data
+export ALCYON_DATA_DIR=$HOME/sweep/data
 cd /home/ubuntu/Client
 exec python3 -u client.py -U <user> -P <pass> -S <url ngrok> \
      -T 164 -N 1 --no-client-downloads
@@ -140,7 +140,7 @@ pour **un seul** worker.
 ## 6. Verifier — toujours, avant de rapporter quoi que ce soit
 
 ```sh
-pgrep -fc Chess26      # ~2x la concurrency (un processus par camp)
+pgrep -fc Alcyon      # ~2x la concurrency (un processus par camp)
 uptime                 # load ~= concurrency
 grep -c "illegal\|FATAL\|Warning\|disconnect" ~/worker.log
 tail -3 ~/worker.log   # des lignes "Finished game"
@@ -168,7 +168,7 @@ l'erreur en ligne 1 du log.
 | Symptome | Cause |
 |---|---|
 | `Client missing, and --no-client-downloads` | dependance Python manquante (souvent `py-cpuinfo`) |
-| `FATAL: Magics file couln't be opened` | `CHESS26_DATA_DIR` absent |
+| `FATAL: Magics file couln't be opened` | `ALCYON_DATA_DIR` absent |
 | Reseau NNUE de 134 octets | `git lfs pull` non fait |
 | Test a 0 partie, worker actif | livre d'ouvertures absent |
 | Test `finished=1, games=0` | cree avant que le bench fonctionne — recreer |

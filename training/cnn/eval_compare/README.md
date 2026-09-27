@@ -42,7 +42,7 @@ static evaluator, NNUE or CNN, can see).
 
 ```bash
 python3 compare_checkpoints.py \
-  --nnue-bin /path/to/chess26/build-nnue/chess26 \
+  --nnue-bin /path/to/alcyon/build-nnue/alcyon \
   --checkpoints "checkpoints/chesscnn_step*.pt" \
   --out learning_curve.json
 ```

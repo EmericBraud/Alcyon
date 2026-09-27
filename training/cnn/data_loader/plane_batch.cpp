@@ -6,7 +6,7 @@
 #include "chess.h"
 #include "nnue_bridge.h"
 
-namespace chess26::cnn {
+namespace alcyon::cnn {
 
 using chess::Bitboard;
 using chess::CastlingRights;
@@ -190,4 +190,4 @@ std::uint64_t hash_position(const Position& pos) {
     return h;
 }
 
-}  // namespace chess26::cnn
+}  // namespace alcyon::cnn

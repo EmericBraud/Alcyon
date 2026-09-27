@@ -69,7 +69,7 @@ class PlaneBatchDataset(torch.utils.data.IterableDataset):
     when filenames already points at a dedicated held-out file.
 
     nnue_path: path to a .nnue weight file. When non-empty, each batch
-    also yields chess26's own NNUE static evaluation per position (see
+    also yields Alcyon's own NNUE static evaluation per position (see
     plane_batch.h's PlaneBatch::nnue_score) — used by v5's residual-
     correction training. Leave empty ("") to skip NNUE evaluation
     entirely (nnue_score is filled with 0.0 in that case).

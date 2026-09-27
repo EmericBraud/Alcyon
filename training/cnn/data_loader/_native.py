@@ -128,15 +128,15 @@ class CPlaneDataLoaderAPI:
         self.dll.destroy_plane_batch.argtypes = [PlaneBatchCView]
 
 
-# chess26's own engine code (linked in for NNUE eval, see nnue_bridge.cpp)
+# Alcyon's own engine code (linked in for NNUE eval, see nnue_bridge.cpp)
 # resolves its data files (magic-bitboard tables, NNUE weights when no
-# explicit path is given) via CHESS26_DATA_DIR, defaulting to
+# explicit path is given) via ALCYON_DATA_DIR, defaulting to
 # "<executable dir>/data" when unset — which resolves to the *Python*
 # interpreter's directory when this library is loaded via ctypes, not
 # the repo. Point it at the real data/ directory unless the caller has
 # already set it explicitly.
 os.environ.setdefault(
-    "CHESS26_DATA_DIR",
+    "ALCYON_DATA_DIR",
     os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "data")),
 )
 

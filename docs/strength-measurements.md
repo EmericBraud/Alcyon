@@ -8,7 +8,7 @@ the reasoning, so that a figure is never quoted without what qualifies it.
 
 Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `UHO_4060_v2` opening book, [fastchess](https://github.com/Disservin/fastchess)):
 
-| Version | Time control | Games | Chess26 score | Elo (vs SF8) |
+| Version | Time control | Games | Alcyon score | Elo (vs SF8) |
 |---|---|---|---|---|
 | v5.0 | 60s+0.2s | 300 | 91.0 / 300 (30.3%) — 37W / 155L / 108D | **-169 ± 29** † |
 | v5.1 | 60s+0.2s | 178 | 58.5 / 178 (32.9%) — 28W / 89L / 61D | **-124 ± 41** |
@@ -24,9 +24,9 @@ a measurement.
 
 ‡ v5.3 was measured on a 192-core Graviton4 at concurrency 32, not on the
 Mac at concurrency 3-4 like the rows above. That matters more than it sounds:
-chess26 loads a 111 MB NNUE network, so running many instances in parallel
+Alcyon loads a 111 MB NNUE network, so running many instances in parallel
 starves it of memory bandwidth in a way Stockfish 8 — whose eval is a few
-kilobytes — does not. Measured at 164 concurrent games, chess26 lost 58% of
+kilobytes — does not. Measured at 164 concurrent games, Alcyon lost 58% of
 its speed against Stockfish 8's 20%, which moved the same match from -40 to
 -126 Elo. Sharing the network between processes via a read-only mmap
 recovered two thirds of that gap, and dropping to concurrency 32 most of the
@@ -36,7 +36,7 @@ figure is likely better.
 § The v5.4 and v5.5 runs were stopped at 982 and 1224 games, and their
 residual concurrency bias has been measured rather than estimated. Running the same
 fixed-depth benchmark at 1 and at 32 simultaneous instances on the test
-machine: chess26 drops from 432k to 336k nps (**-22.2%**) while Stockfish 8
+machine: Alcyon drops from 432k to 336k nps (**-22.2%**) while Stockfish 8
 goes from 2.217M to 2.342M nps (**+5.6%**, i.e. no degradation at all — its
 evaluation fits in cache). The memory-mapped network removed the duplicated
 memory, not the contention for bandwidth. That ~26% relative speed deficit is
@@ -123,7 +123,7 @@ analytical calibration that preceded it: both margin constants were driven to
 or below zero and the depth slopes picked the work up instead, leaving both
 margins purely proportional to depth.
 
-Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3356 Elo** for Chess26 (v5.5) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
+Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3356 Elo** for Alcyon (v5.5) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
 
 - CCRL's list runs at a longer time control (40 moves/15 min) and typically multi-core, vs. our single-threaded 60+0.2 test
 - The reference Stockfish 8 is built from source at tag `sf_8` with `ARCH=general-64`, so it has neither `popcnt` nor prefetch — likely *understating* its actual strength, so the true gap is probably larger

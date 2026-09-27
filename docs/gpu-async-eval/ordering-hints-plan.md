@@ -283,7 +283,7 @@ donc où presque chaque nœud connaît d'avance le coup qu'une recherche
 profonde y préfère.
 
 Les coupures de score de la TT sont **désactivées des deux côtés**
-(`CHESS26_TT_NO_CUTOFF=1`, voir `search::tt_cutoffs_enabled`). Sans ça, la
+(`ALCYON_TT_NO_CUTOFF=1`, voir `search::tt_cutoffs_enabled`). Sans ça, la
 seconde recherche gagnerait surtout par ses coupures et l'apport de
 l'ordonnancement serait massivement surestimé.
 

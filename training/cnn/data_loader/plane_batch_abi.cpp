@@ -6,8 +6,8 @@
 #include "plane_batch.h"
 #include "plane_batch_stream.h"
 
-using chess26::cnn::PlaneBatch;
-using chess26::cnn::PlaneBatchStream;
+using alcyon::cnn::PlaneBatch;
+using alcyon::cnn::PlaneBatchStream;
 
 struct PlaneBatchCStream {
     PlaneBatchStream impl;

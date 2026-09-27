@@ -389,7 +389,7 @@ public:
         return static_cast<std::int32_t>(psqt_diff / FinalScale);
     }
 
-#ifdef CHESS26_UNIT_TESTING
+#ifdef ALCYON_UNIT_TESTING
     const auto &get_accumulator() const
     {
         return accumulator;

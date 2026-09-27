@@ -11,9 +11,9 @@
 
 // Mapping d'un fichier en LECTURE SEULE, partage entre processus.
 //
-// Raison d'etre : chess26 lisait ses 111 Mo de poids NNUE dans le tas, donc
+// Raison d'etre : Alcyon lisait ses 111 Mo de poids NNUE dans le tas, donc
 // N instances detenaient N copies physiques distinctes. Mesure sur 192 coeurs
-// avec 164 parties simultanees : chess26 perdait 58 % de son NPS quand
+// avec 164 parties simultanees : Alcyon perdait 58 % de son NPS quand
 // Stockfish 8, dont l'eval tient en quelques kilo-octets, n'en perdait que
 // 20 %. Un handicap relatif double, soit ~86 Elo de biais sur un match contre
 // un moteur leger.

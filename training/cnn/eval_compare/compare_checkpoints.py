@@ -179,7 +179,7 @@ def stockfish_static_scores(fens, stockfish_bin):
 
 
 def nnue_scores(fens, nnue_bin):
-    """chess26's own NNUE build, "eval" UCI debug command — static
+    """alcyon's own NNUE build, "eval" UCI debug command — static
     eval, no search, from the side-to-move's perspective."""
     proc = subprocess.Popen(
         [nnue_bin], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -280,7 +280,7 @@ def main():
                          help="ignore the cache and recompute Stockfish/NNUE scores")
     parser.add_argument("--stockfish-bin", default="/opt/homebrew/bin/stockfish")
     parser.add_argument("--nnue-bin", required=True,
-                         help="path to chess26's NNUE-enabled UCI binary (build-nnue/chess26)")
+                         help="path to Alcyon's NNUE-enabled UCI binary (build-nnue/alcyon)")
     parser.add_argument("--checkpoints", required=True, help="glob pattern for CNN checkpoints, e.g. 'checkpoints/chesscnn_step*.pt'")
     parser.add_argument("--depth", type=int, default=15, help="Stockfish search depth for the (reference-only) searched score")
     parser.add_argument(

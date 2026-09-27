@@ -11,7 +11,7 @@
 #include "nnue_training_data_stream.h"
 #include "plane_batch.h"
 
-namespace chess26::cnn {
+namespace alcyon::cnn {
 
 // Synchronous, single-threaded core: blocks on the underlying binpack
 // reader for every batch. Used only as the producer inside
@@ -108,4 +108,4 @@ private:
     std::thread m_worker;
 };
 
-}  // namespace chess26::cnn
+}  // namespace alcyon::cnn
