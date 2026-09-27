@@ -216,7 +216,7 @@ r = s.get(S + "/tune/new/", timeout=15)
 tok = s.cookies.get("csrftoken") or re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', r.text).group(1)
 form = {
     "csrfmiddlewaretoken": tok,
-    "dev_engine": "Alcyon", "dev_repo": "https://github.com/EmericBraud/chess26",
+    "dev_engine": "Alcyon", "dev_repo": "https://github.com/EmericBraud/alcyon",
     "dev_branch": "<SHA complet, pousse sur GitHub>", "dev_bench": "<bench exact>",
     "dev_options": "Threads=1 Hash=8", "dev_network": "",
     "dev_time_control": "10.0+0.10", "book_name": "UHO_4060_v2.epd",

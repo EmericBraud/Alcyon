@@ -90,7 +90,7 @@ Et les reseaux NNUE sont en **Git LFS** : un `git clone` nu ne rapatrie que des
 pointeurs de 134 octets.
 
 ```sh
-git clone -q --depth 1 -b <branche> https://github.com/EmericBraud/chess26 ~/sweep
+git clone -q --depth 1 -b <branche> https://github.com/EmericBraud/alcyon ~/sweep
 cd ~/sweep && git lfs install && git lfs pull
 ls -la ~/sweep/data/nnue/v3.nnue     # doit faire 111262528 octets
 ```

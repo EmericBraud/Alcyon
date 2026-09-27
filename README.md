@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Alcyon logo: a kingfisher diving toward the water" width="200">
+</p>
+
 # ♟️ Alcyon
 
 High-Performance Chess Engine in C++
@@ -74,8 +78,8 @@ results lost 22 Elo, and annealing its weights won back 41.
 ### Build Instructions
 
 ```bash
-git clone https://github.com/EmericBraud/chess26.git
-cd chess26
+git clone https://github.com/EmericBraud/alcyon.git
+cd alcyon
 make        # builds ./alcyon (NNUE + SPSA tuning enabled by default)
 ```
 
