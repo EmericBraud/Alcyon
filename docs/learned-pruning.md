@@ -354,3 +354,64 @@ noeud de decision, nps inchange.
 
 SPRT : test 53, `learned-pruning` @ 5bfdc66 contre `main` @ 9e9058b,
 10+0.1, Threads=1 Hash=8, UHO_4060_v2, bornes [0, 3], alpha = beta = 0.05.
+
+**Resultat du SPRT (test 53) : echec**, 1470 parties, +329 -595 =546
+(41 %, environ -63 Elo), LLR -3.40.
+
+## Etape 3 : pourquoi ca perd
+
+**Balayage hors parties** (`tools/learned_pruning/sweep.sh`,
+`sweep_report.py`) : 5000 positions de test jamais vues a l'entrainement.
+Reference = mecanisme eteint a profondeur 14 ; courbe de base = eteint a
+11, 12, 13 ; 20 configs a profondeur 12 (profondeur max d'application
+2/4/6/64 x seuil). Critere : a noeuds egaux, s'accorder plus souvent avec
+la reference que la courbe de base.
+
+| config | noeuds / off12 | accord ref14 |
+|---|---|---|
+| off11 (eteint, un ply de moins) | 0.557 | 82.3 % |
+| off12 | 1.000 | 87.9 % |
+| off13 | 1.795 | 93.6 % |
+| md64_950p5 (le SPRT) | 0.666 | 69.7 % |
+| md64_990 | 0.898 | 76.7 % |
+| md4_995 | 0.985 | 80.4 % |
+| md2_995 (le plus prudent) | 0.996 | 84.1 % |
+| controle : off12, Hash=4 | 0.989 | 87.2 % |
+
+**Toutes les configs sont dominees** par "chercher un ply de moins". Meme
+la plus prudente (seuil 0.995, depth <= 2) perd 3.8 points d'accord pour
+0.4 % de noeuds economises, alors qu'une perturbation neutre de l'arbre
+(Hash=4) n'en perd que 0.7.
+
+**Mode ombre** (`learned_prune_enabled=2`, `precision.py`) : le mecanisme
+calcule sa decision et remplit le cache d'eval, mais ne coupe pas ; le dump
+enregistre z et le vrai resultat. Hypothese testee : le remplissage du cache
+change la feature `eval_prev2` (connue a depth 8 dans 42 % des cas au lieu
+de 18 %) et fausse le modele.
+
+| depth | coupes | precision (eteint) | precision (ombre) |
+|---|---|---|---|
+| 1 | 25 % | 97.0 % | 97.1 % |
+| 3 | 35 % | 97.8 % | 97.9 % |
+| 5 | 40 % | 98.7 % | 98.7 % |
+| 7 | 56 % | 99.5 % | 99.5 % |
+| 9 | 38 % | 99.9 % | 99.9 % |
+
+Hypothese rejetee : la precision tient en situation. **Le modele predit
+bien ; ce sont les coupes qui coutent.**
+
+## La lecon
+
+**La precision par noeud est la mauvaise mesure.** Les noeuds dont le
+resultat surprend -- ceux que les features statiques ne voient pas venir,
+typiquement une tactique -- sont justement ceux qui decident du coup joue.
+Un predicteur a 99.5 % se trompe sur ce 0.5 %-la, par construction, et
+rendre une borne sans chercher les supprime sans rattrapage : la recherche
+existe pour trouver les surprises. Les elagages a la main (RFP, NMP) se
+trompent aussi, mais le NMP verifie par une recherche, et le RFP ne coupe
+qu'avec des marges ou la surprise est rare.
+
+**Suite possible** : reduire au lieu de couper. Une reduction garde une
+recherche (moins profonde) du noeud, donc une chance de voir la surprise,
+comme la re-recherche de la LMR. A valider par le meme balayage avant tout
+SPRT.
