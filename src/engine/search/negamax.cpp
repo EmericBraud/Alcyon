@@ -391,6 +391,21 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (ply >= engine_constants::search::MaxDepth)
         return Eval::lazy_eval_relative<Us>(board);
 
+    // Mate distance pruning. Au pire on est mate ici (-MateScore + ply), au
+    // mieux on mate au coup suivant (MateScore - ply - 1) : si la fenetre est
+    // hors de ces bornes, aucun sous-arbre ne peut la changer. Sans lui, une
+    // fois un mat trouve, chaque iteration re-explore tout l'arbre des
+    // positions matees : x3 a x10 par ply sur
+    // 8/5p2/q6k/2r5/5p2/2N5/1K6/7q w - - 8 68 (mat en 6 des la profondeur 6,
+    // 33M noeuds a la profondeur 11).
+    if (ply > 0)
+    {
+        alpha = std::max(alpha, -engine_constants::eval::MateScore + ply);
+        beta = std::min(beta, engine_constants::eval::MateScore - ply - 1);
+        if (alpha >= beta)
+            return alpha;
+    }
+
     // Ce ply est reutilise par toutes les branches deja explorees a cette
     // profondeur : l'eval memorisee appartient a une AUTRE position. On
     // invalide avant le premier mecanisme qui pourrait la lire.
