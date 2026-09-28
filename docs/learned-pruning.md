@@ -507,3 +507,55 @@ Alcyon n'avait pas de mate distance pruning. Mat en 6 trouve des la
 profondeur 6, puis chaque iteration re-explorait tout l'arbre des
 positions matees (33M noeuds a la profondeur 11). Corrige : profondeur 15
 en 9 787 noeuds. Branche `mate-distance-pruning` depuis `main`, SPRT 54.
+
+## Evaluation symetrique a budget egal, et verdict
+
+**La base iso-noeud (isonode.sh) etait biaisee** : limitee a exactement
+les noeuds d'une config, elle ne finissait pas son iteration et retombait
+sur le coup de l'iteration precedente (98 % des noeuds d'off12 -> niveau
+d'off11), ce qui flattait toutes les configs d'environ +2 points.
+Remplacee par `budget_eval.sh` : base et config cherchent avec LE MEME
+budget par position (noeuds d'off12 x U, U dans [1, 1.8]), meme binaire ;
+chacun perd son iteration inachevee de la meme facon. Controles sur
+19 000 positions neuves : identique 0.00 % (exact), Hash=4 +0.04 %
+[-0.06, +0.15], 1 % de reductions verifiees au hasard -0.73 % [-1.24, -0.22].
+
+**A seuil egal, le MLP declenche 1.5 a 4 fois plus que la regression**
+(`fire_rates.sh` : a T = 0.99, 1.69 % des noeuds contre 0.70 %) : comparer
+les modeles a seuil egal les compare a perturbation inegale. A taux de
+declenchement egal (5 000 positions, R=1 verifiee, noeuds egaux) :
+
+| taux | regression | MLP | hasard |
+|---|---|---|---|
+| ~0.6 % | -0.64 | -0.80 | -0.90 |
+| ~1.2 % | -1.04 | -0.28 | -1.54 |
+| ~2.5 % | -1.14 | -1.50 | -1.92 |
+| ~4 % | -2.14 | -1.80 / -1.88 | -1.56 / -1.78 |
+
+(IC 95 % ~ +-1.1 point par config.)
+
+**Verdict.** La perte croit avec le nombre de noeuds touches, quel que
+soit le selecteur -- hasard compris. A taux egal, regression, MLP et hasard
+sont dans le bruit l'un de l'autre : le gain du MLP en prediction hors ligne
+(loss -18 %) ne se traduit pas en meilleurs choix dans la recherche. Et
+l'economie (3 a 15 % de noeuds a profondeur fixe) ne rapporte qu'en
+finissant une iteration de plus, ce qu'elle permet rarement. **Piste close**
+pour l'elagage / la reduction au noeud avec ces features.
+
+Limites : 5 000 positions ne voient pas d'ecart < ~1.5 point entre deux
+configs ; la reference (Alcyon, graine de bruit) penalise toute perturbation
+de l'arbre ; seules des parties mesurent sans ce biais. Le seul SPRT joue
+(coupe, test 53) etait -63 Elo.
+
+**Ce qui reste utile** : mate distance pruning (dans `main`) ;
+`bench nodesfile` et la limite de noeuds ; `budget_eval.sh` et ses
+controles comme banc d'essai hors parties pour d'autres idees de
+recherche ; `ALCYON_L0_CHECK` (l0 incremental = recalcul complet, 0
+divergence sur ~150k noeuds) ; le bruit SMP identique pour tous les
+threads d'aide (move_picker.hpp), a corriger et tester a part.
+
+**Les pieges rencontres, a eviter la prochaine fois** : (1) une reference
+qui est le prolongement de la base (ref14 contient off12) ; (2) une base
+limitee en noeuds qui perd son iteration ; (3) comparer des modeles a seuil
+egal au lieu de taux egal ; (4) une verification de parite qui lit la meme
+entree des deux cotes ; (5) la precision hors ligne comme proxy de la force.
