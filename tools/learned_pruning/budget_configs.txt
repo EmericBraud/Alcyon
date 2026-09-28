@@ -18,3 +18,6 @@ m_g100_z5|12|learned_prune_model=1 learned_prune_graded_slope=100 learned_prune_
 m_g200_z4|12|learned_prune_model=1 learned_prune_graded_slope=200 learned_prune_graded_z0_high=400 learned_prune_graded_z0_low=400 budget_scale=0.93
 m_g100_h3l5|12|learned_prune_model=1 learned_prune_graded_slope=100 learned_prune_graded_z0_high=300 learned_prune_graded_z0_low=500 budget_scale=0.93
 m_g100_h5l3|12|learned_prune_model=1 learned_prune_graded_slope=100 learned_prune_graded_z0_high=500 learned_prune_graded_z0_low=300 budget_scale=0.93
+ctl_off|12|learned_prune_enabled=0
+ctl_h4|12|learned_prune_enabled=0 Hash=4
+ctl_rand10|12|learned_prune_enabled=3 learned_prune_random_permille=10 learned_prune_reduction=1 learned_prune_max_depth=4
