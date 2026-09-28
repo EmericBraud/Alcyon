@@ -102,17 +102,23 @@ Aucune entree ne contient alpha ou beta : les grandeurs de score sont
 relatives a l'eval statique, pas a la fenetre. Scalaires du noeud (tous
 deja disponibles a l'endroit de la decision) :
 
-- `depth`, `ply`
-- `improving`, `eval(ply) - eval(ply-2)`
-- TT : hit, type de borne, `tt_depth - depth`, `tt_score - static_eval`
-  (borne ; c'est de l'information de recherche deja payee, que la
-  position seule ne contient pas)
+- `depth`, `ply`, camp au trait
+- `eval(ply) - eval(ply-2)` (et si elle est connue : le cache est
+  paresseux) -- c'est `improving` en continu
+- TT : entree trouvee, type de borne, `tt_depth - depth`,
+  `tt_score - static_eval`. Lu par `TranspositionTable::peek`, pas par
+  `probe` : au point de decision `probe` a deja echoue, mais une entree
+  trop courte ou dont la borne ne coupait pas reste de l'information de
+  recherche deja payee, que la position seule ne contient pas
 - type de noeud (cut / all) : l'issue que le parent attend
 - `allow_null` (le parent vient d'un null move)
-- materiel hors pions de chaque camp, nombre de coups legaux
-- coup precedent : capture, echec, piece deplacee
-- compteur des 50 coups, repetition possible : les seuls cas ou V depend
-  vraiment du chemin
+- nombre de pions, cavaliers, fous, tours, dames de chaque camp
+- coup precedent : piece deplacee, piece capturee
+- compteur des 50 coups : un des rares cas ou V depend du chemin
+
+Absents du dump v1, a ajouter si (b) montre un signal : nombre de coups
+legaux (demande une generation), repetition possible, le coup precedent
+donnait-il echec (toujours faux ici : les noeuds en echec sont exclus).
 
 Plus l'accumulateur NNUE du noeud (L1 = 1024 par camp), qui encode la
 position -- tension tactique comprise -- et qui est deja calcule des que
@@ -127,13 +133,31 @@ est ajoutee a la sortie, dans la formule de F.
 
 ## Donnees et entrainement
 
-**Labels.** Mode de dump (build d'experimentation, `ALCYON_PRUNE_DUMP`) :
-a un noeud sur N tire au hasard, au point de decision, on ecrit les
-features, l'eval statique et beta, puis on laisse la recherche se derouler
-normalement et on ecrit son resultat (fail-high ou non) et la taille du
-sous-arbre. Enregistrements
-de taille fixe dans un tampon statique ecrit par `fwrite` -- pas
-d'allocation a l'execution.
+**Labels.** Mode de dump (build d'experimentation,
+`ALCYON_PRUNE_DUMP=<fichier>`, `ALCYON_PRUNE_DUMP_EVERY=N`) : au point de
+decision, un noeud est tire avec la probabilite `min(1, 2^(depth-1) / N)`
+-- les noeuds pres des feuilles sont des millions, ceux du haut quelques
+milliers ; on ecrit les features, l'eval statique et beta,
+puis on laisse la recherche se derouler normalement et on ecrit son
+resultat (fail-high, fail-low, ou coupe par le NMP -- compte comme
+fail-high) et la taille du sous-arbre. Enregistrements de 112 octets
+(`search::PruneRecord`, repete dans `tools/learned_pruning/fit.py`) dans
+un tampon statique ecrit par `fwrite` -- pas d'allocation a l'execution.
+Mono-thread. Le dump ne change pas l'arbre (meme compte de noeuds au
+bench), et son nombre d'enregistrements a `EVERY=1` egale exactement les
+noeuds que `prunestats` voit passer le RFP.
+
+Reproduire :
+
+```
+cmake -B build-exp -DCMAKE_BUILD_TYPE=Release -DENABLE_GUI=OFF -DENABLE_SEARCH_EXPERIMENTS=ON
+cmake --build build-exp -j8
+# positions : dump_val_fens (training/cnn/data_loader) sur le binpack,
+# dedoublonnees, coupees en blocs contigus 75 % train / 25 % test
+printf 'bench 12 fens_train.txt\nquit\n' | ALCYON_PRUNE_DUMP=train.bin ALCYON_PRUNE_DUMP_EVERY=3 ./build-exp/alcyon
+printf 'bench 12 fens_test.txt\nquit\n'  | ALCYON_PRUNE_DUMP=test.bin  ALCYON_PRUNE_DUMP_EVERY=3 ./build-exp/alcyon
+python3 tools/learned_pruning/fit.py train.bin test.bin
+```
 
 **Positions.** Les binpacks existants, a une profondeur fixe moderee, ou
 les parties d'auto-jeu d'OpenBench.

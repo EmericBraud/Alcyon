@@ -372,19 +372,31 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const bool in_check = board.is_king_attacked<Us>();
     const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
 
-    // Etape 0 de docs/learned-pruning.md (voir search::record_prune). Hors
-    // build d'experimentation stats_node vaut false et tout disparait.
-    const bool stats_node = search::prune_stats_enabled() && !is_pv && !in_check && ply > 0 && depth >= 1 && excluded_move == 0;
+    // Etapes 0 et 1 de docs/learned-pruning.md (search::record_prune,
+    // search::PruneRecord). Hors build d'experimentation stats_node vaut
+    // false et tout disparait.
+    const bool stats_node = (search::prune_stats_enabled() || search::prune_dump_enabled()) &&
+                            !is_pv && !in_check && ply > 0 && depth >= 1 && excluded_move == 0;
     const int stats_depth = depth;
     const long long stats_clock = stats_node ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
     // Eval calculee hors du cache static_eval_stack : le remplir ici
     // changerait improving, donc l'arbre qu'on cherche a mesurer.
-    const int stats_margin = stats_node ? Eval::prune_eval_relative<Us>(board, -engine_constants::eval::Inf, engine_constants::eval::Inf) - beta : 0;
+    const int stats_eval = stats_node ? Eval::prune_eval_relative<Us>(board, -engine_constants::eval::Inf, engine_constants::eval::Inf) : 0;
+    bool dump_node = false; // decide au point de decision, plus bas
+    search::PruneRecord dump_rec;
     auto stat = [&](search::PruneOutcome o)
     {
-        if (stats_node)
-            search::record_prune(stats_depth, o, stats_margin,
-                                 global_nodes.load(std::memory_order_relaxed) + local_nodes - stats_clock);
+        if (!stats_node)
+            return;
+        const long long subtree = global_nodes.load(std::memory_order_relaxed) + local_nodes - stats_clock;
+        if (search::prune_stats_enabled())
+            search::record_prune(stats_depth, o, stats_eval - beta, subtree);
+        if (dump_node)
+        {
+            dump_rec.subtree = subtree;
+            dump_rec.outcome = o == search::PO_NMP ? 2 : o == search::PO_FAIL_HIGH ? 0 : 1;
+            search::prune_dump.push(dump_rec);
+        }
     };
 
     if (search::razoring<Us>(*this, depth, alpha, is_pv, in_check, ply))
@@ -419,6 +431,34 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     }
 
     // =============================== Search ===============================
+
+    if (stats_node && search::prune_dump_enabled() && search::prune_dump_sample(depth))
+    {
+        dump_node = true;
+        dump_rec.beta = beta;
+        dump_rec.static_eval = stats_eval;
+        dump_rec.eval_prev2 = ply >= 2 ? static_eval_stack[ply - 2] : kEvalNone;
+        TTFlag tt_flag = TT_EXACT;
+        int tt_score = 0, tt_depth = 0;
+        dump_rec.tt_found = shared_tt.peek(board.get_hash(), ply, tt_score, tt_depth, tt_flag);
+        dump_rec.tt_score = tt_score;
+        dump_rec.tt_depth = tt_depth;
+        dump_rec.tt_flag = tt_flag;
+        dump_rec.depth = depth;
+        dump_rec.ply = ply;
+        dump_rec.cut_node = cut_node;
+        dump_rec.allow_null = allow_null;
+        dump_rec.halfmove = board.get_halfmove_clock();
+        dump_rec.stm = Us;
+        const Move prev = board.get_history()->back().move;
+        dump_rec.prev_from_piece = prev.get_from_piece();
+        dump_rec.prev_to_piece = prev.get_to_piece();
+        for (int p = PAWN; p <= QUEEN; ++p)
+        {
+            dump_rec.us[p] = std::popcount(board.get_piece_bitboard(Us, p));
+            dump_rec.them[p] = std::popcount(board.get_piece_bitboard(!Us, p));
+        }
+    }
 
     {
         int return_score;

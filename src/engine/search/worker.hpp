@@ -1,6 +1,8 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <chrono>
 
@@ -11,6 +13,7 @@
 #include "engine/eval/pos_eval.hpp"
 #include "engine/tt/transp_table.hpp"
 #include "engine/eval/virtual_board.hpp"
+#include "engine/utils/random.hpp"
 
 class EngineManager;
 
@@ -112,6 +115,88 @@ namespace search
         margin_subtree[d][b].fetch_add(subtree, std::memory_order_relaxed);
         if (o == PO_FAIL_HIGH)
             margin_fail_high[d][b].fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // Dump (ALCYON_PRUNE_DUMP=<fichier>, ALCYON_PRUNE_DUMP_EVERY=N, voir
+    // prune_dump_sample) : etape 1
+    // de docs/learned-pruning.md. Un enregistrement par noeud tire au point
+    // de decision (apres TT et RFP, avant NMP) : features scalaires a
+    // l'entree, resultat et taille du sous-arbre a la sortie. Format binaire
+    // brut, lu par tools/learned_pruning/fit.py qui en repete la
+    // disposition -- tout changement ici doit y etre reporte.
+    //
+    // ponytail: un seul fichier, un seul tampon, non synchronise -- Threads=1
+    // uniquement ; pour paralleliser, lancer plusieurs processus.
+    struct PruneRecord
+    {
+        std::int64_t subtree;
+        std::int32_t beta, static_eval, eval_prev2; // eval_prev2 = kEvalNone si inconnue
+        std::int32_t tt_found, tt_score, tt_depth, tt_flag;
+        std::int32_t depth, ply, outcome; // outcome : 0 fail-high, 1 fail-low, 2 NMP
+        std::int32_t cut_node, allow_null, halfmove, stm;
+        std::int32_t prev_from_piece, prev_to_piece; // NO_PIECE si pas de capture
+        std::int32_t us[5], them[5];                 // pions, cavaliers, fous, tours, dames
+    };
+    static_assert(sizeof(PruneRecord) == 112, "reporter la disposition dans fit.py");
+
+    struct PruneDump
+    {
+        static constexpr int kBuf = 4096;
+        std::FILE *f = nullptr;
+        unsigned long long every = 1, counter = 0;
+        int n = 0;
+        PruneRecord buf[kBuf];
+
+        void flush()
+        {
+            if (f && n)
+                std::fwrite(buf, sizeof(PruneRecord), n, f);
+            n = 0;
+        }
+        void push(const PruneRecord &r)
+        {
+            buf[n++] = r;
+            if (n == kBuf)
+                flush();
+        }
+        ~PruneDump()
+        {
+            flush();
+            if (f)
+                std::fclose(f);
+        }
+    };
+    inline PruneDump prune_dump;
+
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+    inline bool prune_dump_enabled()
+    {
+        static const bool on = []
+        {
+            const char *path = std::getenv("ALCYON_PRUNE_DUMP");
+            if (!path)
+                return false;
+            if (const char *e = std::getenv("ALCYON_PRUNE_DUMP_EVERY"))
+                prune_dump.every = std::max(1ULL, std::strtoull(e, nullptr, 10));
+            prune_dump.f = std::fopen(path, "wb");
+            return prune_dump.f != nullptr;
+        }();
+        return on;
+    }
+#else
+    constexpr bool prune_dump_enabled() { return false; }
+#endif
+
+    // Tirage avec probabilite min(1, 2^(depth-1) / every) : les noeuds pres
+    // des feuilles sont des millions, ceux de haute profondeur quelques
+    // milliers -- un tirage uniforme remplirait le disque des premiers sans
+    // donner assez des seconds. Les fits se font par tranche de profondeur,
+    // donc ce biais entre profondeurs ne fausse rien a l'interieur d'une
+    // tranche d'une seule profondeur.
+    inline bool prune_dump_sample(int depth)
+    {
+        const unsigned long long keep = 1ULL << std::min(depth - 1, 40);
+        return engine::random::splitmix64(prune_dump.counter++) % prune_dump.every < keep;
     }
 
 #ifdef ALCYON_SEARCH_EXPERIMENTS
