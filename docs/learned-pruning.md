@@ -286,3 +286,49 @@ avec la part du sous-arbre par bucket : relancer
 4. **Cote fail-low**, le meilleur bucket (`< -400`, depth 3-6) reste a
    11-14 % de fail-high : le razoring actuel n'a pas de marge evidente a
    recuperer avec l'eval seule.
+
+## Etape 1 : resultats (features scalaires)
+
+Dump sur le serveur 192 coeurs (`tools/learned_pruning/run_dump.sh`) :
+positions du binpack test80, `bench 16`, `EVERY=1024`. Train : ~34 700
+positions, 86M noeuds ; test : ~14 300 autres positions, 35M noeuds.
+Fits : `fit.py`, 2M noeuds de train au plus par profondeur.
+
+**Part du sous-arbre coupable a precision >= 99 % / >= 98 %**, noeuds
+vraiment cherches seulement (`FIT_EXCLUDE_NMP=1` : les noeuds coupes par
+le NMP sont des fail-high faciles et deja bon marche) :
+
+| depth | (a) eval seule | (b-tt) scalaires sans TT | (b) scalaires + TT |
+|---|---|---|---|
+| 1 | 0 / 0 % | 0 / 0 % | 0 / 16.5 % |
+| 2 | 0 / 0 % | 0 / 0.2 % | 0 / 12.0 % |
+| 3 | 2.1 / 10.5 % | 11.6 / 20.2 % | 21.1 / 35.7 % |
+| 4 | 0 / 8.7 % | 6.6 / 16.6 % | 19.8 / 36.2 % |
+| 5 | 0 / 8.0 % | 5.2 / 14.7 % | 20.1 / 39.3 % |
+| 6 | 0 / 7.0 % | 4.8 / 14.5 % | 21.7 / 46.0 % |
+| 7 | 1.3 / 9.3 % | 9.3 / 19.3 % | 28.4 / 52.9 % |
+| 8 | 1.0 / 8.4 % | 8.2 / 18.8 % | 25.0 / 52.6 % |
+| 9 | 0.1 / 7.3 % | 8.0 / 19.3 % | 27.1 / 55.6 % |
+| 10+ | 0 / 0.6 % | 6.9 / 18.1 % | 21.8 / 53.6 % |
+
+Avec les noeuds NMP inclus (le reseau place avant le NMP economiserait
+aussi sa recherche), les chiffres de (b) montent a depth >= 7 (48-58 % a
+99 %), ceux de depth <= 2 ne changent pas (pas de NMP a ces profondeurs).
+
+**Ce que ca dit :**
+
+1. **Le critere de poursuite est rempli** : (b) bat nettement (a) a toutes
+   les profondeurs. A 99 % de precision, l'eval seule ne coupe presque
+   rien ; les scalaires en coupent 20 a 28 % du sous-arbre de depth 3 a 10+.
+2. **L'essentiel vient de la TT** (b-tt -> b : x2 a x4). Ce sont des
+   entrees que `probe` ignore : trop courtes, ou dont la borne ne coupait
+   pas -- typiquement l'iteration precedente, ou la recherche reduite de
+   la LMR juste avant sa re-recherche. De l'information de recherche deja
+   payee, que le moteur jette aujourd'hui.
+3. **La position seule apporte aussi** (a -> b-tt : 5 a 12 % a 99 %), sans
+   l'accumulateur.
+4. **Depth 1-2 resistent** : rien a 99 %, 12-17 % a 98 %.
+5. **Ce que la precision ne dit pas** : 1 % d'erreurs a depth 10 n'a pas
+   le meme cout qu'a depth 3, et on ne connait pas le taux d'erreur du RFP
+   actuel (ses noeuds coupes ne sont jamais cherches). Seul un SPRT
+   tranche.
