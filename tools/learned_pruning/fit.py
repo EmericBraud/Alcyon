@@ -19,6 +19,8 @@ l'information manque, pas que l'optimisation a rate.
 
 Critere : a precision donnee, quelle part du sous-arbre peut-on couper ?
 """
+import multiprocessing
+import os
 import sys
 
 import numpy as np
@@ -109,29 +111,44 @@ def coverage(p, y, subtree, precision):
     return k / len(p), subtree[order][:k].sum() / subtree.sum(), conf[order][k - 1]
 
 
+MODELS = ("a", "b-tt", "b")
+_TR = _TE = None  # partages avec les workers par fork, pas copies
+
+
+def fit_one(job):
+    """Un fit (tranche, modele). Renvoie la ligne a afficher."""
+    (lo, hi), model = job
+    rtr = _TR[(_TR["depth"] >= lo) & (_TR["depth"] <= hi)]
+    rte = _TE[(_TE["depth"] >= lo) & (_TE["depth"] <= hi)]
+    if len(rtr) > MAX_TRAIN:  # ponytail: sous-echantillon, lbfgs reste en minutes
+        rtr = rtr[np.random.default_rng(0).choice(len(rtr), MAX_TRAIN, replace=False)]
+    ytr, yte = rtr["outcome"] != 1, rte["outcome"] != 1  # NMP compte comme fail-high
+    mtr, xtr = features(rtr)
+    mte, xte = features(rte)
+    scaler = StandardScaler().fit(design(mtr, xtr, model))
+    clf = LogisticRegression(C=1.0, max_iter=500)
+    clf.fit(scaler.transform(design(mtr, xtr, model)), ytr)
+    p = clf.predict_proba(scaler.transform(design(mte, xte, model)))[:, 1]
+    cov = "  ".join(
+        f"prec>={t:.0%}: noeuds {n:5.1%} sous-arbre {st:5.1%} (T={c:.3f})"
+        for t in PRECISIONS for n, st, c in [coverage(p, yte, rte["subtree"], t)])
+    line = f"  ({model:4s}) logloss {log_loss(yte, p):.4f}  auc {roc_auc_score(yte, p):.4f}  {cov}"
+    if model != MODELS[0]:
+        return line
+    name = f"depth {lo}" if lo == hi else f"depth {lo}-{hi if hi < 99 else '+'}"
+    return (f"\n== {name} : tt trouvee {rte['tt_found'].mean():.0%}, train {len(rtr)}, "
+            f"test {len(rte)}, fail-high {yte.mean():.1%}\n{line}")
+
+
 def main(train_path, test_path):
-    tr, te = load(train_path), load(test_path)
-    print(f"train {len(tr)} noeuds, test {len(te)} noeuds")
-    for lo, hi in SLICES:
-        s_tr = (tr["depth"] >= lo) & (tr["depth"] <= hi)
-        s_te = (te["depth"] >= lo) & (te["depth"] <= hi)
-        rtr, rte = tr[s_tr], te[s_te]
-        if len(rtr) > MAX_TRAIN:  # ponytail: sous-echantillon, lbfgs reste en minutes
-            rtr = rtr[np.random.default_rng(0).choice(len(rtr), MAX_TRAIN, replace=False)]
-        ytr, yte = rtr["outcome"] != 1, rte["outcome"] != 1  # NMP compte comme fail-high
-        name = f"depth {lo}" if lo == hi else f"depth {lo}-{hi if hi < 99 else '+'}"
-        print(f"\n== {name} : tt trouvee {rte['tt_found'].mean():.0%}, train {len(rtr)}, test {len(rte)}, fail-high {yte.mean():.1%}")
-        mtr, xtr = features(rtr)
-        mte, xte = features(rte)
-        for model in ("a", "b-tt", "b"):
-            scaler = StandardScaler().fit(design(mtr, xtr, model))
-            clf = LogisticRegression(C=1.0, max_iter=500)
-            clf.fit(scaler.transform(design(mtr, xtr, model)), ytr)
-            p = clf.predict_proba(scaler.transform(design(mte, xte, model)))[:, 1]
-            cov = "  ".join(
-                f"prec>={t:.0%}: noeuds {n:5.1%} sous-arbre {st:5.1%} (T={c:.3f})"
-                for t in PRECISIONS for n, st, c in [coverage(p, yte, rte["subtree"], t)])
-            print(f"  ({model:4s}) logloss {log_loss(yte, p):.4f}  auc {roc_auc_score(yte, p):.4f}  {cov}")
+    global _TR, _TE
+    _TR, _TE = load(train_path), load(test_path)
+    print(f"train {len(_TR)} noeuds, test {len(_TE)} noeuds", flush=True)
+    jobs = [(sl, m) for sl in SLICES for m in MODELS]
+    # fork : les workers heritent de _TR/_TE sans les relire ni les copier.
+    with multiprocessing.get_context("fork").Pool(min(len(jobs), os.cpu_count())) as pool:
+        for line in pool.imap(fit_one, jobs):  # imap garde l'ordre d'affichage
+            print(line, flush=True)
 
 
 if __name__ == "__main__":
