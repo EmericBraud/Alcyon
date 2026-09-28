@@ -415,3 +415,37 @@ qu'avec des marges ou la surprise est rare.
 recherche (moins profonde) du noeud, donc une chance de voir la surprise,
 comme la re-recherche de la LMR. A valider par le meme balayage avant tout
 SPRT.
+
+## Correction : la reference ref14 etait biaisee
+
+**Les conclusions "toutes les configs sont dominees" et "1 % de reductions
+au hasard coute 10 points" ci-dessus sont fausses** : ce sont des artefacts
+de mesure. Une recherche a profondeur 14 repasse par les iterations 1..12
+exactement comme off12 (meme TT, memes historiques) ; off11..off13
+partagent donc le debut de leur arbre avec ref14, et toute config qui
+perturbe l'arbre s'en eloigne, a qualite egale.
+
+Recalcule contre une reference independante (Stockfish 8, profondeur 20,
+`tools/learned_pruning/sf_ref.py`, `sweep_report.py <dossier> ref_sf.txt`) :
+
+| config | noeuds / off12 | accord Stockfish |
+|---|---|---|
+| off11 | 0.557 | 59.2 % |
+| off12 | 1.000 | 60.5 % |
+| off13 | 1.795 | 61.3 % |
+| ref14 | 3.281 | 61.6 % |
+| md64_950 (coupe, seuil 0.95) | 0.285 | 50.4 % |
+| md64_950p5 (le SPRT) | 0.666 | 57.2 % |
+| vr2_md64_980 (reduction verifiee R=2) | 0.786 | 59.6 % |
+| vrand10_r1_md4 (controle au hasard) | 0.993 | 59.7 % |
+
+Un ply de plus ne vaut qu'environ 1 point, pour une erreur type de ~0.7
+point sur 5000 positions : cette mesure ne distingue que les configs
+franchement mauvaises (les coupes agressives, dont celle du SPRT). Les
+configs moderees sont indiscernables de la courbe de base. Il faut une
+mesure plus fine (perte en centipions evaluee par Stockfish) avant de
+conclure quoi que ce soit sur elles.
+
+La reduction verifiee (`learned_prune_reduction`, re-recherche a pleine
+profondeur si le resultat reduit contredit la prediction) reste la bonne
+forme du mecanisme : c'est ce qui rend la LMR et le NMP surs.
