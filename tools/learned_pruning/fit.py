@@ -23,6 +23,11 @@ import multiprocessing
 import os
 import sys
 
+# Un fit = un processus ; chaque processus recoit sa part des coeurs pour
+# OpenBLAS (a fixer AVANT d'importer numpy). 10 tranches x 3 modeles.
+N_JOBS = 30
+os.environ.setdefault("OPENBLAS_NUM_THREADS", str(max(1, os.cpu_count() // N_JOBS)))
+
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss, roc_auc_score
@@ -145,6 +150,7 @@ def main(train_path, test_path):
     _TR, _TE = load(train_path), load(test_path)
     print(f"train {len(_TR)} noeuds, test {len(_TE)} noeuds", flush=True)
     jobs = [(sl, m) for sl in SLICES for m in MODELS]
+    assert len(jobs) == N_JOBS
     # fork : les workers heritent de _TR/_TE sans les relire ni les copier.
     with multiprocessing.get_context("fork").Pool(min(len(jobs), os.cpu_count())) as pool:
         for line in pool.imap(fit_one, jobs):  # imap garde l'ordre d'affichage
