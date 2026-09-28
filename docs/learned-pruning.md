@@ -332,3 +332,25 @@ aussi sa recherche), les chiffres de (b) montent a depth >= 7 (48-58 % a
    le meme cout qu'a depth 3, et on ne connait pas le taux d'erreur du RFP
    actuel (ses noeuds coupes ne sont jamais cherches). Seul un SPRT
    tranche.
+
+## Etape 2 : integration et SPRT
+
+Le modele (b) est integre tel quel, sans reseau : une regression par
+profondeur (`src/engine/search/learned_prune.hpp`, poids generes par
+`tools/learned_pruning/export.py` sur les 86M noeuds de l'etape 1, NMP
+compris puisque le mecanisme est place avant lui). 75 multiplications par
+noeud de decision, nps inchange.
+
+- Parite C++ / Python : le dump v2 enregistre le logit du moteur,
+  `export.py check` le recalcule depuis les poids. Ecart max 2.8e-6 sur
+  89 888 noeuds.
+- Seuil par defaut : T(depth) = 0.950 + 0.005 * depth, borne a 0.999
+  (`learned_prune_t_base`, `learned_prune_t_depth`, `learned_prune_enabled`
+  exposes au SPSA).
+- `bench 13` : 2 002 833 -> 1 471 478 noeuds (-26.5 %). Les coupes se
+  concentrent a depth 4-9 ; a depth 7 elles remplacent presque tout le NMP.
+- Bench OpenBench : 16501 (16833 pour `main`, et avec
+  `learned_prune_enabled=0`).
+
+SPRT : test 53, `learned-pruning` @ 5bfdc66 contre `main` @ 9e9058b,
+10+0.1, Threads=1 Hash=8, UHO_4060_v2, bornes [0, 3], alpha = beta = 0.05.
