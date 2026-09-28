@@ -500,10 +500,14 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         dump_node = true;
         search::fill_prune_record<Us>(*this, dump_rec, search::prune_stats_enabled() ? stats_eval : eval_uncached(),
                                       depth, ply, beta, cut_node, allow_null);
-        dump_rec.learned_z = learned_prune::logit(dump_rec);
         dump_rec.research = is_research;
 #ifdef NNUE_EVAL
         board.nnue_l0(search::prune_dump.l0_at_ply[ply]);
+        dump_rec.learned_z = engine_constants::search::learned_pruning::Model == 1
+                                 ? learned_prune::mlp_logit(dump_rec, search::prune_dump.l0_at_ply[ply])
+                                 : learned_prune::logit(dump_rec);
+#else
+        dump_rec.learned_z = learned_prune::logit(dump_rec);
 #endif
     }
     {
@@ -516,7 +520,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             {
                 search::PruneRecord rec;
                 search::fill_prune_record<Us>(*this, rec, static_eval, depth, ply, beta, cut_node, allow_null);
+#ifdef NNUE_EVAL
+                float z;
+                if (lp::Model == 1)
+                {
+                    std::array<std::uint8_t, 1024> l0;
+                    board.nnue_l0(l0);
+                    z = learned_prune::mlp_logit(rec, l0);
+                }
+                else
+                    z = learned_prune::logit(rec);
+#else
                 const float z = learned_prune::logit(rec);
+#endif
                 // T(depth) en pour mille ; comparaison en logit, sans sigmoide.
                 const float t = std::clamp(lp::ThresholdBase + lp::ThresholdDepthFactor * depth, 500, 999) / 1000.0f;
                 const float z_min = std::log(t / (1.0f - t));

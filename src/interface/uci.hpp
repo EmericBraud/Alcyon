@@ -548,6 +548,7 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::GradedZ0High, "learned_prune_graded_z0_high", 0, 1000),
             UCIOption<int>(&engine_constants::search::learned_pruning::GradedZ0Low, "learned_prune_graded_z0_low", 0, 1000),
             UCIOption<int>(&engine_constants::search::learned_pruning::GradedRMax, "learned_prune_graded_rmax", 1, 6),
+            UCIOption<int>(&engine_constants::search::learned_pruning::Model, "learned_prune_model", 0, 1),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),

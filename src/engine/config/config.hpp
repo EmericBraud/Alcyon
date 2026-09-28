@@ -89,6 +89,8 @@ namespace engine_constants
             PARAM_SPECIFIER int GradedZ0High = 400;
             PARAM_SPECIFIER int GradedZ0Low = 400;
             PARAM_SPECIFIER int GradedRMax = 3;
+            // 0 : regression par profondeur ; 1 : MLP avec l0 (build NNUE).
+            PARAM_SPECIFIER int Model = 0;
         }
         namespace internal_iterative_reduction
         {
@@ -291,6 +293,8 @@ namespace engine_constants
             PARAM_SPECIFIER int GradedZ0High = 400;
             PARAM_SPECIFIER int GradedZ0Low = 400;
             PARAM_SPECIFIER int GradedRMax = 3;
+            // 0 : regression par profondeur ; 1 : MLP avec l0 (build NNUE).
+            PARAM_SPECIFIER int Model = 0;
         }
         namespace internal_iterative_reduction
         {
