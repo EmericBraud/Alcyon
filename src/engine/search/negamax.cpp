@@ -482,7 +482,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     }
     {
         namespace lp = engine_constants::search::learned_pruning;
-        if (lp::Enabled && !is_pv && !in_check && ply > 0 && depth >= 1 && excluded_move == 0 &&
+        if (lp::Enabled && !is_pv && !in_check && ply > 0 && depth >= 1 && depth <= lp::MaxDepth && excluded_move == 0 &&
             std::abs(beta) < engine_constants::eval::SyzygyScore)
         {
             const int static_eval = search::node_static_eval<Us>(*this, ply);

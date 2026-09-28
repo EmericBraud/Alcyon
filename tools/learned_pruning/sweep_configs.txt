@@ -1,0 +1,25 @@
+# nom|profondeur de bench|options UCI (nom=valeur, separees par des espaces)
+ref14|14|learned_prune_enabled=0
+off11|11|learned_prune_enabled=0
+off12|12|learned_prune_enabled=0
+off13|13|learned_prune_enabled=0
+md2_950p5|12|learned_prune_max_depth=2 learned_prune_t_base=950 learned_prune_t_depth=5
+md2_950|12|learned_prune_max_depth=2 learned_prune_t_base=950 learned_prune_t_depth=0
+md2_980|12|learned_prune_max_depth=2 learned_prune_t_base=980 learned_prune_t_depth=0
+md2_990|12|learned_prune_max_depth=2 learned_prune_t_base=990 learned_prune_t_depth=0
+md2_995|12|learned_prune_max_depth=2 learned_prune_t_base=995 learned_prune_t_depth=0
+md4_950p5|12|learned_prune_max_depth=4 learned_prune_t_base=950 learned_prune_t_depth=5
+md4_950|12|learned_prune_max_depth=4 learned_prune_t_base=950 learned_prune_t_depth=0
+md4_980|12|learned_prune_max_depth=4 learned_prune_t_base=980 learned_prune_t_depth=0
+md4_990|12|learned_prune_max_depth=4 learned_prune_t_base=990 learned_prune_t_depth=0
+md4_995|12|learned_prune_max_depth=4 learned_prune_t_base=995 learned_prune_t_depth=0
+md6_950p5|12|learned_prune_max_depth=6 learned_prune_t_base=950 learned_prune_t_depth=5
+md6_950|12|learned_prune_max_depth=6 learned_prune_t_base=950 learned_prune_t_depth=0
+md6_980|12|learned_prune_max_depth=6 learned_prune_t_base=980 learned_prune_t_depth=0
+md6_990|12|learned_prune_max_depth=6 learned_prune_t_base=990 learned_prune_t_depth=0
+md6_995|12|learned_prune_max_depth=6 learned_prune_t_base=995 learned_prune_t_depth=0
+md64_950p5|12|learned_prune_max_depth=64 learned_prune_t_base=950 learned_prune_t_depth=5
+md64_950|12|learned_prune_max_depth=64 learned_prune_t_base=950 learned_prune_t_depth=0
+md64_980|12|learned_prune_max_depth=64 learned_prune_t_base=980 learned_prune_t_depth=0
+md64_990|12|learned_prune_max_depth=64 learned_prune_t_base=990 learned_prune_t_depth=0
+md64_995|12|learned_prune_max_depth=64 learned_prune_t_base=995 learned_prune_t_depth=0

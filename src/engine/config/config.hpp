@@ -72,6 +72,8 @@ namespace engine_constants
             PARAM_SPECIFIER int Enabled = 1;
             PARAM_SPECIFIER int ThresholdBase = 950;
             PARAM_SPECIFIER int ThresholdDepthFactor = 5;
+            // Profondeur maximale ou le mecanisme s'applique (64 = partout).
+            PARAM_SPECIFIER int MaxDepth = 64;
         }
         namespace internal_iterative_reduction
         {
@@ -257,6 +259,8 @@ namespace engine_constants
             PARAM_SPECIFIER int Enabled = 1;
             PARAM_SPECIFIER int ThresholdBase = 950;
             PARAM_SPECIFIER int ThresholdDepthFactor = 5;
+            // Profondeur maximale ou le mecanisme s'applique (64 = partout).
+            PARAM_SPECIFIER int MaxDepth = 64;
         }
         namespace internal_iterative_reduction
         {
