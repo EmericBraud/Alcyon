@@ -60,7 +60,7 @@ P(exact)     = F(beta) - F(alpha)             // seulement en PV
   une menace que l'eval ne voit pas, un score TT deja connu).
 - **Le RFP et le razoring actuels en sont le cas particulier** ou `biais`
   et `sigma` ne dependent que de la profondeur. C'est la ligne de base a
-  battre (etape 2).
+  battre (etape 1).
 
 ### Alpha, et les noeuds non-PV
 
@@ -161,10 +161,7 @@ re-entrainer une ou deux fois.
 0. **Compter ce qui arrive au point de decision.** Fait, voir ci-dessous.
    C'est la lecon de `docs/lmr-history-modulation.md` : on mesure avant
    d'ecrire le mecanisme.
-1. **Essai sans reseau** : le trou mis en evidence a l'etape 0 (RFP a
-   profondeur >= 7 avec une grosse marge) se teste avec deux parametres
-   existants. SPRT. Si ca rapporte, c'est la nouvelle ligne de base.
-2. **Dump + fits hors ligne**, tous avec la meme forme `F` et la meme
+1. **Dump + fits hors ligne**, tous avec la meme forme `F` et la meme
    perte, du plus simple au plus riche :
    - (a) `biais`, `sigma` fonctions de la profondeur seule : ce que RFP
      et razoring savent deja ;
@@ -180,15 +177,15 @@ re-entrainer une ou deux fois.
    profondeur : part du sous-arbre coupable avec une precision
    >= T(depth). Si (b) et (c) ne battent pas nettement (a), on s'arrete
    la : le reseau n'aurait rien a dire que l'elagage actuel ne dit deja.
-3. **Integration** du reseau (inference int8, accumulateur, features),
+2. **Integration** du reseau (inference int8, accumulateur, features),
    derriere une option UCI eteinte par defaut. Verifier l'impact nps.
-4. **Recompense dense hors ligne** pour choisir `T0`, `T1` sans jouer de
+3. **Recompense dense hors ligne** pour choisir `T0`, `T1` sans jouer de
    parties : sur un jeu de positions fixes, comparer
    `search(d, reseau actif)` a `search(d, reseau eteint)` --
    meme meilleur coup ? combien de noeuds en moins ?
-5. **SPSA sur `T0`, `T1`**, puis **SPRT** contre la version de base, et
+4. **SPSA sur `T0`, `T1`**, puis **SPRT** contre la version de base, et
    un controle contre Stockfish 8 (pas seulement de l'auto-jeu).
-6. Plus tard, hors perimetre : noeuds PV (meme reseau, question posee a
+5. Plus tard, hors perimetre : noeuds PV (meme reseau, question posee a
    alpha ET beta), tete de reduction, qsearch, affinage des poids par la
    recompense dense (ES).
 
@@ -198,7 +195,7 @@ re-entrainer une ou deux fois.
 partie represente environ 10^8 decisions d'elagage pour un seul resultat,
 et le SPSA a deja besoin de ~30 000 parties pour 4 parametres (tune 43).
 Sur des milliers de poids, avec ~23 000 parties par jour, ca ne converge
-pas. Le resultat des parties ne sert qu'aux 2 parametres de l'etape 5.
+pas. Le resultat des parties ne sert qu'aux 2 parametres de l'etape 4.
 
 ## Etape 0 : mesures
 
@@ -254,14 +251,14 @@ avec la part du sous-arbre par bucket : relancer
 2. **Donc le reseau ne peut gagner qu'avec de l'information hors eval.**
    Autour de `eval ~ beta` (-50..+50), les noeuds sont a 55-75 % : c'est la
    que se trouve ~35 % du sous-arbre, et c'est la que l'accumulateur et la
-   TT doivent faire la difference. L'etape 2 le mesure avant d'integrer
+   TT doivent faire la difference. L'etape 1 le mesure avant d'integrer
    quoi que ce soit.
 3. **Un trou simple a depth >= 7 :** le RFP s'arrete a depth 6. Au-dessus,
    les noeuds cherches avec `eval - beta >= 400` echouent haut a 98-99 %,
    et le NMP n'en rattrape qu'une partie. C'est 5 a 6.5 % du sous-arbre a
-   ces profondeurs, a tester d'abord sans reseau (etape 1). 98.8 % n'est
-   pas 100 % : a haute profondeur l'erreur coute cher, c'est au SPRT de
-   trancher.
+   ces profondeurs. Prolonger le RFP (`MaxDepth` 6 -> 8) le comblerait,
+   mais le gain attendu (1 a 3 % des noeuds, quelques Elo au mieux) ne
+   vaut pas un SPRT : non retenu. Le reseau le couvrira de toute facon.
 4. **Cote fail-low**, le meilleur bucket (`< -400`, depth 3-6) reste a
    11-14 % de fail-high : le razoring actuel n'a pas de marge evidente a
    recuperer avec l'eval seule.
