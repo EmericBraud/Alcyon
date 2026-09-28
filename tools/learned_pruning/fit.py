@@ -14,6 +14,8 @@ l'information manque, pas que l'optimisation a rate.
   (a) m seul          : biais, sigma constants par tranche de profondeur
                         (ce que RFP / razoring savent deja)
   (b) m, x, m*x       : biais et sigma dependent des features scalaires
+  (b-tt)              : (b) sans les features TT -- ce que la position seule
+                        apporte, sans l'information de recherche deja payee
 
 Critere : a precision donnee, quelle part du sous-arbre peut-on couper ?
 """
@@ -39,7 +41,7 @@ assert DTYPE.itemsize == 112
 K_EVAL_NONE = 1 << 30
 NO_PIECE = 6
 TT_FLAGS = 3  # TT_EXACT, TT_ALPHA, TT_BETA -- one-hot, masque par tt_found
-SLICES = [(1, 1), (2, 2), (3, 3), (4, 6), (7, 99)]
+SLICES = [(d, d) for d in range(1, 10)] + [(10, 99)]
 PRECISIONS = [0.95, 0.98, 0.99]
 PIECE_CP = np.array([100, 300, 300, 500, 900])
 MAX_TRAIN = 2_000_000
@@ -79,9 +81,14 @@ def features(r):
     return m.astype(np.float32), x
 
 
+TT_COLS = [2, 3, 4, 5, 6, 7]  # found, tt_delta, tt_ddepth, 3 flags : voir features()
+
+
 def design(m, x, model):
     if model == "a":
         return m[:, None]
+    if model == "b-tt":
+        x = np.delete(x, TT_COLS, axis=1)
     return np.concatenate([m[:, None], x, m[:, None] * x], axis=1)
 
 
@@ -113,10 +120,10 @@ def main(train_path, test_path):
             rtr = rtr[np.random.default_rng(0).choice(len(rtr), MAX_TRAIN, replace=False)]
         ytr, yte = rtr["outcome"] != 1, rte["outcome"] != 1  # NMP compte comme fail-high
         name = f"depth {lo}" if lo == hi else f"depth {lo}-{hi if hi < 99 else '+'}"
-        print(f"\n== {name} : train {len(rtr)}, test {len(rte)}, fail-high {yte.mean():.1%}")
+        print(f"\n== {name} : tt trouvee {rte['tt_found'].mean():.0%}, train {len(rtr)}, test {len(rte)}, fail-high {yte.mean():.1%}")
         mtr, xtr = features(rtr)
         mte, xte = features(rte)
-        for model in ("a", "b"):
+        for model in ("a", "b-tt", "b"):
             scaler = StandardScaler().fit(design(mtr, xtr, model))
             clf = LogisticRegression(C=1.0, max_iter=500)
             clf.fit(scaler.transform(design(mtr, xtr, model)), ytr)
@@ -124,7 +131,7 @@ def main(train_path, test_path):
             cov = "  ".join(
                 f"prec>={t:.0%}: noeuds {n:5.1%} sous-arbre {st:5.1%} (T={c:.3f})"
                 for t in PRECISIONS for n, st, c in [coverage(p, yte, rte["subtree"], t)])
-            print(f"  ({model}) logloss {log_loss(yte, p):.4f}  auc {roc_auc_score(yte, p):.4f}  {cov}")
+            print(f"  ({model:4s}) logloss {log_loss(yte, p):.4f}  auc {roc_auc_score(yte, p):.4f}  {cov}")
 
 
 if __name__ == "__main__":
