@@ -1,5 +1,7 @@
 #pragma once
 
+#include "engine/utils/random.hpp"
+
 #include <cstdint>
 
 #include "common/constants.hpp"
@@ -194,10 +196,23 @@ struct MovePicker
                         (ply > 0 && prev_move != 0 && m == worker.counter_moves[Us][prev_move.get_from_piece()][prev_move.get_to_sq()]))
                         continue;
                     int noise = 0;
+                    // Bruit des threads d'aide de la Lazy SMP. OrderingNoiseSeed
+                    // l'active aussi sur le thread principal : sert a construire
+                    // une reference de balayage decorrelee (tools/learned_pruning),
+                    // qui ne partage pas le debut de son arbre avec les configs.
                     if (thread_id != 0)
                     {
+                        // ponytail: (thread_id << 32) n'atteint jamais les 11 bits
+                        // gardes, donc tous les threads d'aide ont le MEME bruit.
+                        // Laisse tel quel pour ne pas changer la SMP ici.
                         uint64_t hash = (uint64_t(m.get_value()) + ply) ^ (uint64_t(thread_id) << 32);
                         noise = (hash & 0x7FF) - 1024;
+                    }
+                    else if (engine_constants::search::OrderingNoiseSeed != 0)
+                    {
+                        const uint64_t hash = engine::random::splitmix64(
+                            (uint64_t(m.get_value()) + ply) ^ (uint64_t(engine_constants::search::OrderingNoiseSeed) << 32));
+                        noise = int(hash & 0x7FF) - 1024;
                     }
                     int history_score = worker.history_moves[Us][m.get_from_sq()][m.get_to_sq()];
                     history_score = worker.score_quiet_history(history_score, m, prev_move, prev_prev_move, Us);

@@ -496,6 +496,7 @@ public:
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_d_fact"),
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginConst, "rfp_marg_const"),
 
+            UCIOption<int>(&engine_constants::search::OrderingNoiseSeed, "ordering_noise_seed", 0, 1000),
             UCIOption<int>(&engine_constants::search::learned_pruning::Enabled, "learned_prune_enabled", 0, 3),
             UCIOption<int>(&engine_constants::search::learned_pruning::ThresholdBase, "learned_prune_t_base", 500, 999),
             UCIOption<int>(&engine_constants::search::learned_pruning::ThresholdDepthFactor, "learned_prune_t_depth", 0, 50),

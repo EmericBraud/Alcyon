@@ -22,6 +22,8 @@ namespace engine_constants
     {
         constexpr int MaxDepth = 64;
 
+        // Graine du bruit d'ordonnancement sur le thread principal (0 = aucun).
+        PARAM_SPECIFIER int OrderingNoiseSeed = 0;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -222,6 +224,8 @@ namespace engine_constants
     {
         constexpr int MaxDepth = 64;
 
+        // Graine du bruit d'ordonnancement sur le thread principal (0 = aucun).
+        PARAM_SPECIFIER int OrderingNoiseSeed = 0;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;

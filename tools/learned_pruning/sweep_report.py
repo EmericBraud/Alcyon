@@ -1,6 +1,11 @@
 """Agrege sweep.sh : par config, noeuds totaux et accord du meilleur coup.
 
-    python3 sweep_report.py <dossier de sortie de sweep.sh> [ref_sf.txt]
+    python3 sweep_report.py <dossier de sortie de sweep.sh> [ref_sf.txt | config]
+
+Reference par defaut : ref14. Une config du balayage peut servir de
+reference (ex. ref15_s1 : Alcyon mono-thread, profondeur 15, bruit
+d'ordonnancement graine 1 -- decorrelee de off11..off13, qui sinon sont
+litteralement le debut de l'arbre de la reference).
 
 Avec ref_sf.txt (sf_ref.py), l'accord est mesure contre Stockfish au lieu
 de ref14 -- ref14 partage le debut de son arbre avec off11..off13.
@@ -22,13 +27,18 @@ for path in glob.glob(os.path.join(out, "*__lot_*.log")):
         nodes[name] += int(m[2])
 # Reference independante optionnelle (sf_ref.py) : index de ligne du fichier
 # de positions -> coup ; sweep.sh decoupe en lots de 25, dans l'ordre.
-if len(sys.argv) > 2:
+REF = "ref14"
+if len(sys.argv) > 2 and not os.path.exists(sys.argv[2]):
+    REF = sys.argv[2]  # une config du balayage, ex. ref15_s1
+elif len(sys.argv) > 2:
+    REF = "sf"
     moves["sf"] = {}
     for line in open(sys.argv[2]):
         n, mv = line.split()
         moves["sf"][(f"lot_{int(n) // 25:04d}", int(n) % 25 + 1)] = mv
     nodes["sf"] = nodes["off12"]
-ref, base = moves["sf" if len(sys.argv) > 2 else "ref14"], moves["off12"]
+ref, base = moves[REF], moves["off12"]
+print(f"reference : {REF}")
 keys = sorted(set(ref) & set.intersection(*(set(v) for v in moves.values())))
 print(f"{len(keys)} positions communes a toutes les configs\n")
 print(f"{'config':14s} {'noeuds/off12':>12s} {'accord ref':>13s} {'accord off12':>13s}")

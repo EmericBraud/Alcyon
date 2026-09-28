@@ -1,0 +1,3 @@
+# References decorrelees : Alcyon, mono-thread, profondeur 15, bruit d'ordonnancement.
+ref15_s1|15|learned_prune_enabled=0 ordering_noise_seed=1
+ref15_s2|15|learned_prune_enabled=0 ordering_noise_seed=2
