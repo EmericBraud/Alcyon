@@ -82,6 +82,13 @@ namespace engine_constants
             PARAM_SPECIFIER int RandomPermille = 0;
             // 1 : ne jamais toucher un noeud en re-recherche LMR (voir SearchWorker::research_node).
             PARAM_SPECIFIER int SkipResearch = 1;
+            // Reduction graduee (GradedSlope > 0, remplace Reduction) :
+            // R = clamp(Slope/100 * (|z| - Z0/100), 0, RMax), Z0 propre au
+            // sens predit (High : fail-high, Low : fail-low). Logit 4 ~ p 0.982.
+            PARAM_SPECIFIER int GradedSlope = 0;
+            PARAM_SPECIFIER int GradedZ0High = 400;
+            PARAM_SPECIFIER int GradedZ0Low = 400;
+            PARAM_SPECIFIER int GradedRMax = 3;
         }
         namespace internal_iterative_reduction
         {
@@ -277,6 +284,13 @@ namespace engine_constants
             PARAM_SPECIFIER int RandomPermille = 0;
             // 1 : ne jamais toucher un noeud en re-recherche LMR (voir SearchWorker::research_node).
             PARAM_SPECIFIER int SkipResearch = 1;
+            // Reduction graduee (GradedSlope > 0, remplace Reduction) :
+            // R = clamp(Slope/100 * (|z| - Z0/100), 0, RMax), Z0 propre au
+            // sens predit (High : fail-high, Low : fail-low). Logit 4 ~ p 0.982.
+            PARAM_SPECIFIER int GradedSlope = 0;
+            PARAM_SPECIFIER int GradedZ0High = 400;
+            PARAM_SPECIFIER int GradedZ0Low = 400;
+            PARAM_SPECIFIER int GradedRMax = 3;
         }
         namespace internal_iterative_reduction
         {

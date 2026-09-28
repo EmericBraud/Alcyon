@@ -527,24 +527,35 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 // au hasard (RandomPermille pour mille des noeuds eligibles).
                 // A taux de declenchement egal, dit si la perte vient du choix
                 // des noeuds ou du simple fait de les toucher.
-                const bool fire = lp::Enabled == 3
-                                      ? engine::random::splitmix64(board.get_hash() ^ ply) % 1000 < static_cast<unsigned>(lp::RandomPermille)
-                                      : (z >= z_min || z <= -z_min);
+                bool fire = lp::Enabled == 3
+                                ? engine::random::splitmix64(board.get_hash() ^ ply) % 1000 < static_cast<unsigned>(lp::RandomPermille)
+                                : (z >= z_min || z <= -z_min);
+                int reduction = lp::Reduction;
+                // Reduction graduee : R croit avec la confiance au-dela d'un
+                // seuil de logit propre a chaque sens (un fail-low accepte a
+                // tort fait manquer une refutation au parent, un fail-high
+                // un bon coup -- les couts ne sont pas symetriques).
+                if (lp::GradedSlope > 0 && lp::Enabled != 3)
+                {
+                    const float z0 = (z >= 0 ? lp::GradedZ0High : lp::GradedZ0Low) / 100.0f;
+                    reduction = std::clamp(static_cast<int>(lp::GradedSlope / 100.0f * (std::abs(z) - z0)), 0, lp::GradedRMax);
+                    fire = reduction > 0;
+                }
                 if (fire && search::prune_stats_enabled())
                     search::learned_fires[std::min(depth, search::kPruneDepths) - 1].fetch_add(1, std::memory_order_relaxed);
                 if (lp::Enabled == 2 || !fire)
                     ;
-                else if (lp::Reduction > 0)
+                else if (reduction > 0)
                 {
                     // Reduction VERIFIEE, comme la LMR : on cherche d'abord ce
                     // meme noeud a depth - R. Si le resultat confirme la
                     // prediction, on le garde (c'est l'economie) ; s'il la
                     // contredit, c'est une surprise et on cherche a pleine
-                    // profondeur. Sans cette verification, 1 % de noeuds
-                    // reduits au hasard coutait 10 points d'accord.
+                    // profondeur. Seule reste l'erreur ou la recherche reduite
+                    // se trompe dans le meme sens que le modele.
                     const int saved_verify_ply = learned_verify_ply;
                     learned_verify_ply = ply; // pas de nouvelle decision sur ce noeud
-                    const int reduced = depth - lp::Reduction;
+                    const int reduced = depth - reduction;
                     const int s = reduced > 0 ? negamax<Us>(reduced, alpha, beta, ply, allow_null, cut_node)
                                               : qsearch<Us>(alpha, beta, ply);
                     learned_verify_ply = saved_verify_ply;

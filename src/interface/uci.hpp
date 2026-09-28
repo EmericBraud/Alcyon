@@ -544,6 +544,10 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::Reduction, "learned_prune_reduction", 0, 4),
             UCIOption<int>(&engine_constants::search::learned_pruning::RandomPermille, "learned_prune_random_permille", 0, 1000),
             UCIOption<int>(&engine_constants::search::learned_pruning::SkipResearch, "learned_prune_skip_research", 0, 1),
+            UCIOption<int>(&engine_constants::search::learned_pruning::GradedSlope, "learned_prune_graded_slope", 0, 400),
+            UCIOption<int>(&engine_constants::search::learned_pruning::GradedZ0High, "learned_prune_graded_z0_high", 0, 1000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::GradedZ0Low, "learned_prune_graded_z0_low", 0, 1000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::GradedRMax, "learned_prune_graded_rmax", 1, 6),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),
