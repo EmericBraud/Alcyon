@@ -1,6 +1,6 @@
 """Ecart apparie config - base a noeuds egaux (isonode.sh), avec IC 95 %.
 
-    python3 isonode_report.py <dossier de sweep.sh> <reference> <config> [config...]
+    [PREFIX=iso] python3 isonode_report.py <dossier de sweep.sh> <reference> <config> [config...]
 
 Pour chaque position : la config et la base (meme budget de noeuds)
 s'accordent-elles avec la reference ? Ecart = moyenne des differences,
@@ -34,7 +34,7 @@ print(f"reference : {ref_name}\n")
 print(f"{'config':16s} {'noeuds/off12':>12s} {'accord':>7s} {'base iso':>9s} {'ecart':>7s} {'IC 95 %':>16s} {'positions':>9s}")
 for cfg in configs:
     c, c_nodes = moves(out, cfg)
-    b, _ = moves(out, "iso_" + cfg)
+    b, _ = moves(out, os.environ.get("PREFIX", "iso") + "_" + cfg)
     keys = sorted(set(c) & set(b) & set(ref) & set(off))
     a_c = np.array([c[k] == ref[k] for k in keys], float)
     a_b = np.array([b[k] == ref[k] for k in keys], float)

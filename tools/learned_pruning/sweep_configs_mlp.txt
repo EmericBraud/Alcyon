@@ -1,0 +1,10 @@
+# MLP 16 (learned_prune_model=1) sur les memes positions neuves que sweep_configs_graded.txt.
+m_vr1md4|12|learned_prune_model=1 learned_prune_reduction=1 learned_prune_max_depth=4 learned_prune_t_base=950 learned_prune_t_depth=5
+m_vr1md64|12|learned_prune_model=1 learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=950 learned_prune_t_depth=5
+m_vr1md64_980|12|learned_prune_model=1 learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=980 learned_prune_t_depth=0
+m_g100_z3|12|learned_prune_model=1 learned_prune_graded_slope=100 learned_prune_graded_z0_high=300 learned_prune_graded_z0_low=300
+m_g100_z4|12|learned_prune_model=1 learned_prune_graded_slope=100 learned_prune_graded_z0_high=400 learned_prune_graded_z0_low=400
+m_g100_z5|12|learned_prune_model=1 learned_prune_graded_slope=100 learned_prune_graded_z0_high=500 learned_prune_graded_z0_low=500
+m_g200_z4|12|learned_prune_model=1 learned_prune_graded_slope=200 learned_prune_graded_z0_high=400 learned_prune_graded_z0_low=400
+m_g100_h3l5|12|learned_prune_model=1 learned_prune_graded_slope=100 learned_prune_graded_z0_high=300 learned_prune_graded_z0_low=500
+m_g100_h5l3|12|learned_prune_model=1 learned_prune_graded_slope=100 learned_prune_graded_z0_high=500 learned_prune_graded_z0_low=300
