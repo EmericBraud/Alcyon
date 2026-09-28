@@ -19,3 +19,5 @@ ctl_off|12|learned_prune_enabled=0
 ctl_h4|12|learned_prune_enabled=0 Hash=4
 rand_r2_p100|12|learned_prune_enabled=3 learned_prune_random_permille=100 learned_prune_reduction=2 learned_prune_max_depth=64
 rand_r2_p300|12|learned_prune_enabled=3 learned_prune_random_permille=300 learned_prune_reduction=2 learned_prune_max_depth=64
+base_x2|12|learned_prune_enabled=0 budget_scale=2
+base_x4|12|learned_prune_enabled=0 budget_scale=4
