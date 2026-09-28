@@ -372,8 +372,26 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const bool in_check = board.is_king_attacked<Us>();
     const bool is_mate_node = (alpha < engine_constants::eval::MateScore && beta > -engine_constants::eval::MateScore && in_check);
 
+    // Etape 0 de docs/learned-pruning.md (voir search::record_prune). Hors
+    // build d'experimentation stats_node vaut false et tout disparait.
+    const bool stats_node = search::prune_stats_enabled() && !is_pv && !in_check && ply > 0 && depth >= 1 && excluded_move == 0;
+    const int stats_depth = depth;
+    const long long stats_clock = stats_node ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
+    // Eval calculee hors du cache static_eval_stack : le remplir ici
+    // changerait improving, donc l'arbre qu'on cherche a mesurer.
+    const int stats_margin = stats_node ? Eval::prune_eval_relative<Us>(board, -engine_constants::eval::Inf, engine_constants::eval::Inf) - beta : 0;
+    auto stat = [&](search::PruneOutcome o)
+    {
+        if (stats_node)
+            search::record_prune(stats_depth, o, stats_margin,
+                                 global_nodes.load(std::memory_order_relaxed) + local_nodes - stats_clock);
+    };
+
     if (search::razoring<Us>(*this, depth, alpha, is_pv, in_check, ply))
+    {
+        stat(search::PO_RAZOR);
         return qsearch<Us>(alpha, beta, ply);
+    }
 
     Move tt_move = 0;
     {
@@ -394,7 +412,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         // qui fera l'objet d'un SPRT separe.
         int rfp_score;
         if (search::reverse_futility_pruning<Us>(*this, depth, ply, in_check, is_pv, beta, rfp_score))
+        {
+            stat(search::PO_RFP);
             return rfp_score;
+        }
     }
 
     // =============================== Search ===============================
@@ -402,7 +423,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     {
         int return_score;
         if (search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score))
+        {
+            stat(search::PO_NMP);
             return return_score;
+        }
     }
 
     // Place APRES le null move, comme Stockfish (son etape 11 suit l'etape
@@ -544,6 +568,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                     killer_moves[ply][0] = m;
                 }
             }
+            stat(search::PO_FAIL_HIGH);
             return score;
         }
 
@@ -567,6 +592,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     {
         int score = in_check ? -engine_constants::eval::MateScore + ply : 0;
         shared_tt.store(board.get_hash(), depth, ply, score, TT_EXACT, 0);
+        stat(score >= beta ? search::PO_FAIL_HIGH : search::PO_FAIL_LOW);
         return score;
     }
 
@@ -577,6 +603,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
     shared_tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node);
 
+    stat(best_score >= beta ? search::PO_FAIL_HIGH : search::PO_FAIL_LOW);
     return best_score;
 }
 

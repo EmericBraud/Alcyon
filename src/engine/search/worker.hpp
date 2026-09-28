@@ -69,6 +69,51 @@ namespace search
         (is_tactical ? cutoff_tactical : cutoff_quiet)[b].fetch_add(1, std::memory_order_relaxed);
     }
 
+    // Diagnostic (ALCYON_PRUNE_STATS=1, affiche par la commande UCI
+    // "prunestats") : etape 0 de docs/learned-pruning.md. Pour chaque noeud
+    // non-PV, hors echec, ply > 0, depth >= 1 : comment il se termine, et,
+    // s'il est cherche, a quel point (static_eval - beta) predisait deja
+    // son resultat. C'est la marge de manoeuvre d'un reseau "ce noeud vaut-il
+    // d'etre calcule" : si les noeuds cherches sont deja imprevisibles avec
+    // la seule eval, le reseau doit trouver l'information ailleurs.
+    //
+    // Sous-arbre : differences de global_nodes + local_nodes, donc exact en
+    // mono-thread seulement (bench a Threads=1).
+    constexpr int kPruneDepths = 10; // depth 1..9, puis 10+
+    enum PruneOutcome { PO_RAZOR, PO_RFP, PO_NMP, PO_FAIL_HIGH, PO_FAIL_LOW, kPruneOutcomes };
+    // Bornes des buckets de (static_eval - beta), en cp.
+    constexpr int kMarginEdges[] = {-400, -200, -100, -50, 0, 50, 100, 200, 400};
+    constexpr int kMarginBuckets = sizeof(kMarginEdges) / sizeof(int) + 1;
+    inline std::atomic<long long> prune_outcome[kPruneDepths][kPruneOutcomes] = {};
+    inline std::atomic<long long> margin_searched[kPruneDepths][kMarginBuckets] = {};
+    inline std::atomic<long long> margin_fail_high[kPruneDepths][kMarginBuckets] = {};
+    inline std::atomic<long long> margin_subtree[kPruneDepths][kMarginBuckets] = {};
+
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+    inline bool prune_stats_enabled()
+    {
+        static const bool on = std::getenv("ALCYON_PRUNE_STATS") != nullptr;
+        return on;
+    }
+#else
+    constexpr bool prune_stats_enabled() { return false; }
+#endif
+
+    inline void record_prune(int depth, PruneOutcome o, int margin, long long subtree)
+    {
+        const int d = std::min(depth, kPruneDepths) - 1;
+        prune_outcome[d][o].fetch_add(1, std::memory_order_relaxed);
+        if (o != PO_FAIL_HIGH && o != PO_FAIL_LOW)
+            return;
+        int b = 0;
+        while (b < kMarginBuckets - 1 && margin >= kMarginEdges[b])
+            ++b;
+        margin_searched[d][b].fetch_add(1, std::memory_order_relaxed);
+        margin_subtree[d][b].fetch_add(subtree, std::memory_order_relaxed);
+        if (o == PO_FAIL_HIGH)
+            margin_fail_high[d][b].fetch_add(1, std::memory_order_relaxed);
+    }
+
 #ifdef ALCYON_SEARCH_EXPERIMENTS
     inline bool tt_cutoffs_enabled()
     {

@@ -642,6 +642,51 @@ public:
                 }
                 logs::uci << " queue_calme_rang5+=" << (total ? 100.0 * tail_quiet / total : 0.0) << "%" << std::endl;
             }
+            else if (token == "prunestats")
+            {
+                // Voir search::record_prune et docs/learned-pruning.md, etape 0.
+                if (!search::prune_stats_enabled())
+                {
+                    logs::uci << "info string prunestats unavailable: rebuild with "
+                                 "-DENABLE_SEARCH_EXPERIMENTS=ON and set ALCYON_PRUNE_STATS=1"
+                              << std::endl;
+                    continue;
+                }
+                static const char *outcomes[] = {"razor", "rfp", "nmp", "fh", "fl"};
+                for (int d = 0; d < search::kPruneDepths; ++d)
+                {
+                    long long n = 0;
+                    for (int o = 0; o < search::kPruneOutcomes; ++o)
+                        n += search::prune_outcome[d][o].load();
+                    if (n == 0)
+                        continue;
+                    long long depth_subtree = 0;
+                    for (int b = 0; b < search::kMarginBuckets; ++b)
+                        depth_subtree += search::margin_subtree[d][b].load();
+                    logs::uci << "info string prunestats depth=" << (d + 1) << (d + 1 == search::kPruneDepths ? "+" : "")
+                              << " n=" << n;
+                    for (int o = 0; o < search::kPruneOutcomes; ++o)
+                        logs::uci << " " << outcomes[o] << "=" << 100.0 * search::prune_outcome[d][o].load() / n << "%";
+                    logs::uci << " subtree_nodes=" << depth_subtree << std::endl;
+                    // Par bucket de (eval - beta), noeuds CHERCHES seulement :
+                    // effectif, taux de fail-high, et part des noeuds de
+                    // sous-arbre de cette profondeur (ce qu'on economiserait
+                    // en elaguant ce bucket).
+                    logs::uci << "info string prunestats   margin";
+                    for (int b = 0; b < search::kMarginBuckets; ++b)
+                    {
+                        const long long s = search::margin_searched[d][b].load();
+                        if (s == 0)
+                            continue;
+                        logs::uci << " [" << (b == 0 ? std::string("-inf") : std::to_string(search::kMarginEdges[b - 1])) << ","
+                                  << (b == search::kMarginBuckets - 1 ? std::string("inf") : std::to_string(search::kMarginEdges[b])) << ")"
+                                  << "=" << s
+                                  << "/fh" << 100.0 * search::margin_fail_high[d][b].load() / s << "%"
+                                  << "/sub" << (depth_subtree ? 100.0 * search::margin_subtree[d][b].load() / depth_subtree : 0.0) << "%";
+                    }
+                    logs::uci << std::endl;
+                }
+            }
             else if (token == "quit")
             {
                 break;
