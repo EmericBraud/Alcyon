@@ -266,6 +266,11 @@ struct SearchWorker
 
     int max_extended_depth;
 
+    // Ply du noeud en cours de verification par l'elagage appris (reduction
+    // verifiee, negamax.cpp) : la recherche reduite de ce noeud ne doit pas
+    // redeclencher le mecanisme sur lui-meme. -1 = aucun.
+    int learned_verify_ply = -1;
+
     // CONSTRUCTEUR PRINCIPAL
     // Appelé par l'orchestrateur pour chaque thread
     SearchWorker(

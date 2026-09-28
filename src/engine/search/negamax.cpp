@@ -482,7 +482,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     }
     {
         namespace lp = engine_constants::search::learned_pruning;
-        if (lp::Enabled && !is_pv && !in_check && ply > 0 && depth >= 1 && depth <= lp::MaxDepth && excluded_move == 0 &&
+        if (lp::Enabled && !is_pv && !in_check && ply > 0 && ply != learned_verify_ply && depth >= 1 && depth <= lp::MaxDepth && excluded_move == 0 &&
             std::abs(beta) < engine_constants::eval::SyzygyScore)
         {
             const int static_eval = search::node_static_eval<Us>(*this, ply);
@@ -510,12 +510,23 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                     ;
                 else if (lp::Reduction > 0)
                 {
-                    // Reduire au lieu de couper : le noeud est quand meme
-                    // cherche, moins profond, donc une surprise reste visible
-                    // (et la TT stocke la profondeur reellement cherchee).
-                    depth -= lp::Reduction;
-                    if (depth <= 0)
-                        return qsearch<Us>(alpha, beta, ply);
+                    // Reduction VERIFIEE, comme la LMR : on cherche d'abord ce
+                    // meme noeud a depth - R. Si le resultat confirme la
+                    // prediction, on le garde (c'est l'economie) ; s'il la
+                    // contredit, c'est une surprise et on cherche a pleine
+                    // profondeur. Sans cette verification, 1 % de noeuds
+                    // reduits au hasard coutait 10 points d'accord.
+                    const int saved_verify_ply = learned_verify_ply;
+                    learned_verify_ply = ply; // pas de nouvelle decision sur ce noeud
+                    const int reduced = depth - lp::Reduction;
+                    const int s = reduced > 0 ? negamax<Us>(reduced, alpha, beta, ply, allow_null, cut_node)
+                                              : qsearch<Us>(alpha, beta, ply);
+                    learned_verify_ply = saved_verify_ply;
+                    if (z >= 0 ? s >= beta : s <= alpha)
+                    {
+                        stat(search::PO_LEARNED);
+                        return s;
+                    }
                 }
                 else
                 {
