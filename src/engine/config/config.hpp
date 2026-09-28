@@ -69,13 +69,15 @@ namespace engine_constants
         // coute qu'un petit sous-arbre.
         namespace learned_pruning
         {
-            PARAM_SPECIFIER int Enabled = 1; // 0 eteint, 1 actif, 2 ombre (calcule sans couper)
+            PARAM_SPECIFIER int Enabled = 1; // 0 eteint, 1 actif, 2 ombre (calcule sans couper), 3 hasard
             PARAM_SPECIFIER int ThresholdBase = 950;
             PARAM_SPECIFIER int ThresholdDepthFactor = 5;
             // Profondeur maximale ou le mecanisme s'applique (64 = partout).
             PARAM_SPECIFIER int MaxDepth = 64;
             // 0 : couper (rendre la borne). R > 0 : reduire le noeud de R plys.
             PARAM_SPECIFIER int Reduction = 0;
+            // Controle (Enabled = 3) : pour mille des noeuds eligibles tires au hasard.
+            PARAM_SPECIFIER int RandomPermille = 0;
         }
         namespace internal_iterative_reduction
         {
@@ -258,13 +260,15 @@ namespace engine_constants
         // coute qu'un petit sous-arbre.
         namespace learned_pruning
         {
-            PARAM_SPECIFIER int Enabled = 1; // 0 eteint, 1 actif, 2 ombre (calcule sans couper)
+            PARAM_SPECIFIER int Enabled = 1; // 0 eteint, 1 actif, 2 ombre (calcule sans couper), 3 hasard
             PARAM_SPECIFIER int ThresholdBase = 950;
             PARAM_SPECIFIER int ThresholdDepthFactor = 5;
             // Profondeur maximale ou le mecanisme s'applique (64 = partout).
             PARAM_SPECIFIER int MaxDepth = 64;
             // 0 : couper (rendre la borne). R > 0 : reduire le noeud de R plys.
             PARAM_SPECIFIER int Reduction = 0;
+            // Controle (Enabled = 3) : pour mille des noeuds eligibles tires au hasard.
+            PARAM_SPECIFIER int RandomPermille = 0;
         }
         namespace internal_iterative_reduction
         {

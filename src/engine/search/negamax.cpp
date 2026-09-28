@@ -497,7 +497,16 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 // Enabled = 2 : mode ombre, la decision est calculee (et le cache
                 // d'eval rempli) mais jamais appliquee -- mesure la precision
                 // en situation, le dump enregistrant z et le vrai resultat.
-                if (lp::Enabled == 2 || (z < z_min && z > -z_min))
+                // Enabled = 3 : controle, le modele est remplace par un tirage
+                // au hasard (RandomPermille pour mille des noeuds eligibles).
+                // A taux de declenchement egal, dit si la perte vient du choix
+                // des noeuds ou du simple fait de les toucher.
+                const bool fire = lp::Enabled == 3
+                                      ? engine::random::splitmix64(board.get_hash() ^ ply) % 1000 < static_cast<unsigned>(lp::RandomPermille)
+                                      : (z >= z_min || z <= -z_min);
+                if (fire && search::prune_stats_enabled())
+                    search::learned_fires[std::min(depth, search::kPruneDepths) - 1].fetch_add(1, std::memory_order_relaxed);
+                if (lp::Enabled == 2 || !fire)
                     ;
                 else if (lp::Reduction > 0)
                 {
@@ -511,7 +520,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 else
                 {
                     stat(search::PO_LEARNED);
-                    return z >= z_min ? beta : alpha;
+                    return z >= 0 ? beta : alpha;
                 }
             }
         }

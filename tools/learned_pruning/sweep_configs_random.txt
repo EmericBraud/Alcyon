@@ -1,0 +1,5 @@
+# Controle : noeuds tires au hasard, reduits de 1 ply, depth <= 4.
+rand10_r1_md4|12|learned_prune_enabled=3 learned_prune_random_permille=10 learned_prune_reduction=1 learned_prune_max_depth=4
+rand30_r1_md4|12|learned_prune_enabled=3 learned_prune_random_permille=30 learned_prune_reduction=1 learned_prune_max_depth=4
+rand100_r1_md4|12|learned_prune_enabled=3 learned_prune_random_permille=100 learned_prune_reduction=1 learned_prune_max_depth=4
+rand300_r1_md4|12|learned_prune_enabled=3 learned_prune_random_permille=300 learned_prune_reduction=1 learned_prune_max_depth=4

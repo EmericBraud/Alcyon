@@ -91,6 +91,8 @@ namespace search
     inline std::atomic<long long> margin_searched[kPruneDepths][kMarginBuckets] = {};
     inline std::atomic<long long> margin_fail_high[kPruneDepths][kMarginBuckets] = {};
     inline std::atomic<long long> margin_subtree[kPruneDepths][kMarginBuckets] = {};
+    // Declenchements du mecanisme appris (coupe, reduction ou ombre), par profondeur.
+    inline std::atomic<long long> learned_fires[kPruneDepths] = {};
 
 #ifdef ALCYON_SEARCH_EXPERIMENTS
     inline bool prune_stats_enabled()

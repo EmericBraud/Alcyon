@@ -496,11 +496,12 @@ public:
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_d_fact"),
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginConst, "rfp_marg_const"),
 
-            UCIOption<int>(&engine_constants::search::learned_pruning::Enabled, "learned_prune_enabled", 0, 2),
+            UCIOption<int>(&engine_constants::search::learned_pruning::Enabled, "learned_prune_enabled", 0, 3),
             UCIOption<int>(&engine_constants::search::learned_pruning::ThresholdBase, "learned_prune_t_base", 500, 999),
             UCIOption<int>(&engine_constants::search::learned_pruning::ThresholdDepthFactor, "learned_prune_t_depth", 0, 50),
             UCIOption<int>(&engine_constants::search::learned_pruning::MaxDepth, "learned_prune_max_depth", 1, 64),
             UCIOption<int>(&engine_constants::search::learned_pruning::Reduction, "learned_prune_reduction", 0, 4),
+            UCIOption<int>(&engine_constants::search::learned_pruning::RandomPermille, "learned_prune_random_permille", 0, 1000),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),
@@ -673,7 +674,8 @@ public:
                               << " n=" << n;
                     for (int o = 0; o < search::kPruneOutcomes; ++o)
                         logs::uci << " " << outcomes[o] << "=" << 100.0 * search::prune_outcome[d][o].load() / n << "%";
-                    logs::uci << " subtree_nodes=" << depth_subtree << std::endl;
+                    logs::uci << " subtree_nodes=" << depth_subtree
+                              << " learned_fires=" << 100.0 * search::learned_fires[d].load() / n << "%" << std::endl;
                     // Par bucket de (eval - beta), noeuds CHERCHES seulement :
                     // effectif, taux de fail-high, et part des noeuds de
                     // sous-arbre de cette profondeur (ce qu'on economiserait
