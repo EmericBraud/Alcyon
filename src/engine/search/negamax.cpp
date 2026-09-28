@@ -380,8 +380,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const int stats_depth = depth;
     const long long stats_clock = stats_node ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
     // Eval calculee hors du cache static_eval_stack : le remplir ici
-    // changerait improving, donc l'arbre qu'on cherche a mesurer.
-    const int stats_eval = stats_node ? Eval::prune_eval_relative<Us>(board, -engine_constants::eval::Inf, engine_constants::eval::Inf) : 0;
+    // changerait improving, donc l'arbre qu'on cherche a mesurer. Seul
+    // prunestats en a besoin a l'entree ; le dump ne la calcule que pour
+    // les noeuds tires, au point de decision.
+    const auto eval_uncached = [&]
+    { return Eval::prune_eval_relative<Us>(board, -engine_constants::eval::Inf, engine_constants::eval::Inf); };
+    const int stats_eval = stats_node && search::prune_stats_enabled() ? eval_uncached() : 0;
     bool dump_node = false; // decide au point de decision, plus bas
     search::PruneRecord dump_rec;
     auto stat = [&](search::PruneOutcome o)
@@ -436,7 +440,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     {
         dump_node = true;
         dump_rec.beta = beta;
-        dump_rec.static_eval = stats_eval;
+        dump_rec.static_eval = search::prune_stats_enabled() ? stats_eval : eval_uncached();
         dump_rec.eval_prev2 = ply >= 2 ? static_eval_stack[ply - 2] : kEvalNone;
         TTFlag tt_flag = TT_EXACT;
         int tt_score = 0, tt_depth = 0;
