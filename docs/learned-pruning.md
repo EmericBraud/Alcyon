@@ -449,3 +449,32 @@ conclure quoi que ce soit sur elles.
 La reduction verifiee (`learned_prune_reduction`, re-recherche a pleine
 profondeur si le resultat reduit contredit la prediction) reste la bonne
 forme du mecanisme : c'est ce qui rend la LMR et le NMP surs.
+
+## Reference decorrelee (Alcyon lui-meme)
+
+La reference doit etre le moteur lui-meme (mono-thread, profondeur fixe),
+pas Stockfish -- mais sans partager le debut de son arbre avec les configs.
+`ordering_noise_seed` active sur le thread principal le bruit
+d'ordonnancement des coups calmes (celui des threads d'aide de la SMP) ;
+`ref15_s1` et `ref15_s2` : profondeur 15, graines 1 et 2
+(`sweep_configs_ref.txt`, `sweep_report.py <dossier> ref15_s1`).
+
+Controles valides : Hash=4 72.6/72.9 %, mode ombre 72.4/72.7 %, 1 % de
+reductions au hasard 72.5-73.2 % -- tous au niveau d'off12 (72.5/72.8 %).
+Courbe : off11 70.5/70.8, off12 72.5/72.8, off13 74.3/74.4 (~2 points par
+ply). Deux references de meme force s'accordent a 74.4 %.
+
+- Coupes agressives : clairement sous la courbe (le reglage du SPRT : 67.5 %
+  a 0.666 des noeuds, ~ -3.5 points).
+- Reductions moderees : sur la courbe a +-0.8 point pres, dans le bruit
+  (erreur type ~0.6 point sur 5000 positions). Meilleures : R=1 non
+  verifiee 0.95+0.005d (0.910 noeuds, +0.7), R=1 verifiee depth <= 4
+  (0.885, +0.5).
+
+A trancher sur 20 000 positions avant tout SPRT.
+
+**PIEGE a part** : `8/5p2/q6k/2r5/5p2/2N5/1K6/7q w - - 8 68`, graine 2,
+profondeur 15 : > 12 min (les autres ~1 s). Explosion de recherche a
+examiner separement. Note aussi : dans move_picker.hpp, `thread_id << 32`
+n'atteint pas les 11 bits gardes -- tous les threads d'aide de la SMP ont
+le meme bruit.
