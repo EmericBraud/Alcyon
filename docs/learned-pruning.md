@@ -20,13 +20,56 @@ borne sans chercher.
 
 ## Formulation
 
-Dans un noeud non-PV la fenetre est nulle (`beta = alpha + 1`), donc la
-recherche n'a que deux issues : fail-high (`score >= beta`) ou fail-low
-(`score <= alpha`). Une seule sortie suffit :
+### Le reseau predit une distribution, pas une decision
+
+"Ce noeud fait-il fail-high ?" veut dire "la valeur de recherche V
+depasse-t-elle beta ?". Or beta ne vient pas de la position : c'est ce que
+le reste de l'arbre a deja trouve, relativement a la racine. La meme
+position est a couper sous une fenetre et a chercher sous une autre. Un
+reseau qui ne verrait que la position (l'accumulateur) ne peut donc pas
+repondre seul -- mais il n'a pas besoin de tout l'historique du chemin
+non plus : a profondeur fixe, V ne depend que de la position (sauf
+repetitions et regle des 50 coups), et beta resume la comparaison a la
+racine.
+
+D'ou la separation : le reseau predit la **distribution de V** a partir
+de ce que le noeud sait, et les bornes n'interviennent qu'au moment de
+poser la question.
 
 ```
-p = P(fail-high | features du noeud)       // sigmoide
+V ~ centree sur eval + biais, de largeur sigma
+P(V < x) = F( (x - eval - biais) / sigma )    // F = sigmoide
 
+biais, sigma = reseau(accumulateur, depth, scalaires)   // sigma > 0
+
+P(fail-high) = 1 - F(beta)
+P(fail-low)  = F(alpha)
+P(exact)     = F(beta) - F(alpha)             // seulement en PV
+```
+
+- **Le reseau ne voit ni alpha ni beta.** Il repond pour n'importe quelle
+  fenetre, nulle ou non.
+- **La dependance a `eval - beta` est cablee**, et toujours dans le bon
+  sens : plus de marge, plus de fail-high. Le reseau n'a pas a la
+  redecouvrir ; il n'apprend que ce que l'eval ignore.
+- **Ce que l'accumulateur apporte, c'est `sigma`** : la volatilite de la
+  position. Pieces en prise, roi expose, clouages -- l'eval statique est
+  la meme, mais une recherche a profondeur d peut la renverser. `sigma`
+  petit : position calme, on peut couper. `sigma` grand : tactique, on
+  cherche. `biais` capte les erreurs systematiques de l'eval (le trait,
+  une menace que l'eval ne voit pas, un score TT deja connu).
+- **Le RFP et le razoring actuels en sont le cas particulier** ou `biais`
+  et `sigma` ne dependent que de la profondeur. C'est la ligne de base a
+  battre (etape 2).
+
+### Alpha, et les noeuds non-PV
+
+Dans un noeud non-PV la fenetre est nulle (`alpha = beta - 1`) : fail-low
+(`V <= alpha`) et "pas fail-high" (`V < beta`) sont la meme chose. Alpha
+n'apporte rien et une seule probabilite `p = 1 - F(beta)` decide des deux
+cotes :
+
+```
 si p >= T(depth)       -> return beta       // comme RFP / NMP
 si p <= 1 - T(depth)   -> return alpha      // comme razoring
 sinon                  -> recherche normale
@@ -34,9 +77,10 @@ sinon                  -> recherche normale
 T(depth) = clamp(T0 + T1 * depth, 0.5, 1)  // T1 > 0 : plus exigeant en haut
 ```
 
-Le reseau generalise donc RFP, razoring et NMP d'un seul coup, avec le
-meme mecanisme des deux cotes. `T0` et `T1` sont les seuls parametres
-laisses au SPSA -- deux, pas des milliers (voir "Ce qu'on ne fait pas").
+Le meme mecanisme generalise donc RFP, razoring et NMP. `T0` et `T1` sont
+les seuls parametres laisses au SPSA -- deux, pas des milliers (voir "Ce
+qu'on ne fait pas"). Alpha ne compte vraiment qu'en PV (trois issues),
+exclu pour l'instant ; la formulation le couvre deja le jour ou on y va.
 
 Choix de depart, chacun revisable :
 
@@ -54,15 +98,21 @@ Choix de depart, chacun revisable :
 
 ## Features d'entree
 
-Scalaires du noeud (tous deja disponibles a l'endroit de la decision) :
+Aucune entree ne contient alpha ou beta : les grandeurs de score sont
+relatives a l'eval statique, pas a la fenetre. Scalaires du noeud (tous
+deja disponibles a l'endroit de la decision) :
 
 - `depth`, `ply`
-- `static_eval - beta` (borne), `improving`, `eval(ply) - eval(ply-2)`
-- TT : hit, type de borne, `tt_depth - depth`, `tt_score - beta` (borne),
-  `|tt_score - static_eval|` (complexite)
-- type de noeud (cut / all), `allow_null` (le parent vient d'un null move)
+- `improving`, `eval(ply) - eval(ply-2)`
+- TT : hit, type de borne, `tt_depth - depth`, `tt_score - static_eval`
+  (borne ; c'est de l'information de recherche deja payee, que la
+  position seule ne contient pas)
+- type de noeud (cut / all) : l'issue que le parent attend
+- `allow_null` (le parent vient d'un null move)
 - materiel hors pions de chaque camp, nombre de coups legaux
 - coup precedent : capture, echec, piece deplacee
+- compteur des 50 coups, repetition possible : les seuls cas ou V depend
+  vraiment du chemin
 
 Plus l'accumulateur NNUE du noeud (L1 = 1024 par camp), qui encode la
 position -- tension tactique comprise -- et qui est deja calcule des que
@@ -70,23 +120,35 @@ le noeud evalue. A mesurer : combien de noeuds atteignent la decision sans
 avoir evalue (cout d'une mise a jour d'accumulateur en plus).
 
 Architecture de depart : accumulateur -> 16 (int8, SIMD) concatene aux
-scalaires -> 16 -> 1. De l'ordre de 17k MAC, soit quelques dizaines de ns :
-a comparer au nps (environ 600k en bench, donc ~1.7 us par noeud).
+scalaires -> 16 -> 2 sorties (`biais`, `log sigma`). De l'ordre de 17k
+MAC, soit quelques dizaines de ns : a comparer au nps (environ 600k en
+bench, donc ~1.7 us par noeud). `eval` n'entre pas dans le reseau : elle
+est ajoutee a la sortie, dans la formule de F.
 
 ## Donnees et entrainement
 
 **Labels.** Mode de dump (build d'experimentation, `ALCYON_PRUNE_DUMP`) :
 a un noeud sur N tire au hasard, au point de decision, on ecrit les
-features, puis on laisse la recherche se derouler normalement et on ecrit
-son resultat (fail-high ou non) et la taille du sous-arbre. Enregistrements
+features, l'eval statique et beta, puis on laisse la recherche se derouler
+normalement et on ecrit son resultat (fail-high ou non) et la taille du
+sous-arbre. Enregistrements
 de taille fixe dans un tampon statique ecrit par `fwrite` -- pas
 d'allocation a l'execution.
 
 **Positions.** Les binpacks existants, a une profondeur fixe moderee, ou
 les parties d'auto-jeu d'OpenBench.
 
-**Entrainement** sur le serveur GPU, a cote de `training/nnue-pytorch` :
-entropie croisee binaire. Les erreurs n'ont pas toutes le meme prix : on
+**Donnees censurees.** Une recherche en fenetre nulle ne donne jamais V,
+seulement de quel cote de beta il se trouve. On n'a donc pas de cible de
+regression, mais une observation "au-dessus / en dessous" d'un seuil
+different a chaque noeud. C'est suffisant : la perte est l'entropie
+croisee de `1 - F(beta)` contre le resultat observe, et c'est la variete
+des betas d'un noeud a l'autre (a eval egale) qui permet d'apprendre la
+forme de la distribution -- `biais` et `sigma` -- et pas seulement un
+seuil.
+
+**Entrainement** sur le serveur GPU, a cote de `training/nnue-pytorch`,
+avec la perte ci-dessus. Les erreurs n'ont pas toutes le meme prix : on
 pondere par la taille du sous-arbre (ce qu'une coupe juste economise, ce
 qu'une coupe fausse rate). Reseau fige ensuite, quantifie en int8.
 
@@ -102,12 +164,22 @@ re-entrainer une ou deux fois.
 1. **Essai sans reseau** : le trou mis en evidence a l'etape 0 (RFP a
    profondeur >= 7 avec une grosse marge) se teste avec deux parametres
    existants. SPRT. Si ca rapporte, c'est la nouvelle ligne de base.
-2. **Dump + regression logistique hors ligne.** Critere de poursuite :
-   a chaque profondeur, part du sous-arbre coupable avec une precision
-   >= T(depth), pour (a) `static_eval - beta` seule, (b) toutes les
-   features scalaires, (c) scalaires + accumulateur. Si (b) et (c) ne
-   battent pas nettement (a), on s'arrete la : le reseau n'aurait rien a
-   dire que l'elagage actuel ne dit deja.
+2. **Dump + fits hors ligne**, tous avec la meme forme `F` et la meme
+   perte, du plus simple au plus riche :
+   - (a) `biais`, `sigma` fonctions de la profondeur seule : ce que RFP
+     et razoring savent deja ;
+   - (b) regression logistique sur les scalaires, un fit par tranche de
+     profondeur (1, 2, 3, 4-6, 7+) : rapide, convexe, et ses poids disent
+     quelles features comptent ;
+   - (c) le petit reseau vise, scalaires + accumulateur. Une sonde
+     lineaire sur l'accumulateur raterait les interactions (une tension
+     qui ne compte qu'a faible marge), d'ou le MLP directement.
+
+   La question precise : **l'accumulateur predit-il `sigma` mieux qu'une
+   fonction de la profondeur ?** Critere de poursuite, a chaque
+   profondeur : part du sous-arbre coupable avec une precision
+   >= T(depth). Si (b) et (c) ne battent pas nettement (a), on s'arrete
+   la : le reseau n'aurait rien a dire que l'elagage actuel ne dit deja.
 3. **Integration** du reseau (inference int8, accumulateur, features),
    derriere une option UCI eteinte par defaut. Verifier l'impact nps.
 4. **Recompense dense hors ligne** pour choisir `T0`, `T1` sans jouer de
@@ -116,8 +188,9 @@ re-entrainer une ou deux fois.
    meme meilleur coup ? combien de noeuds en moins ?
 5. **SPSA sur `T0`, `T1`**, puis **SPRT** contre la version de base, et
    un controle contre Stockfish 8 (pas seulement de l'auto-jeu).
-6. Plus tard, hors perimetre : tete de reduction, qsearch, affinage des
-   poids par la recompense dense (ES).
+6. Plus tard, hors perimetre : noeuds PV (meme reseau, question posee a
+   alpha ET beta), tete de reduction, qsearch, affinage des poids par la
+   recompense dense (ES).
 
 ## Ce qu'on ne fait pas, et pourquoi
 
