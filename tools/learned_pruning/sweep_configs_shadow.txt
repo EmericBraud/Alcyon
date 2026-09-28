@@ -1,0 +1,2 @@
+# Controle : mode ombre (calcule et remplit le cache d'eval, ne touche a rien).
+shadow|12|learned_prune_enabled=2
