@@ -1,16 +1,24 @@
 #!/bin/sh
-# Dump de l'etape 1 (docs/learned-pruning.md) sur tous les coeurs.
+# Dump de docs/learned-pruning.md sur tous les coeurs.
+#   sh run_dump.sh <binaire> <positions> <dossier de sortie> <EVERY> [profondeur]
 # Lots de 20 positions dans une file : chaque coeur libre prend le suivant,
 # pour ne pas laisser des coeurs inactifs derriere un morceau lent.
+# Mecanisme appris force a 0 : les donnees viennent de l'arbre sans lui.
 set -e
-rm -rf ~/run && mkdir -p ~/run && cd ~/run
-n=$(wc -l < ~/fens_big.txt); k=$((n * 3 / 4))
-head -n $k ~/fens_big.txt | split -l 20 -d -a 4 - tr_
-tail -n +$((k + 1)) ~/fens_big.txt | split -l 20 -d -a 4 - te_
+BIN=$1; FENS=$2; OUT=$3; EVERY=$4; DEPTH=${5:-16}
+export BIN OUT EVERY DEPTH
+rm -rf "$OUT" && mkdir -p "$OUT" && cd "$OUT"
+n=$(wc -l < "$FENS"); k=$((n * 3 / 4))
+head -n $k "$FENS" | split -l 20 -d -a 4 - tr_
+tail -n +$((k + 1)) "$FENS" | split -l 20 -d -a 4 - te_
 ls tr_???? te_???? | xargs -P "$(nproc)" -I{} sh -c \
-  'printf "bench 16 $HOME/run/{}\nquit\n" | ALCYON_PRUNE_DUMP=$HOME/run/{}.bin ALCYON_PRUNE_DUMP_EVERY=1024 ~/alcyon/build-exp/alcyon > $HOME/run/{}.log 2>&1'
+  '{ echo "setoption name learned_prune_enabled value 0"; echo "bench $DEPTH $OUT/{}"; echo quit; } | ALCYON_PRUNE_DUMP=$OUT/{}.bin ALCYON_PRUNE_DUMP_EVERY=$EVERY "$BIN" > $OUT/{}.log 2>&1'
 # Ajouter puis supprimer morceau par morceau : un cat global suivi d'un rm
-# doublerait l'espace disque (23 Go de dump a bench 16 sur 57k positions).
-for f in tr_????.bin; do cat "$f" >> train.bin && rm "$f"; done
-for f in te_????.bin; do cat "$f" >> test.bin && rm "$f"; done
+# doublerait l'espace disque.
+for p in tr te; do
+  for f in ${p}_????.bin; do
+    cat "$f" >> $p.bin && rm "$f"
+    [ -f "$f.l0" ] && cat "$f.l0" >> $p.bin.l0 && rm "$f.l0"
+  done
+done
 echo RUN_DONE
