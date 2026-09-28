@@ -559,3 +559,18 @@ qui est le prolongement de la base (ref14 contient off12) ; (2) une base
 limitee en noeuds qui perd son iteration ; (3) comparer des modeles a seuil
 egal au lieu de taux egal ; (4) une verification de parite qui lit la meme
 entree des deux cotes ; (5) la precision hors ligne comme proxy de la force.
+
+## Configs agressives a budget egal, qualite du coup (movequality.py)
+
+Question (bonne) : en elaguant on degrade chaque iteration, mais gagne-t-on
+assez d'iterations ? Mesure : a budget de noeuds egal, qualite du coup
+("le meme OU un aussi bon") evaluee par une recherche de la position
+suivante a profondeur 15 ; perte de score espere logistique. 3 000
+positions neuves.
+
+Controle decisif : la base avec plus de budget perd moins (x2 : -0.17,
+14.82 plies ; x4 : -0.36, 16.89 plies) -- un vrai ply vaut ~0.09 point, et
+l'evaluateur voit le gain. Les configs agressives gagnent 1 a 3 plies, et
+choisissent 2 a 4 fois mieux que le hasard, mais paient 0.22 a 0.25 point
+par ply gagne au mieux (MLP graduee z0 = 2, R=2 verifiee T = 0.90) : 2.5 a 3
+fois trop. Tableau complet et suite dans `docs/learned-pruning-bilan.md`.
