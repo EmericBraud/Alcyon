@@ -33,8 +33,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
-# Miroir de search::PruneRecord (worker.hpp). 112 octets.
-DTYPE = np.dtype([
+# Miroir de search::PruneRecord (worker.hpp). v1 : 112 octets ; v2 ajoute
+# le logit calcule par le moteur (120 octets).
+DTYPE_V1 = np.dtype([
     ("subtree", "<i8"),
     ("beta", "<i4"), ("static_eval", "<i4"), ("eval_prev2", "<i4"),
     ("tt_found", "<i4"), ("tt_score", "<i4"), ("tt_depth", "<i4"), ("tt_flag", "<i4"),
@@ -43,7 +44,8 @@ DTYPE = np.dtype([
     ("prev_from_piece", "<i4"), ("prev_to_piece", "<i4"),
     ("us", "<i4", 5), ("them", "<i4", 5),
 ])
-assert DTYPE.itemsize == 112
+DTYPE = np.dtype(DTYPE_V1.descr + [("learned_z", "<f4"), ("pad", "<i4")])
+assert DTYPE_V1.itemsize == 112 and DTYPE.itemsize == 120
 
 K_EVAL_NONE = 1 << 30
 NO_PIECE = 6
@@ -55,7 +57,11 @@ MAX_TRAIN = 2_000_000
 
 
 def load(path):
-    r = np.fromfile(path, dtype=DTYPE)
+    size = os.path.getsize(path)
+    v1, v2 = size % DTYPE_V1.itemsize == 0, size % DTYPE.itemsize == 0
+    if v1 == v2:
+        sys.exit(f"{path} : format indecidable ({size} octets)")
+    r = np.fromfile(path, dtype=DTYPE if v2 else DTYPE_V1)
     # Fenetres de mat : hors perimetre (exclues du reseau, cf. le doc).
     ok = (np.abs(r["beta"]) < 9000) & (np.abs(r["static_eval"]) < 9000)
     # FIT_EXCLUDE_NMP=1 : seulement les noeuds vraiment cherches. Les noeuds

@@ -83,7 +83,7 @@ namespace search
     // Sous-arbre : differences de global_nodes + local_nodes, donc exact en
     // mono-thread seulement (bench a Threads=1).
     constexpr int kPruneDepths = 10; // depth 1..9, puis 10+
-    enum PruneOutcome { PO_RAZOR, PO_RFP, PO_NMP, PO_FAIL_HIGH, PO_FAIL_LOW, kPruneOutcomes };
+    enum PruneOutcome { PO_RAZOR, PO_RFP, PO_NMP, PO_FAIL_HIGH, PO_FAIL_LOW, PO_LEARNED, kPruneOutcomes };
     // Bornes des buckets de (static_eval - beta), en cp.
     constexpr int kMarginEdges[] = {-400, -200, -100, -50, 0, 50, 100, 200, 400};
     constexpr int kMarginBuckets = sizeof(kMarginEdges) / sizeof(int) + 1;
@@ -132,12 +132,14 @@ namespace search
         std::int64_t subtree;
         std::int32_t beta, static_eval, eval_prev2; // eval_prev2 = kEvalNone si inconnue
         std::int32_t tt_found, tt_score, tt_depth, tt_flag;
-        std::int32_t depth, ply, outcome; // outcome : 0 fail-high, 1 fail-low, 2 NMP
+        std::int32_t depth, ply, outcome; // outcome : 0 fail-high, 1 fail-low, 2 NMP, 3 elagage appris
         std::int32_t cut_node, allow_null, halfmove, stm;
         std::int32_t prev_from_piece, prev_to_piece; // NO_PIECE si pas de capture
         std::int32_t us[5], them[5];                 // pions, cavaliers, fous, tours, dames
+        float learned_z;                             // logit calcule par le moteur (verif. de parite)
+        std::int32_t pad;
     };
-    static_assert(sizeof(PruneRecord) == 112, "reporter la disposition dans fit.py");
+    static_assert(sizeof(PruneRecord) == 120, "reporter la disposition dans fit.py");
 
     struct PruneDump
     {

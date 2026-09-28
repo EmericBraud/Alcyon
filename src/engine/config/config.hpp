@@ -63,6 +63,16 @@ namespace engine_constants
             // comportement d'avant improving, donc le SPSA peut l'eteindre.
             PARAM_SPECIFIER int ImprovingDepthBonus = 0;
         }
+        // Elagage appris (docs/learned-pruning.md). Seuil de confiance en
+        // pour mille, T(depth) = ThresholdBase + ThresholdDepthFactor * depth,
+        // borne a [500, 999] : plus bas pres des feuilles, ou une erreur ne
+        // coute qu'un petit sous-arbre.
+        namespace learned_pruning
+        {
+            PARAM_SPECIFIER int Enabled = 1;
+            PARAM_SPECIFIER int ThresholdBase = 950;
+            PARAM_SPECIFIER int ThresholdDepthFactor = 5;
+        }
         namespace internal_iterative_reduction
         {
             // De combien de plys on retire. Stockfish code 1 en dur ; on le
@@ -237,6 +247,16 @@ namespace engine_constants
             // (Stockfish : "depth - improving"). 0 restaure exactement le
             // comportement d'avant improving, donc le SPSA peut l'eteindre.
             PARAM_SPECIFIER int ImprovingDepthBonus = 1;
+        }
+        // Elagage appris (docs/learned-pruning.md). Seuil de confiance en
+        // pour mille, T(depth) = ThresholdBase + ThresholdDepthFactor * depth,
+        // borne a [500, 999] : plus bas pres des feuilles, ou une erreur ne
+        // coute qu'un petit sous-arbre.
+        namespace learned_pruning
+        {
+            PARAM_SPECIFIER int Enabled = 1;
+            PARAM_SPECIFIER int ThresholdBase = 950;
+            PARAM_SPECIFIER int ThresholdDepthFactor = 5;
         }
         namespace internal_iterative_reduction
         {

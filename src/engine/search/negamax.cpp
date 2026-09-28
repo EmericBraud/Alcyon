@@ -4,6 +4,7 @@
 #include "engine/utils/random.hpp"
 #include "engine/engine_manager.hpp"
 #include "engine/search/move_picker.hpp"
+#include "engine/search/learned_prune.hpp"
 
 #include "common/fatal.hpp"
 
@@ -49,6 +50,39 @@ namespace search
         if (cur == SearchWorker::kEvalNone || prev == SearchWorker::kEvalNone)
             return true;
         return cur > prev;
+    }
+
+    // Features scalaires du point de decision (docs/learned-pruning.md),
+    // communes au dump et au mecanisme : c'est ce partage qui garantit que
+    // le reseau voit en jeu ce qu'il a vu a l'entrainement.
+    template <Color Us>
+    inline void fill_prune_record(SearchWorker &worker, PruneRecord &rec, int static_eval,
+                                  int depth, int ply, int beta, bool cut_node, bool allow_null)
+    {
+        VBoard &board = worker.get_board();
+        rec.beta = beta;
+        rec.static_eval = static_eval;
+        rec.eval_prev2 = ply >= 2 ? worker.static_eval_stack[ply - 2] : SearchWorker::kEvalNone;
+        TTFlag tt_flag = TT_EXACT;
+        int tt_score = 0, tt_depth = 0;
+        rec.tt_found = worker.get_tt().peek(board.get_hash(), ply, tt_score, tt_depth, tt_flag);
+        rec.tt_score = tt_score;
+        rec.tt_depth = tt_depth;
+        rec.tt_flag = tt_flag;
+        rec.depth = depth;
+        rec.ply = ply;
+        rec.cut_node = cut_node;
+        rec.allow_null = allow_null;
+        rec.halfmove = board.get_halfmove_clock();
+        rec.stm = Us;
+        const Move prev = board.get_history()->back().move;
+        rec.prev_from_piece = prev.get_from_piece();
+        rec.prev_to_piece = prev.get_to_piece();
+        for (int p = PAWN; p <= QUEEN; ++p)
+        {
+            rec.us[p] = std::popcount(board.get_piece_bitboard(Us, p));
+            rec.them[p] = std::popcount(board.get_piece_bitboard(!Us, p));
+        }
     }
 
     inline bool is_null(const VBoard &board, int ply)
@@ -398,7 +432,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (dump_node)
         {
             dump_rec.subtree = subtree;
-            dump_rec.outcome = o == search::PO_NMP ? 2 : o == search::PO_FAIL_HIGH ? 0 : 1;
+            dump_rec.outcome = o == search::PO_NMP ? 2 : o == search::PO_LEARNED ? 3 : o == search::PO_FAIL_HIGH ? 0 : 1;
             search::prune_dump.push(dump_rec);
         }
     };
@@ -436,31 +470,41 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     // =============================== Search ===============================
 
+    // Elagage appris (docs/learned-pruning.md) : au point de decision, la
+    // regression predit P(fail-high) ; assez sure d'elle, elle rend la borne
+    // sans chercher. Place avant le NMP, dont elle economise la recherche.
     if (stats_node && search::prune_dump_enabled() && search::prune_dump_sample(depth))
     {
         dump_node = true;
-        dump_rec.beta = beta;
-        dump_rec.static_eval = search::prune_stats_enabled() ? stats_eval : eval_uncached();
-        dump_rec.eval_prev2 = ply >= 2 ? static_eval_stack[ply - 2] : kEvalNone;
-        TTFlag tt_flag = TT_EXACT;
-        int tt_score = 0, tt_depth = 0;
-        dump_rec.tt_found = shared_tt.peek(board.get_hash(), ply, tt_score, tt_depth, tt_flag);
-        dump_rec.tt_score = tt_score;
-        dump_rec.tt_depth = tt_depth;
-        dump_rec.tt_flag = tt_flag;
-        dump_rec.depth = depth;
-        dump_rec.ply = ply;
-        dump_rec.cut_node = cut_node;
-        dump_rec.allow_null = allow_null;
-        dump_rec.halfmove = board.get_halfmove_clock();
-        dump_rec.stm = Us;
-        const Move prev = board.get_history()->back().move;
-        dump_rec.prev_from_piece = prev.get_from_piece();
-        dump_rec.prev_to_piece = prev.get_to_piece();
-        for (int p = PAWN; p <= QUEEN; ++p)
+        search::fill_prune_record<Us>(*this, dump_rec, search::prune_stats_enabled() ? stats_eval : eval_uncached(),
+                                      depth, ply, beta, cut_node, allow_null);
+        dump_rec.learned_z = learned_prune::logit(dump_rec);
+    }
+    {
+        namespace lp = engine_constants::search::learned_pruning;
+        if (lp::Enabled && !is_pv && !in_check && ply > 0 && depth >= 1 && excluded_move == 0 &&
+            std::abs(beta) < engine_constants::eval::SyzygyScore)
         {
-            dump_rec.us[p] = std::popcount(board.get_piece_bitboard(Us, p));
-            dump_rec.them[p] = std::popcount(board.get_piece_bitboard(!Us, p));
+            const int static_eval = search::node_static_eval<Us>(*this, ply);
+            if (std::abs(static_eval) < engine_constants::eval::SyzygyScore)
+            {
+                search::PruneRecord rec;
+                search::fill_prune_record<Us>(*this, rec, static_eval, depth, ply, beta, cut_node, allow_null);
+                const float z = learned_prune::logit(rec);
+                // T(depth) en pour mille ; comparaison en logit, sans sigmoide.
+                const float t = std::clamp(lp::ThresholdBase + lp::ThresholdDepthFactor * depth, 500, 999) / 1000.0f;
+                const float z_min = std::log(t / (1.0f - t));
+                if (z >= z_min)
+                {
+                    stat(search::PO_LEARNED);
+                    return beta;
+                }
+                if (z <= -z_min)
+                {
+                    stat(search::PO_LEARNED);
+                    return alpha;
+                }
+            }
         }
     }
 

@@ -496,6 +496,10 @@ public:
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginDepthFactor, "rfp_marg_d_fact"),
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::MarginConst, "rfp_marg_const"),
 
+            UCIOption<int>(&engine_constants::search::learned_pruning::Enabled, "learned_prune_enabled", 0, 1),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ThresholdBase, "learned_prune_t_base", 500, 999),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ThresholdDepthFactor, "learned_prune_t_depth", 0, 50),
+
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),
 
@@ -652,7 +656,7 @@ public:
                               << std::endl;
                     continue;
                 }
-                static const char *outcomes[] = {"razor", "rfp", "nmp", "fh", "fl"};
+                static const char *outcomes[] = {"razor", "rfp", "nmp", "fh", "fl", "learned"};
                 for (int d = 0; d < search::kPruneDepths; ++d)
                 {
                     long long n = 0;
