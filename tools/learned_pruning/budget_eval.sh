@@ -14,9 +14,9 @@ BIN=$1; OUT=$2; CONFIGS=$3; shift 3
 export BIN OUT
 mkdir -p "$OUT/nbudgets"
 for log in "$OUT"/off12__lot_*.log; do
-  lot=$(basename "$log" .log | sed 's/^off12__//'); n=${lot#lot_}
+  lot=$(basename "$log" .log | sed 's/^off12__//'); n=$(echo "${lot#lot_}" | sed 's/^0*//'); n=${n:-0}
   grep "info string bench [0-9]*/" "$log" | sed -E 's/.* nodes ([0-9]+) .*/\1/' \
-    | awk -v lot="$((10#$n))" '{ u = 1 + 0.8 * (((NR * 2654435761 + lot * 40503) % 1000) / 1000); printf "%d\n", $1 * u }' \
+    | awk -v lot="$n" '{ u = 1 + 0.8 * (((NR * 2654435761 + lot * 40503) % 1000) / 1000); printf "%d\n", $1 * u }' \
     | paste -d' ' - "$OUT/lots/$lot" > "$OUT/nbudgets/$lot"
 done
 {
