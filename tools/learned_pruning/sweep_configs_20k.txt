@@ -1,0 +1,11 @@
+# Balayage final : 19 000 positions jamais vues a l'entrainement, mate distance pruning inclus.
+ref15_s1|15|learned_prune_enabled=0 ordering_noise_seed=1
+off11|11|learned_prune_enabled=0
+off12|12|learned_prune_enabled=0
+off13|13|learned_prune_enabled=0
+off12_h4|12|learned_prune_enabled=0 Hash=4
+r1_md64_950p5|12|learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=950 learned_prune_t_depth=5
+vr1_md4_950p5|12|learned_prune_reduction=1 learned_prune_max_depth=4 learned_prune_t_base=950 learned_prune_t_depth=5
+vr1_md64_950p5|12|learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=950 learned_prune_t_depth=5
+vr1_md64_980|12|learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=980 learned_prune_t_depth=0
+vr2_md64_980|12|learned_prune_reduction=2 learned_prune_max_depth=64 learned_prune_t_base=980 learned_prune_t_depth=0
