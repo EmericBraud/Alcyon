@@ -131,6 +131,7 @@ iteration par ~3 pour etre rentable.
 | `fire_rates.sh` | taux de declenchement par config |
 | `sf_ref.py` | reference Stockfish (rejetee, gardee pour memoire) |
 | `*_configs.txt` | jeux de configs de chaque balayage |
+| `models/mlp_h{0,16,32,64}.pt` | MLP entraines (etat PyTorch + normalisation), avec leurs journaux `.log` ; `mlp_h16.pt` est celui exporte dans le moteur (`export_mlp.py`) |
 
 Moteur : `bench nodesfile <fichier>` (budget par position), `bench` affiche
 score et profondeur atteinte, `prunestats`, `ALCYON_PRUNE_DUMP`,
@@ -145,7 +146,8 @@ relancer avec la nouvelle URL ngrok. Donnees :
 
 - `/data/dump_l0/tr.bin`, `te.bin` (+ `.l0`) : 17M / 5.6M noeuds avec l0 --
   base d'entrainement du MLP.
-- `/data/mlp/pred_*.pt` : MLP 0 / 16 / 32 / 64 entraines.
+- `/data/mlp/pred_*.pt` : MLP 0 / 16 / 32 / 64 entraines -- copies dans le repo
+  (`tools/learned_pruning/models/`), inutile de les garder sur le serveur.
 - `/data/graded_out`, `/data/aggr_out`, `/data/rate_out` : balayages (logs).
 - `~/run/*.bin` : dump scalaire de l'etape 1 (21 Go, regenerable).
 - `~/fens_big.txt` (positions d'entrainement), `~/fens_fresh.txt` (neuves).

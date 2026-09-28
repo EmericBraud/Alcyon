@@ -1,0 +1,26 @@
+hidden=64 params=70509 train=6497183 test=5296414
+  epoch  1/25 : train 0.2498  test 0.1119
+  epoch  2/25 : train 0.1367  test 0.1037
+  epoch  3/25 : train 0.1305  test 0.1016
+  epoch  4/25 : train 0.1280  test 0.1004
+  epoch  5/25 : train 0.1265  test 0.0998
+  epoch  6/25 : train 0.1253  test 0.0992
+  epoch  7/25 : train 0.1243  test 0.0996
+  epoch  8/25 : train 0.1234  test 0.0989
+  epoch  9/25 : train 0.1227  test 0.0987
+  epoch 10/25 : train 0.1220  test 0.0994
+  epoch 11/25 : train 0.1214  test 0.0990
+  epoch 12/25 : train 0.1209  test 0.0987
+  epoch 13/25 : train 0.1203  test 0.0987
+  epoch 14/25 : train 0.1198  test 0.0986
+  epoch 15/25 : train 0.1194  test 0.0987
+  epoch 16/25 : train 0.1189  test 0.0989
+  epoch 17/25 : train 0.1186  test 0.0989
+  epoch 18/25 : train 0.1182  test 0.0989
+  epoch 19/25 : train 0.1179  test 0.0989
+  epoch 20/25 : train 0.1177  test 0.0990
+  epoch 21/25 : train 0.1175  test 0.0990
+  epoch 22/25 : train 0.1173  test 0.0990
+  epoch 23/25 : train 0.1172  test 0.0990
+  epoch 24/25 : train 0.1171  test 0.0990
+  epoch 25/25 : train 0.1171  test 0.0990
