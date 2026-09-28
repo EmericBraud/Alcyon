@@ -706,6 +706,9 @@ public:
                               << std::endl;
                     continue;
                 }
+                logs::uci << "info string l0check checks=" << search::l0_checks.load()
+                          << " mismatches=" << search::l0_mismatches.load()
+                          << " max_diff=" << search::l0_max_diff.load() << std::endl;
                 static const char *outcomes[] = {"razor", "rfp", "nmp", "fh", "fl", "learned"};
                 for (int d = 0; d < search::kPruneDepths; ++d)
                 {

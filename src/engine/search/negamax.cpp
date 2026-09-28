@@ -510,6 +510,31 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         dump_rec.learned_z = learned_prune::logit(dump_rec);
 #endif
     }
+#ifdef NNUE_EVAL
+    if (search::l0_check_every() && !is_pv && !in_check && ply > 0 && depth >= 1 &&
+        engine::random::splitmix64(board.get_hash() ^ (ply * 7919)) % search::l0_check_every() == 0)
+    {
+        std::array<std::uint8_t, 1024> inc, fresh;
+        board.nnue_l0(inc);
+        // ponytail: plateau de travail par thread, alloue une fois ; diagnostic seulement.
+        static thread_local std::unique_ptr<VBoard> scratch;
+        if (!scratch)
+            scratch = std::make_unique<VBoard>(static_cast<const Board &>(board));
+        else
+            *scratch = static_cast<const Board &>(board); // recalcul complet de l'accumulateur
+        scratch->nnue_l0(fresh);
+        int diff = 0;
+        for (int i = 0; i < 1024; ++i)
+            diff = std::max(diff, std::abs(int(inc[i]) - int(fresh[i])));
+        search::l0_checks.fetch_add(1, std::memory_order_relaxed);
+        if (diff)
+            search::l0_mismatches.fetch_add(1, std::memory_order_relaxed);
+        long long prev = search::l0_max_diff.load();
+        while (diff > prev && !search::l0_max_diff.compare_exchange_weak(prev, diff))
+            ;
+    }
+#endif
+
     {
         namespace lp = engine_constants::search::learned_pruning;
         if (lp::Enabled && !is_pv && !in_check && ply > 0 && ply != learned_verify_ply && !(lp::SkipResearch && is_research) && depth >= 1 && depth <= lp::MaxDepth && excluded_move == 0 &&

@@ -218,6 +218,25 @@ namespace search
     // donner assez des seconds. Les fits se font par tranche de profondeur,
     // donc ce biais entre profondeurs ne fausse rien a l'interieur d'une
     // tranche d'une seule profondeur.
+    // Diagnostic (ALCYON_L0_CHECK=N) : un noeud de decision sur N, compare
+    // l0 lu sur l'accumulateur incremental (paresseux) a l0 apres recalcul
+    // complet de la position. La parite C++/Python ne peut pas voir un l0
+    // perime : les deux cotes lisent le meme. Resultat dans "prunestats".
+    inline std::atomic<long long> l0_checks{0}, l0_mismatches{0}, l0_max_diff{0};
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+    inline unsigned long long l0_check_every()
+    {
+        static const unsigned long long n = []
+        {
+            const char *e = std::getenv("ALCYON_L0_CHECK");
+            return e ? std::max(1ULL, std::strtoull(e, nullptr, 10)) : 0ULL;
+        }();
+        return n;
+    }
+#else
+    constexpr unsigned long long l0_check_every() { return 0; }
+#endif
+
     inline bool prune_dump_sample(int depth)
     {
         const unsigned long long keep = 1ULL << std::min(depth - 1, 40);
