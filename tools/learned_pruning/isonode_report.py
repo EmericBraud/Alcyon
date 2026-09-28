@@ -27,19 +27,24 @@ def moves(out, name):
     return m, n
 
 
-out, ref_name, configs = sys.argv[1], sys.argv[2], sys.argv[3:]
-ref, _ = moves(out, ref_name)
-off, off_nodes = moves(out, "off12")
-print(f"reference : {ref_name}\n")
-print(f"{'config':16s} {'noeuds/off12':>12s} {'accord':>7s} {'base iso':>9s} {'ecart':>7s} {'IC 95 %':>16s} {'positions':>9s}")
-for cfg in configs:
-    c, c_nodes = moves(out, cfg)
-    b, _ = moves(out, os.environ.get("PREFIX", "iso") + "_" + cfg)
-    keys = sorted(set(c) & set(b) & set(ref) & set(off))
-    a_c = np.array([c[k] == ref[k] for k in keys], float)
-    a_b = np.array([b[k] == ref[k] for k in keys], float)
-    d = a_c - a_b
-    se = d.std(ddof=1) / np.sqrt(len(d))
-    ratio = c_nodes / off_nodes
-    print(f"{cfg:16s} {ratio:12.3f} {a_c.mean():7.1%} {a_b.mean():9.1%} {d.mean():+7.2%} "
-          f"[{d.mean() - 1.96 * se:+6.2%}, {d.mean() + 1.96 * se:+6.2%}] {len(keys):9d}")
+def main():
+    out, ref_name, configs = sys.argv[1], sys.argv[2], sys.argv[3:]
+    ref, _ = moves(out, ref_name)
+    off, off_nodes = moves(out, "off12")
+    print(f"reference : {ref_name}\n")
+    print(f"{'config':16s} {'noeuds/off12':>12s} {'accord':>7s} {'base iso':>9s} {'ecart':>7s} {'IC 95 %':>16s} {'positions':>9s}")
+    for cfg in configs:
+        c, c_nodes = moves(out, cfg)
+        b, _ = moves(out, os.environ.get("PREFIX", "iso") + "_" + cfg)
+        keys = sorted(set(c) & set(b) & set(ref) & set(off))
+        a_c = np.array([c[k] == ref[k] for k in keys], float)
+        a_b = np.array([b[k] == ref[k] for k in keys], float)
+        d = a_c - a_b
+        se = d.std(ddof=1) / np.sqrt(len(d))
+        ratio = c_nodes / off_nodes
+        print(f"{cfg:16s} {ratio:12.3f} {a_c.mean():7.1%} {a_b.mean():9.1%} {d.mean():+7.2%} "
+              f"[{d.mean() - 1.96 * se:+6.2%}, {d.mean() + 1.96 * se:+6.2%}] {len(keys):9d}")
+
+
+if __name__ == "__main__":
+    main()
