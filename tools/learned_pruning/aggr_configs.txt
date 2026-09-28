@@ -1,0 +1,21 @@
+# Configs agressives : a budget egal, l'elagage doit acheter des iterations.
+r_cut950p5|12|learned_prune_model=0 learned_prune_reduction=0 learned_prune_t_base=950 learned_prune_t_depth=5
+r_cut950|12|learned_prune_model=0 learned_prune_reduction=0 learned_prune_t_base=950 learned_prune_t_depth=0
+r_cut980|12|learned_prune_model=0 learned_prune_reduction=0 learned_prune_t_base=980 learned_prune_t_depth=0
+r_vr2_950|12|learned_prune_model=0 learned_prune_reduction=2 learned_prune_t_base=950 learned_prune_t_depth=0
+r_vr3_950|12|learned_prune_model=0 learned_prune_reduction=3 learned_prune_t_base=950 learned_prune_t_depth=0
+r_vr2_900|12|learned_prune_model=0 learned_prune_reduction=2 learned_prune_t_base=900 learned_prune_t_depth=0
+r_g200_z2|12|learned_prune_model=0 learned_prune_graded_slope=200 learned_prune_graded_z0_high=200 learned_prune_graded_z0_low=200 learned_prune_graded_rmax=4
+r_g200_z3|12|learned_prune_model=0 learned_prune_graded_slope=200 learned_prune_graded_z0_high=300 learned_prune_graded_z0_low=300 learned_prune_graded_rmax=4
+m_cut950p5|12|learned_prune_model=1 learned_prune_reduction=0 learned_prune_t_base=950 learned_prune_t_depth=5 budget_scale=0.93
+m_cut950|12|learned_prune_model=1 learned_prune_reduction=0 learned_prune_t_base=950 learned_prune_t_depth=0 budget_scale=0.93
+m_cut980|12|learned_prune_model=1 learned_prune_reduction=0 learned_prune_t_base=980 learned_prune_t_depth=0 budget_scale=0.93
+m_vr2_950|12|learned_prune_model=1 learned_prune_reduction=2 learned_prune_t_base=950 learned_prune_t_depth=0 budget_scale=0.93
+m_vr3_950|12|learned_prune_model=1 learned_prune_reduction=3 learned_prune_t_base=950 learned_prune_t_depth=0 budget_scale=0.93
+m_vr2_900|12|learned_prune_model=1 learned_prune_reduction=2 learned_prune_t_base=900 learned_prune_t_depth=0 budget_scale=0.93
+m_g200_z2|12|learned_prune_model=1 learned_prune_graded_slope=200 learned_prune_graded_z0_high=200 learned_prune_graded_z0_low=200 learned_prune_graded_rmax=4 budget_scale=0.93
+m_g200_z3|12|learned_prune_model=1 learned_prune_graded_slope=200 learned_prune_graded_z0_high=300 learned_prune_graded_z0_low=300 learned_prune_graded_rmax=4 budget_scale=0.93
+ctl_off|12|learned_prune_enabled=0
+ctl_h4|12|learned_prune_enabled=0 Hash=4
+rand_r2_p100|12|learned_prune_enabled=3 learned_prune_random_permille=100 learned_prune_reduction=2 learned_prune_max_depth=64
+rand_r2_p300|12|learned_prune_enabled=3 learned_prune_random_permille=300 learned_prune_reduction=2 learned_prune_max_depth=64

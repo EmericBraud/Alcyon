@@ -402,6 +402,7 @@ class UCI
                           << " nps " << result.nps
                           << " time " << result.elapsed_ms << "ms"
                           << " bestmove " << (result.best_move.get_value() == 0 ? "(none)" : result.best_move.to_uci())
+                          << " score " << result.score_cp << " depth " << result.depth
                           << std::endl;
             }
             return;
@@ -473,6 +474,7 @@ class UCI
                       << " nps " << result.nps
                       << " time " << result.elapsed_ms << "ms"
                       << " bestmove " << (result.best_move.get_value() == 0 ? "(none)" : result.best_move.to_uci())
+                      << " score " << result.score_cp << " depth " << result.depth
                       << std::endl;
         }
 

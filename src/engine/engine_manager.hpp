@@ -75,6 +75,7 @@ public:
     {
         Move best_move = 0;
         int score_cp = 0;
+        int depth = 0; // derniere iteration complete (bench nodesfile)
         long long nodes = 0;
         long long elapsed_ms = 1;
         long long nps = 0;
@@ -284,12 +285,15 @@ public:
         worker.node_limit = node_budget;
 
         start_time = std::chrono::steady_clock::now();
+        int score = 0, completed = 0;
         for (int d = 1; d < engine_constants::search::MaxDepth; ++d)
         {
-            worker.negamax(d, -engine_constants::eval::Inf, engine_constants::eval::Inf, 0);
+            const int s = worker.negamax(d, -engine_constants::eval::Inf, engine_constants::eval::Inf, 0);
             if (stop_search.load(std::memory_order_relaxed))
                 break;
             worker.best_root_move = worker.out_move;
+            score = s;
+            completed = d;
         }
         stop_search.store(false, std::memory_order_relaxed);
 
@@ -300,6 +304,8 @@ public:
                                                           .count());
         BenchResult r;
         r.best_move = worker.best_root_move;
+        r.score_cp = score;
+        r.depth = completed;
         r.nodes = total_nodes.load(std::memory_order_relaxed);
         r.elapsed_ms = elapsed;
         r.nps = r.nodes * 1000 / elapsed;
@@ -347,6 +353,7 @@ public:
         BenchResult r;
         r.best_move = worker.best_root_move;
         r.score_cp = score;
+        r.depth = fixed_depth;
         r.nodes = nodes;
         r.elapsed_ms = elapsed;
         r.nps = nodes * 1000 / elapsed;
