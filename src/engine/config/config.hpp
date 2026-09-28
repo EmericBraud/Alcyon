@@ -69,7 +69,7 @@ namespace engine_constants
         // coute qu'un petit sous-arbre.
         namespace learned_pruning
         {
-            PARAM_SPECIFIER int Enabled = 1;
+            PARAM_SPECIFIER int Enabled = 1; // 0 eteint, 1 actif, 2 ombre (calcule sans couper)
             PARAM_SPECIFIER int ThresholdBase = 950;
             PARAM_SPECIFIER int ThresholdDepthFactor = 5;
             // Profondeur maximale ou le mecanisme s'applique (64 = partout).
@@ -256,7 +256,7 @@ namespace engine_constants
         // coute qu'un petit sous-arbre.
         namespace learned_pruning
         {
-            PARAM_SPECIFIER int Enabled = 1;
+            PARAM_SPECIFIER int Enabled = 1; // 0 eteint, 1 actif, 2 ombre (calcule sans couper)
             PARAM_SPECIFIER int ThresholdBase = 950;
             PARAM_SPECIFIER int ThresholdDepthFactor = 5;
             // Profondeur maximale ou le mecanisme s'applique (64 = partout).

@@ -494,12 +494,17 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 // T(depth) en pour mille ; comparaison en logit, sans sigmoide.
                 const float t = std::clamp(lp::ThresholdBase + lp::ThresholdDepthFactor * depth, 500, 999) / 1000.0f;
                 const float z_min = std::log(t / (1.0f - t));
-                if (z >= z_min)
+                // Enabled = 2 : mode ombre, la decision est calculee (et le cache
+                // d'eval rempli) mais jamais appliquee -- mesure la precision
+                // en situation, le dump enregistrant z et le vrai resultat.
+                if (lp::Enabled == 2)
+                    ;
+                else if (z >= z_min)
                 {
                     stat(search::PO_LEARNED);
                     return beta;
                 }
-                if (z <= -z_min)
+                else if (z <= -z_min)
                 {
                     stat(search::PO_LEARNED);
                     return alpha;
