@@ -58,6 +58,11 @@ def load(path):
     r = np.fromfile(path, dtype=DTYPE)
     # Fenetres de mat : hors perimetre (exclues du reseau, cf. le doc).
     ok = (np.abs(r["beta"]) < 9000) & (np.abs(r["static_eval"]) < 9000)
+    # FIT_EXCLUDE_NMP=1 : seulement les noeuds vraiment cherches. Les noeuds
+    # coupes par le NMP sont des fail-high faciles et deja bon marche ; les
+    # garder mesure aussi ce que le reseau economiserait sur le NMP lui-meme.
+    if os.environ.get("FIT_EXCLUDE_NMP"):
+        ok &= r["outcome"] != 2
     return r[ok]
 
 
