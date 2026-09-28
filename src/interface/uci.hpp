@@ -500,6 +500,7 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::ThresholdBase, "learned_prune_t_base", 500, 999),
             UCIOption<int>(&engine_constants::search::learned_pruning::ThresholdDepthFactor, "learned_prune_t_depth", 0, 50),
             UCIOption<int>(&engine_constants::search::learned_pruning::MaxDepth, "learned_prune_max_depth", 1, 64),
+            UCIOption<int>(&engine_constants::search::learned_pruning::Reduction, "learned_prune_reduction", 0, 4),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),

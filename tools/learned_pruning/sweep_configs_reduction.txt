@@ -1,0 +1,17 @@
+# Balayage 2 : reduire au lieu de couper. Baselines reprises du balayage 1.
+r1_md4_950p5|12|learned_prune_reduction=1 learned_prune_max_depth=4 learned_prune_t_base=950 learned_prune_t_depth=5
+r1_md4_980|12|learned_prune_reduction=1 learned_prune_max_depth=4 learned_prune_t_base=980 learned_prune_t_depth=0
+r1_md4_990|12|learned_prune_reduction=1 learned_prune_max_depth=4 learned_prune_t_base=990 learned_prune_t_depth=0
+r1_md4_995|12|learned_prune_reduction=1 learned_prune_max_depth=4 learned_prune_t_base=995 learned_prune_t_depth=0
+r1_md64_950p5|12|learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=950 learned_prune_t_depth=5
+r1_md64_980|12|learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=980 learned_prune_t_depth=0
+r1_md64_990|12|learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=990 learned_prune_t_depth=0
+r1_md64_995|12|learned_prune_reduction=1 learned_prune_max_depth=64 learned_prune_t_base=995 learned_prune_t_depth=0
+r2_md4_950p5|12|learned_prune_reduction=2 learned_prune_max_depth=4 learned_prune_t_base=950 learned_prune_t_depth=5
+r2_md4_980|12|learned_prune_reduction=2 learned_prune_max_depth=4 learned_prune_t_base=980 learned_prune_t_depth=0
+r2_md4_990|12|learned_prune_reduction=2 learned_prune_max_depth=4 learned_prune_t_base=990 learned_prune_t_depth=0
+r2_md4_995|12|learned_prune_reduction=2 learned_prune_max_depth=4 learned_prune_t_base=995 learned_prune_t_depth=0
+r2_md64_950p5|12|learned_prune_reduction=2 learned_prune_max_depth=64 learned_prune_t_base=950 learned_prune_t_depth=5
+r2_md64_980|12|learned_prune_reduction=2 learned_prune_max_depth=64 learned_prune_t_base=980 learned_prune_t_depth=0
+r2_md64_990|12|learned_prune_reduction=2 learned_prune_max_depth=64 learned_prune_t_base=990 learned_prune_t_depth=0
+r2_md64_995|12|learned_prune_reduction=2 learned_prune_max_depth=64 learned_prune_t_base=995 learned_prune_t_depth=0

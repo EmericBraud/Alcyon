@@ -497,17 +497,21 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 // Enabled = 2 : mode ombre, la decision est calculee (et le cache
                 // d'eval rempli) mais jamais appliquee -- mesure la precision
                 // en situation, le dump enregistrant z et le vrai resultat.
-                if (lp::Enabled == 2)
+                if (lp::Enabled == 2 || (z < z_min && z > -z_min))
                     ;
-                else if (z >= z_min)
+                else if (lp::Reduction > 0)
                 {
-                    stat(search::PO_LEARNED);
-                    return beta;
+                    // Reduire au lieu de couper : le noeud est quand meme
+                    // cherche, moins profond, donc une surprise reste visible
+                    // (et la TT stocke la profondeur reellement cherchee).
+                    depth -= lp::Reduction;
+                    if (depth <= 0)
+                        return qsearch<Us>(alpha, beta, ply);
                 }
-                else if (z <= -z_min)
+                else
                 {
                     stat(search::PO_LEARNED);
-                    return alpha;
+                    return z >= z_min ? beta : alpha;
                 }
             }
         }

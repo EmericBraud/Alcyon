@@ -74,6 +74,8 @@ namespace engine_constants
             PARAM_SPECIFIER int ThresholdDepthFactor = 5;
             // Profondeur maximale ou le mecanisme s'applique (64 = partout).
             PARAM_SPECIFIER int MaxDepth = 64;
+            // 0 : couper (rendre la borne). R > 0 : reduire le noeud de R plys.
+            PARAM_SPECIFIER int Reduction = 0;
         }
         namespace internal_iterative_reduction
         {
@@ -261,6 +263,8 @@ namespace engine_constants
             PARAM_SPECIFIER int ThresholdDepthFactor = 5;
             // Profondeur maximale ou le mecanisme s'applique (64 = partout).
             PARAM_SPECIFIER int MaxDepth = 64;
+            // 0 : couper (rendre la borne). R > 0 : reduire le noeud de R plys.
+            PARAM_SPECIFIER int Reduction = 0;
         }
         namespace internal_iterative_reduction
         {
