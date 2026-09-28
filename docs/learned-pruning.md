@@ -478,3 +478,32 @@ profondeur 15 : > 12 min (les autres ~1 s). Explosion de recherche a
 examiner separement. Note aussi : dans move_picker.hpp, `thread_id << 32`
 n'atteint pas les 11 bits gardes -- tous les threads d'aide de la SMP ont
 le meme bruit.
+
+## Balayage final (19 000 positions) : le modele scalaire glisse sur la courbe
+
+19 000 positions jamais vues a l'entrainement, reference `ref15_s1`,
+mate distance pruning inclus (voir plus bas). Erreur type ~0.3 point.
+
+| config | noeuds / off12 | accord ref | courbe au meme cout | ecart |
+|---|---|---|---|---|
+| off11 | 0.601 | 71.5 % | | |
+| off12 | 1.000 | 73.2 % | | |
+| off12, Hash=4 (controle) | 0.994 | 73.3 % | | +0.1 |
+| R=2 verifiee, 0.98 | 0.756 | 71.6 % | 72.2 % | -0.6 |
+| R=1 verifiee, 0.95+0.005d | 0.822 | 72.3 % | 72.4 % | -0.1 |
+| R=1 verifiee, 0.98 | 0.837 | 72.3 % | 72.5 % | -0.2 |
+| R=1 verifiee, depth <= 4 | 0.876 | 72.9 % | 72.7 % | +0.2 |
+
+**Conclusion pour la regression scalaire** : la reduction verifiee
+economise 12 a 25 % des noeuds mais perd exactement ce qu'un ply de moins
+perdrait -- elle se deplace SUR la courbe, pas au-dessus. Pas de SPRT. Pour
+passer au-dessus, il faut un meilleur predicteur : accumulateur + MLP.
+
+## A cote : mate distance pruning
+
+La position lente (`8/5p2/q6k/2r5/5p2/2N5/1K6/7q w - - 8 68`) n'etait ni
+une boucle ni un probleme d'extensions d'echec (seldepth raisonnable) :
+Alcyon n'avait pas de mate distance pruning. Mat en 6 trouve des la
+profondeur 6, puis chaque iteration re-explorait tout l'arbre des
+positions matees (33M noeuds a la profondeur 11). Corrige : profondeur 15
+en 9 787 noeuds. Branche `mate-distance-pruning` depuis `main`, SPRT 54.
