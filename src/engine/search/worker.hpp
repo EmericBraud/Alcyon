@@ -1,6 +1,8 @@
 #pragma once
 
 #include <algorithm>
+#include <string>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -143,10 +145,21 @@ namespace search
     };
     static_assert(sizeof(PruneRecord) == 120, "reporter la disposition dans fit.py");
 
+    // Fichier parallele "<dump>.l0" : pour chaque enregistrement, l'entree
+    // l0 de la pile de couches NNUE au point de decision (build NNUE).
+    constexpr int kL0 = 1024;
+    using L0 = std::array<std::uint8_t, kL0>;
+
     struct PruneDump
     {
         static constexpr int kBuf = 4096;
         std::FILE *f = nullptr;
+        std::FILE *f_l0 = nullptr;
+        L0 l0_buf[kBuf];
+        // l0 capture au point de decision, en attendant la sortie du noeud.
+        // ponytail: une case par ply -- suppose pas de noeud tire imbrique au
+        // meme ply (vrai avec learned_prune_enabled=0, le reglage des dumps).
+        L0 l0_at_ply[engine_constants::search::MaxDepth + 8];
         unsigned long long every = 1, counter = 0;
         int n = 0;
         PruneRecord buf[kBuf];
@@ -155,10 +168,13 @@ namespace search
         {
             if (f && n)
                 std::fwrite(buf, sizeof(PruneRecord), n, f);
+            if (f_l0 && n)
+                std::fwrite(l0_buf, sizeof(L0), n, f_l0);
             n = 0;
         }
-        void push(const PruneRecord &r)
+        void push(const PruneRecord &r, int ply)
         {
+            l0_buf[n] = l0_at_ply[ply];
             buf[n++] = r;
             if (n == kBuf)
                 flush();
@@ -168,6 +184,8 @@ namespace search
             flush();
             if (f)
                 std::fclose(f);
+            if (f_l0)
+                std::fclose(f_l0);
         }
     };
     inline PruneDump prune_dump;
@@ -183,6 +201,9 @@ namespace search
             if (const char *e = std::getenv("ALCYON_PRUNE_DUMP_EVERY"))
                 prune_dump.every = std::max(1ULL, std::strtoull(e, nullptr, 10));
             prune_dump.f = std::fopen(path, "wb");
+#ifdef NNUE_EVAL
+            prune_dump.f_l0 = std::fopen((std::string(path) + ".l0").c_str(), "wb");
+#endif
             return prune_dump.f != nullptr;
         }();
         return on;

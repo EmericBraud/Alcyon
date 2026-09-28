@@ -36,6 +36,12 @@ class VBoard : public Board
     EvalState eval_state;
 #endif
 public:
+#ifdef NNUE_EVAL
+    // Entree de la pile de couches NNUE (1024 octets) du camp au trait :
+    // feature du dump de docs/learned-pruning.md.
+    template <class L0>
+    void nnue_l0(L0 &out) const { nnue_eval.get_l0(*this, out); }
+#endif
     VBoard &operator=(const VBoard &other)
     {
         if (this != &other)

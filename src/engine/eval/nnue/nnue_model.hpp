@@ -329,6 +329,15 @@ public:
         psqt_snapshot_depth = 0;
     }
 
+    // Entree de la pile de couches (l0) du point de vue de `perspective`,
+    // exposee pour le dump de docs/learned-pruning.md.
+    template <Color perspective>
+    void get_l0(std::array<std::uint8_t, NAccumulator> &l0) const
+    {
+        compute_l0(accumulator.template get_accumulator<perspective>(),
+                   accumulator.template get_accumulator<!perspective>(), l0);
+    }
+
     // piece_count: total number of pieces on the board (both colors, kings
     // included) -- selects both the PSQT bucket and the layer-stack bucket.
     template <Color perspective>

@@ -448,7 +448,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         {
             dump_rec.subtree = subtree;
             dump_rec.outcome = o == search::PO_NMP ? 2 : o == search::PO_LEARNED ? 3 : o == search::PO_FAIL_HIGH ? 0 : 1;
-            search::prune_dump.push(dump_rec);
+            search::prune_dump.push(dump_rec, ply);
         }
     };
 
@@ -494,6 +494,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         search::fill_prune_record<Us>(*this, dump_rec, search::prune_stats_enabled() ? stats_eval : eval_uncached(),
                                       depth, ply, beta, cut_node, allow_null);
         dump_rec.learned_z = learned_prune::logit(dump_rec);
+#ifdef NNUE_EVAL
+        board.nnue_l0(search::prune_dump.l0_at_ply[ply]);
+#endif
     }
     {
         namespace lp = engine_constants::search::learned_pruning;
