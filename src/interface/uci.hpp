@@ -366,7 +366,47 @@ class UCI
 
         int bench_depth = 4;
         std::string arg;
-        if (is >> arg)
+        // "bench nodesfile <fichier>" : chaque ligne = "<noeuds> <FEN>". Chaque
+        // position est cherchee jusqu'a ce budget ; le coup rendu est celui de
+        // la derniere iteration complete. Sert a comparer une config a la
+        // recherche de base a noeuds egaux, position par position.
+        std::vector<long long> node_budgets;
+        if (is >> arg && arg == "nodesfile")
+        {
+            std::string path;
+            is >> path;
+            std::ifstream f(path);
+            std::string line;
+            std::vector<std::string> fens;
+            while (std::getline(f, line))
+            {
+                std::istringstream ls(line);
+                long long n;
+                std::string board, stm, castle, ep;
+                if (ls >> n >> board >> stm >> castle >> ep)
+                {
+                    node_budgets.push_back(n);
+                    fens.push_back(board + " " + stm + " " + castle + " " + ep + " 0 1");
+                }
+            }
+            e.stop();
+            e.wait();
+            for (size_t i = 0; i < fens.size(); ++i)
+            {
+                VBoard bench_board;
+                bench_board.load_fen(fens[i].c_str());
+                e.clear();
+                auto result = e.run_benchmark_fixed_nodes(bench_board, node_budgets[i]);
+                logs::uci << "info string bench " << (i + 1) << "/" << fens.size()
+                          << " nodes " << result.nodes
+                          << " nps " << result.nps
+                          << " time " << result.elapsed_ms << "ms"
+                          << " bestmove " << (result.best_move.get_value() == 0 ? "(none)" : result.best_move.to_uci())
+                          << std::endl;
+            }
+            return;
+        }
+        if (!arg.empty())
         {
             if (!parse_int(arg, bench_depth))
             {
@@ -503,6 +543,7 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::MaxDepth, "learned_prune_max_depth", 1, 64),
             UCIOption<int>(&engine_constants::search::learned_pruning::Reduction, "learned_prune_reduction", 0, 4),
             UCIOption<int>(&engine_constants::search::learned_pruning::RandomPermille, "learned_prune_random_permille", 0, 1000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::SkipResearch, "learned_prune_skip_research", 0, 1),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),

@@ -80,6 +80,8 @@ namespace engine_constants
             PARAM_SPECIFIER int Reduction = 0;
             // Controle (Enabled = 3) : pour mille des noeuds eligibles tires au hasard.
             PARAM_SPECIFIER int RandomPermille = 0;
+            // 1 : ne jamais toucher un noeud en re-recherche LMR (voir SearchWorker::research_node).
+            PARAM_SPECIFIER int SkipResearch = 1;
         }
         namespace internal_iterative_reduction
         {
@@ -273,6 +275,8 @@ namespace engine_constants
             PARAM_SPECIFIER int Reduction = 0;
             // Controle (Enabled = 3) : pour mille des noeuds eligibles tires au hasard.
             PARAM_SPECIFIER int RandomPermille = 0;
+            // 1 : ne jamais toucher un noeud en re-recherche LMR (voir SearchWorker::research_node).
+            PARAM_SPECIFIER int SkipResearch = 1;
         }
         namespace internal_iterative_reduction
         {

@@ -44,7 +44,7 @@ DTYPE_V1 = np.dtype([
     ("prev_from_piece", "<i4"), ("prev_to_piece", "<i4"),
     ("us", "<i4", 5), ("them", "<i4", 5),
 ])
-DTYPE = np.dtype(DTYPE_V1.descr + [("learned_z", "<f4"), ("pad", "<i4")])
+DTYPE = np.dtype(DTYPE_V1.descr + [("learned_z", "<f4"), ("research", "<i4")])
 assert DTYPE_V1.itemsize == 112 and DTYPE.itemsize == 120
 
 K_EVAL_NONE = 1 << 30

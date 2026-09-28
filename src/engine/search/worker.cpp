@@ -423,6 +423,11 @@ void SearchWorker::iterative_deepening()
 
 bool SearchWorker::check_stop()
 {
+    if (node_limit != 0 && global_nodes.load(std::memory_order_relaxed) + local_nodes >= node_limit)
+    {
+        shared_stop.store(true, std::memory_order_relaxed);
+        return true;
+    }
     if ((local_nodes & 32767) == 0)
     {
         global_nodes.fetch_add(local_nodes, std::memory_order_relaxed);

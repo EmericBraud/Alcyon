@@ -335,7 +335,10 @@ namespace search
 
             // Re-search si le coup réduit semble bon
             if (score > alpha)
+            {
+                worker.research_node[ply + 1] = true;
                 score = -worker.negamax<!Us>(depth - 1, -alpha - 1, -alpha, ply + 1, true, !cut_node);
+            }
             return true;
         }
         return false;
@@ -367,6 +370,10 @@ inline int wdl_score(TableBase::WDL_Result r, int ply)
 template <Color Us>
 int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_null, bool cut_node, Move excluded_move)
 {
+    // Consomme avant tout retour anticipe, sinon le drapeau resterait pose
+    // pour le prochain noeud de ce ply.
+    const bool is_research = research_node[ply];
+    research_node[ply] = false;
 
     // =============================== Quick return cases ===============================
     if (check_stop())
@@ -494,13 +501,14 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         search::fill_prune_record<Us>(*this, dump_rec, search::prune_stats_enabled() ? stats_eval : eval_uncached(),
                                       depth, ply, beta, cut_node, allow_null);
         dump_rec.learned_z = learned_prune::logit(dump_rec);
+        dump_rec.research = is_research;
 #ifdef NNUE_EVAL
         board.nnue_l0(search::prune_dump.l0_at_ply[ply]);
 #endif
     }
     {
         namespace lp = engine_constants::search::learned_pruning;
-        if (lp::Enabled && !is_pv && !in_check && ply > 0 && ply != learned_verify_ply && depth >= 1 && depth <= lp::MaxDepth && excluded_move == 0 &&
+        if (lp::Enabled && !is_pv && !in_check && ply > 0 && ply != learned_verify_ply && !(lp::SkipResearch && is_research) && depth >= 1 && depth <= lp::MaxDepth && excluded_move == 0 &&
             std::abs(beta) < engine_constants::eval::SyzygyScore)
         {
             const int static_eval = search::node_static_eval<Us>(*this, ply);

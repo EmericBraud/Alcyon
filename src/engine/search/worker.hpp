@@ -141,7 +141,7 @@ namespace search
         std::int32_t prev_from_piece, prev_to_piece; // NO_PIECE si pas de capture
         std::int32_t us[5], them[5];                 // pions, cavaliers, fous, tours, dames
         float learned_z;                             // logit calcule par le moteur (verif. de parite)
-        std::int32_t pad;
+        std::int32_t research;                       // noeud atteint par une re-recherche LMR (0 dans les dumps anciens)
     };
     static_assert(sizeof(PruneRecord) == 120, "reporter la disposition dans fit.py");
 
@@ -280,6 +280,9 @@ struct SearchWorker
 
     // Métriques locales
     long long local_nodes = 0;
+    // Limite de noeuds de la recherche (0 = aucune) : bench nodesfile, pour
+    // comparer deux configs a noeuds egaux position par position.
+    long long node_limit = 0;
     int thread_id;
 
     Move best_root_move = 0;
@@ -291,6 +294,13 @@ struct SearchWorker
     // verifiee, negamax.cpp) : la recherche reduite de ce noeud ne doit pas
     // redeclencher le mecanisme sur lui-meme. -1 = aucun.
     int learned_verify_ply = -1;
+
+    // Le noeud du ply suivant est une re-recherche LMR (pose par
+    // late_move_reduction_search, consomme en tete de negamax). L'elagage
+    // appris s'en abstient : la TT y porte le resultat de la recherche
+    // reduite qui vient de surprendre, et s'y fier annulerait la
+    // verification de la LMR.
+    bool research_node[engine_constants::search::MaxDepth + 8] = {};
 
     // CONSTRUCTEUR PRINCIPAL
     // Appelé par l'orchestrateur pour chaque thread

@@ -259,6 +259,53 @@ public:
         return r;
     }
 
+    // Iterative deepening jusqu'a `node_budget` noeuds : le coup rendu est
+    // celui de la derniere iteration COMPLETE (une iteration avortee a la
+    // racine n'a pas de meilleur coup fiable). Voir bench nodesfile.
+    BenchResult run_benchmark_fixed_nodes(const VBoard &position, long long node_budget)
+    {
+        stop();
+        if (search_thread.joinable())
+            search_thread.join();
+
+        stop_search.store(false, std::memory_order_relaxed);
+        stop_requested.store(false, std::memory_order_relaxed);
+        is_pondering.store(false, std::memory_order_relaxed);
+        is_infinite.store(true, std::memory_order_relaxed);
+        total_nodes.store(0, std::memory_order_relaxed);
+        root_best_move.store(0, std::memory_order_relaxed);
+
+        time_limit.store(std::numeric_limits<int>::max() / 2, std::memory_order_relaxed);
+        max_depth.store(0, std::memory_order_relaxed);
+        soft_limit.store(0, std::memory_order_relaxed);
+        tt.next_generation();
+
+        SearchWorker worker(*this, position, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, 0);
+        worker.node_limit = node_budget;
+
+        start_time = std::chrono::steady_clock::now();
+        for (int d = 1; d < engine_constants::search::MaxDepth; ++d)
+        {
+            worker.negamax(d, -engine_constants::eval::Inf, engine_constants::eval::Inf, 0);
+            if (stop_search.load(std::memory_order_relaxed))
+                break;
+            worker.best_root_move = worker.out_move;
+        }
+        stop_search.store(false, std::memory_order_relaxed);
+
+        total_nodes.fetch_add(worker.local_nodes, std::memory_order_relaxed);
+        const long long elapsed = std::max<long long>(1,
+                                                      std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                          std::chrono::steady_clock::now() - start_time)
+                                                          .count());
+        BenchResult r;
+        r.best_move = worker.best_root_move;
+        r.nodes = total_nodes.load(std::memory_order_relaxed);
+        r.elapsed_ms = elapsed;
+        r.nps = r.nodes * 1000 / elapsed;
+        return r;
+    }
+
     BenchResult run_benchmark_fixed_depth(const VBoard &position, int depth)
     {
         stop();
