@@ -582,9 +582,16 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     {
         namespace lp = engine_constants::search::learned_pruning;
         if (lp::Enabled && !is_pv && !in_check && ply > 0 && ply != learned_verify_ply && !(lp::SkipResearch && is_research) && depth >= 1 && depth <= lp::MaxDepth && excluded_move == 0 &&
-            std::abs(beta) < engine_constants::eval::SyzygyScore)
+            std::abs(beta) < engine_constants::eval::SyzygyScore && !(lp::Model == 2 && depth < lp::MoeMinDepth))
         {
+            // Model = 2 : le cache d'eval est remis tel quel. Le remplir ici
+            // changeait improving (inconnu = vrai) pour RFP / futility / LMP /
+            // LMR a tous les noeuds, sondes ou pas : le mode ombre perdait
+            // ~25 Elo meme sans sonde utile.
+            const int saved_slot = static_eval_stack[ply];
             const int static_eval = search::node_static_eval<Us>(*this, ply);
+            if (lp::Model == 2)
+                static_eval_stack[ply] = saved_slot;
             if (std::abs(static_eval) < engine_constants::eval::SyzygyScore)
             {
                 search::PruneRecord rec;
