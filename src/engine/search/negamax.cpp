@@ -599,7 +599,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 if (lp::Model == 2)
                 {
                     std::array<std::uint8_t, 1024> l0;
-                    bool probe = depth >= lp::MoeMinDepth;
+                    bool probe = depth >= lp::MoeMinDepth && !(lp::MoeNoNested && learned_probe > 0);
                     if (probe)
                     {
                         board.nnue_l0(l0);

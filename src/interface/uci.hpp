@@ -567,6 +567,7 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeGateModel, "learned_moe_gate_model", 0, 1),
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeProbeIsolate, "learned_moe_probe_isolate", 0, 1),
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeProbeNoTT, "learned_moe_probe_no_tt", 0, 1),
+            UCIOption<int>(&engine_constants::search::learned_pruning::MoeNoNested, "learned_moe_no_nested", 0, 1),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),

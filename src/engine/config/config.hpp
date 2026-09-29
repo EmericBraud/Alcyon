@@ -112,6 +112,8 @@ namespace engine_constants
             // 1 : la racine de la recherche reduite n'ecrit pas dans la TT (sinon son
             // entree a depth - kR, meme cle, change SE / IIR / RFP de la recherche complete).
             PARAM_SPECIFIER int MoeProbeNoTT = 0;
+            // 1 : pas de sonde a l'interieur d'une sonde (les surcouts s'emboitent).
+            PARAM_SPECIFIER int MoeNoNested = 0;
         }
         namespace internal_iterative_reduction
         {
@@ -337,6 +339,8 @@ namespace engine_constants
             // 1 : la racine de la recherche reduite n'ecrit pas dans la TT (sinon son
             // entree a depth - kR, meme cle, change SE / IIR / RFP de la recherche complete).
             PARAM_SPECIFIER int MoeProbeNoTT = 0;
+            // 1 : pas de sonde a l'interieur d'une sonde (les surcouts s'emboitent).
+            PARAM_SPECIFIER int MoeNoNested = 0;
         }
         namespace internal_iterative_reduction
         {
