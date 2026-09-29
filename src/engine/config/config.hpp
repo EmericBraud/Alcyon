@@ -37,6 +37,7 @@ namespace engine_constants
         // correction bornee a +-CorrHistMax cp. Conservee avec PersistHistory.
         PARAM_SPECIFIER int CorrHist = 1;
         PARAM_SPECIFIER int CorrHistMax = 100;
+        PARAM_SPECIFIER int CorrHistNp = 1;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -236,6 +237,7 @@ namespace engine_constants
         // correction bornee a +-CorrHistMax cp. Conservee avec PersistHistory.
         PARAM_SPECIFIER int CorrHist = 1;
         PARAM_SPECIFIER int CorrHistMax = 100;
+        PARAM_SPECIFIER int CorrHistNp = 1;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;

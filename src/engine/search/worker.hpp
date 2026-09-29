@@ -92,6 +92,7 @@ struct SavedHeuristics
     int continuation_hist_1[2][7][64][64];
     int continuation_hist_2[2][7][64][64];
     int corr_hist[2][16384];
+    int corr_np[2][2][16384];
 };
 
 struct SearchWorker
@@ -117,25 +118,49 @@ struct SearchWorker
     int continuation_hist_2[2][7][64][64]; // [side][piece][from][to] for 2-ply continuation
     // Correction history (CorrHist) : [camp au trait][structure de pions], en 1/16 cp.
     int corr_hist[2][16384];
+    // CorrHistNp : deux tables de plus, par camp au trait, indexees par les pieces
+    // hors pions (roi compris) de chaque couleur (Stockfish, "non-pawn correction").
+    int corr_np[2][2][16384];
     int pawn_index() const
     {
         const Board &b = board;
         const std::uint64_t wp = b.get_piece_bitboard(WHITE, PAWN), bp = b.get_piece_bitboard(BLACK, PAWN);
         return static_cast<int>(engine::random::splitmix64(wp ^ (bp * 0x9E3779B97F4A7C15ULL)) & 16383);
     }
+    int non_pawn_index(Color c) const
+    {
+        const Board &b = board;
+        std::uint64_t h = 0;
+        for (int p = KNIGHT; p <= KING; ++p)
+            h = engine::random::splitmix64(h ^ b.get_piece_bitboard(c, p));
+        return static_cast<int>(h & 16383);
+    }
     template <Color Us>
     int correction() const
     {
-        return engine_constants::search::CorrHist ? corr_hist[Us][pawn_index()] / 16 : 0;
+        if (!engine_constants::search::CorrHist)
+            return 0;
+        int c = corr_hist[Us][pawn_index()];
+        if (engine_constants::search::CorrHistNp)
+            c += (corr_np[Us][WHITE][non_pawn_index(WHITE)] + corr_np[Us][BLACK][non_pawn_index(BLACK)]) / 2;
+        return c / 16;
+    }
+    static void corr_entry_update(int &e, int d, int w, int max)
+    {
+        e = std::clamp((e * (256 - w) + d * 16 * w) / 256, -max, max);
     }
     template <Color Us>
     void update_correction(int diff, int depth)
     {
         const int max = 16 * engine_constants::search::CorrHistMax;
-        int &e = corr_hist[Us][pawn_index()];
         const int w = std::min(depth + 1, 16);
         const int d = std::clamp(diff, -2 * engine_constants::search::CorrHistMax, 2 * engine_constants::search::CorrHistMax);
-        e = std::clamp((e * (256 - w) + d * 16 * w) / 256, -max, max);
+        corr_entry_update(corr_hist[Us][pawn_index()], d, w, max);
+        if (engine_constants::search::CorrHistNp)
+        {
+            corr_entry_update(corr_np[Us][WHITE][non_pawn_index(WHITE)], d, w, max);
+            corr_entry_update(corr_np[Us][BLACK][non_pawn_index(BLACK)], d, w, max);
+        }
     }
     std::array<Move, engine_constants::search::MaxDepth> move_stack;
 
@@ -227,6 +252,7 @@ struct SearchWorker
                     history_moves[c][i][j] = h.history_moves[c][i][j] / d;
         std::memcpy(counter_moves, h.counter_moves, sizeof(counter_moves));
         std::memcpy(corr_hist, h.corr_hist, sizeof(corr_hist)); // pas de vieillissement : c'est une moyenne
+        std::memcpy(corr_np, h.corr_np, sizeof(corr_np));
         int *dst1 = &continuation_hist_1[0][0][0][0], *dst2 = &continuation_hist_2[0][0][0][0];
         const int *src1 = &h.continuation_hist_1[0][0][0][0], *src2 = &h.continuation_hist_2[0][0][0][0];
         for (std::size_t k = 0; k < sizeof(continuation_hist_1) / sizeof(int); ++k)
@@ -239,6 +265,7 @@ struct SearchWorker
         std::memcpy(h.continuation_hist_1, continuation_hist_1, sizeof(continuation_hist_1));
         std::memcpy(h.continuation_hist_2, continuation_hist_2, sizeof(continuation_hist_2));
         std::memcpy(h.corr_hist, corr_hist, sizeof(corr_hist));
+        std::memcpy(h.corr_np, corr_np, sizeof(corr_np));
         h.valid = true;
     }
     void clear_heuristics()
@@ -249,6 +276,7 @@ struct SearchWorker
         std::memset(continuation_hist_1, 0, sizeof(continuation_hist_1));
         std::memset(continuation_hist_2, 0, sizeof(continuation_hist_2));
         std::memset(corr_hist, 0, sizeof(corr_hist));
+        std::memset(corr_np, 0, sizeof(corr_np));
         for (int i = 0; i < engine_constants::search::MaxDepth + 8; ++i)
             static_eval_stack[i] = kEvalNone;
     }
