@@ -131,6 +131,11 @@ namespace search
         std::FILE *f = nullptr;
         std::FILE *f_l0 = nullptr; // "<dump>.l0" (build NNUE) : l0 de la position APRES le coup
         unsigned long long every = 1;
+        // ALCYON_QUIET_DUMP_P="p1,p2,..." : probabilite de tirage par profondeur
+        // (la derniere vaut pour les profondeurs suivantes), a la place de EVERY,
+        // pour equilibrer les profondeurs. En 2^-32.
+        bool per_depth = false;
+        std::uint64_t p32[64] = {};
         // Une case par ply : un seul coup tire en cours par ply (un thread).
         std::array<std::uint8_t, 1024> l0_at_ply[engine_constants::search::MaxDepth + 8];
         ~QuietDump()
@@ -151,6 +156,21 @@ namespace search
                 return false;
             if (const char *e = std::getenv("ALCYON_QUIET_DUMP_EVERY"))
                 quiet_dump.every = std::max(1ULL, std::strtoull(e, nullptr, 10));
+            if (const char *e = std::getenv("ALCYON_QUIET_DUMP_P"))
+            {
+                quiet_dump.per_depth = true;
+                double p = 1.0;
+                for (int d = 1; d < 64; ++d)
+                {
+                    if (*e)
+                    {
+                        char *end;
+                        p = std::strtod(e, &end);
+                        e = *end == ',' ? end + 1 : end;
+                    }
+                    quiet_dump.p32[d] = static_cast<std::uint64_t>(std::clamp(p, 0.0, 1.0) * 4294967296.0);
+                }
+            }
             quiet_dump.f = std::fopen(path, "wb");
 #ifdef NNUE_EVAL
             quiet_dump.f_l0 = std::fopen((std::string(path) + ".l0").c_str(), "wb");

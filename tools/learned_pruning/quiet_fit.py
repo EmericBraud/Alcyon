@@ -39,7 +39,13 @@ def load(folder, every):
 
 
 def weight(r, every):
-    return 1.0 / np.minimum(1.0, 2.0 ** (np.minimum(r["depth"], 60) - 1) / every)
+    """1 / probabilite de tirage. every : entier (ALCYON_QUIET_DUMP_EVERY) ou
+    liste "p1,p2,..." par profondeur (ALCYON_QUIET_DUMP_P)."""
+    if isinstance(every, str) and "," in every:
+        p = [float(x) for x in every.split(",")]
+        table = np.array([1.0] + [p[min(d, len(p)) - 1] for d in range(1, 64)])
+        return 1.0 / table[np.minimum(r["depth"], 63)]
+    return 1.0 / np.minimum(1.0, 2.0 ** (np.minimum(r["depth"], 60) - 1) / int(every))
 
 
 def features(r):
@@ -67,7 +73,7 @@ BANDS = [(1, 3), (4, 6), (7, 64)]
 
 def main():
     folder = sys.argv[1]
-    every = int(sys.argv[2]) if len(sys.argv) > 2 else 512
+    every = sys.argv[2] if len(sys.argv) > 2 else "512"
     tr, te = load(folder, every)
     wtr, wte = weight(tr, every), weight(te, every)
     ytr, yte = tr["useful"], te["useful"]

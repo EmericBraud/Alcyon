@@ -815,9 +815,13 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         const long long oracle_n0 = oracle_late ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
 #ifdef ALCYON_SEARCH_EXPERIMENTS
         // Tirage deterministe, probabilite min(1, 2^(depth-1) / every).
-        const bool quiet_rec = search::quiet_dump_enabled() && list.stage == QUIETS && !is_tactical &&
-                               engine::random::splitmix64(board.get_hash() ^ (uint64_t(m.get_value()) << 20) ^ ply) % search::quiet_dump.every <
-                                   (1ULL << std::min(depth - 1, 62));
+        const bool quiet_rec = search::quiet_dump_enabled() && list.stage == QUIETS && !is_tactical && [&]
+        {
+            const std::uint64_t h = engine::random::splitmix64(board.get_hash() ^ (uint64_t(m.get_value()) << 20) ^ ply);
+            if (search::quiet_dump.per_depth)
+                return (h & 0xFFFFFFFFULL) < search::quiet_dump.p32[std::min(depth, 63)];
+            return h % search::quiet_dump.every < (1ULL << std::min(depth - 1, 62));
+        }();
         const long long quiet_n0 = quiet_rec ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
         const int quiet_alpha = alpha;
         const int quiet_order = quiet_rec ? list.list.scores[list.index - 1] : 0;

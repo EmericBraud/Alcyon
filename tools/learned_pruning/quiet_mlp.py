@@ -77,7 +77,7 @@ class Net(nn.Module):
 
 def main():
     folder = sys.argv[1]
-    every = int(sys.argv[2]) if len(sys.argv) > 2 else 4096
+    every = sys.argv[2] if len(sys.argv) > 2 else "4096"
     epochs = int(sys.argv[3]) if len(sys.argv) > 3 else 20
     torch.set_num_threads(int(os.environ.get("OMP_NUM_THREADS", os.cpu_count())))
     (tr, l0tr), (va, l0va), (te, l0te) = load(folder)
