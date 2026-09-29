@@ -811,6 +811,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         ++moves_searched;
 
+        const bool oracle_late = search::oracle_quiet_enabled() && list.stage == QUIETS && !is_tactical;
+        const long long oracle_n0 = oracle_late ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
+        const long long oracle_all0 = oracle_removed_all, oracle_np0 = oracle_removed_nonpv;
+
         board.play<Us>(m);
 
         bool gives_check = board.is_king_attacked<!Us>();
@@ -849,6 +853,20 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         }
 
         board.unplay<Us>(m);
+
+        // Sous-arbre inutile : il remplace les retraits deja comptes a l'interieur.
+        if (oracle_late)
+        {
+            ++this->oracle_late;
+            if (score <= alpha)
+            {
+                ++oracle_useless;
+                const long long sub = global_nodes.load(std::memory_order_relaxed) + local_nodes - oracle_n0;
+                oracle_removed_all = oracle_all0 + sub;
+                if (!is_pv)
+                    oracle_removed_nonpv = oracle_np0 + sub;
+            }
+        }
 
         // --- MISE À JOUR DES SCORES ET DES TABLES ---
         if (score >= beta)

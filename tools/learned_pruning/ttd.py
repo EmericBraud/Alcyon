@@ -25,6 +25,7 @@ def run(engine, game_file, depth, opts):
         pass
     p.stdin.write("ucinewgame\n")
     n = nodes = ms = 0
+    oracle = {}
     for ply in range(ply_min, len(moves)):
         p.stdin.write(f"position startpos moves {' '.join(moves[:ply])}\ngo depth {depth}\n")
         last = None
@@ -32,7 +33,11 @@ def run(engine, game_file, depth, opts):
             line = p.stdout.readline()
             if not line:
                 sys.exit(f"{game_file} : moteur mort au ply {ply}")
-            if line.startswith("info") and " nodes " in line:
+            if line.startswith("info string oracle"):
+                t = line.split()
+                for k, v in zip(t[2::2], t[3::2]):
+                    oracle[k] = oracle.get(k, 0) + int(v)
+            elif line.startswith("info") and " nodes " in line:
                 last = line.split()
             if line.startswith("bestmove"):
                 break
@@ -42,7 +47,7 @@ def run(engine, game_file, depth, opts):
             n += 1
     p.stdin.write("quit\n")
     p.wait()
-    return n, nodes, ms
+    return n, nodes, ms, oracle
 
 
 def main():
@@ -53,6 +58,13 @@ def main():
         res = list(ex.map(lambda g: run(engine, g, depth, opts), games))
     n, nodes, ms = (sum(r[i] for r in res) for i in range(3))
     print(f"{name:12s} coups {n}  noeuds {nodes}  temps {ms} ms  noeuds/coup {nodes / n:.0f}  ms/coup {ms / n:.1f}")
+    o = {}
+    for r in res:
+        for k, v in r[3].items():
+            o[k] = o.get(k, 0) + v
+    if o:  # oracle des coups calmes tardifs (ALCYON_ORACLE_QUIET, build d'experimentation)
+        print(f"  oracle : retirable {o['removed_all'] / o['nodes']:.1%} des noeuds (non-PV seuls {o['removed_nonpv'] / o['nodes']:.1%}) ; "
+              f"coups calmes tardifs inutiles {o['useless'] / o['late']:.2%} de {o['late']}")
 
 
 if __name__ == "__main__":

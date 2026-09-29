@@ -96,6 +96,20 @@ namespace search
     // Declenchements du mecanisme appris (coupe, reduction ou ombre), par profondeur.
     inline std::atomic<long long> learned_fires[kPruneDepths] = {};
 
+// Oracle des coups calmes tardifs (ALCYON_ORACLE_QUIET) : noeuds que l'on
+    // economiserait en supprimant, dans l'arbre tel quel, chaque coup de l'etape
+    // QUIETS du MovePicker qui ne monte pas alpha. Plafond d'un elagage appris
+    // au niveau du coup. Un seul thread.
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+    inline bool oracle_quiet_enabled()
+    {
+        static const bool on = std::getenv("ALCYON_ORACLE_QUIET") != nullptr;
+        return on;
+    }
+#else
+    constexpr bool oracle_quiet_enabled() { return false; }
+#endif
+
 #ifdef ALCYON_SEARCH_EXPERIMENTS
     inline bool prune_stats_enabled()
     {
@@ -356,6 +370,9 @@ struct SearchWorker
     int learned_probe = 0;
     // Confiances du MoE depuis le debut de la recherche (MoeVetoLo / MoeTrace).
     int moe_trust_events = 0;
+    // Oracle (search::oracle_quiet_enabled) : noeuds retirables, tous noeuds /
+    // noeuds non-PV seulement ; coups calmes tardifs cherches, dont inutiles.
+    long long oracle_removed_all = 0, oracle_removed_nonpv = 0, oracle_late = 0, oracle_useless = 0;
 
     // Le noeud du ply suivant est une re-recherche LMR (pose par
     // late_move_reduction_search, consomme en tete de negamax). L'elagage
