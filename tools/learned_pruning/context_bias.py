@@ -61,8 +61,13 @@ def play(engine, game_file, depth):
     p.stdin.write("ucinewgame\n")  # une fois, au debut de la partie
     for ply in range(ply_min, len(moves)):
         p.stdin.write(f"position startpos moves {' '.join(moves[:ply])}\ngo depth {depth}\n")
-        while not p.stdout.readline().startswith("bestmove"):
-            pass
+        while True:
+            line = p.stdout.readline()
+            if not line:  # le moteur est mort : ne pas boucler indefiniment
+                sys.exit(f"{game_file} : moteur mort au ply {ply} (code {p.wait()}), "
+                         f"apres les coups {' '.join(moves[max(0, ply - 3):ply])}")
+            if line.startswith("bestmove"):
+                break
     p.stdin.write("quit\n")
     p.wait()
 
