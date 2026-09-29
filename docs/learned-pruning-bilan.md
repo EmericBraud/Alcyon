@@ -97,6 +97,44 @@ Lecture : un vrai ply vaut ~0.09 point. Un ply achete par l'elagage en coute
 0.22-0.25 au mieux (hasard : 0.4-1.0). Il faudrait diviser la perte par
 iteration par ~3 pour etre rentable.
 
+## MoE "reduire est sur" (2026-09-29)
+
+Mecanisme en deux temps, `learned_prune_model = 2` : recherche reduite a
+depth - 2, puis un MoE decide s'il fait confiance au resultat. Le label est
+"le reduit tombe du meme cote de beta que la recherche complete". Le MoE a
+une couche l0 -> 16 partagee et une tete (in -> 32 -> 1) par expert. Les
+experts `dsp` sont 20 : tranche de profondeur (1, 2, 3, 4-6, 7+) x cote du
+reduit (FL/FH) x phase (> 12 pieces). Chaque expert a son propre seuil,
+choisi sur une moitie du test et evalue sur l'autre.
+
+| mesure | resultat |
+|---|---|
+| hors ligne, 30 % d'economie | 0.069 % d'erreurs (regle pfh : 0.24 %) |
+| qualite du coup, budget egal, 12 000 positions | toutes les configs >= 0 (moe +0.03 a +0.16, hasard +0.22, base x2 -0.24) |
+| 1 s par coup, 8 positions | profondeur base 15.4 -> moe 17.3, nps inchange |
+| **parties**, 5+0.05, 4000 parties, moe0 | **-27.1 +- 6.8 Elo** |
+| parties, moe_m100 (plus agressif) | -28.0 +- 6.7 |
+| parties, mode ombre (reduit lance, jamais cru) | **-23.0 +- 6.9** |
+| parties, ombre + historiques isoles (`probe_isolate=1`) | -34.5 +- 6.7 (pire : isoler est retire) |
+
+Lecture : l'essentiel de la perte vient de **lancer** la recherche reduite
+(ombre -23), pas de lui faire confiance (-4 +- 10 en plus, pour ~+1.9 ply).
+Les mises a jour d'historique et de killers faites pendant le reduit
+aident plutot : les isoler coute 11 Elo.
+
+**Biais de contexte** (`context_bias.py`, 345 parties du moteur, 48 000
+positions) : le dataset bench n'est pas le contexte de partie.
+
+| | bench | partie |
+|---|---|---|
+| TT depth >= depth | 10.0 % | 16.5 % |
+| \|eval - beta\| median | 107 | 156 |
+| erreur du reduit R=2 | 6.7 % | 4.7 % |
+
+En partie, la TT garde les recherches des coups precedents. Le reduit s'y
+trompe moins, mais il y apporte aussi moins. MoE reentraine sur les donnees
+de partie : voir plus bas.
+
 ## Methode d'evaluation (celle qui marche)
 
 1. **Positions neuves**, jamais vues a l'entrainement (`fens_fresh`, tirees
@@ -185,8 +223,13 @@ Il faut diviser par ~3 la perte par iteration. Deux pistes, dans l'ordre :
    ajuster la reduction LMR ou la marge du RFP, deja reglees et deja
    verifiees, plutot qu'un mecanisme de plus.
 
-Critere de succes, avant tout SPRT : a budget egal, **perte par ply gagne
-< ~0.09** (ce que vaut un vrai ply), controles valides.
+Critere de succes, avant tout SPRT : a budget egal, **ecart de perte < 0**
+(pas "< 0.09 par ply" : c'etait faux, l'ecart doit etre negatif). Puis un
+match en parties, car le banc ne voit pas le cout du mode ombre.
+
+Apres le MoE : le cout est dans le reduit lui-meme. Pistes : ne lancer le
+reduit que sur les noeuds ou un predicteur bon marche (etape 1) le juge
+utile, ou revenir a la piste 2 (moduler LMR/RFP/NMP).
 
 ## A part, trouve en chemin
 

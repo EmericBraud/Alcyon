@@ -99,7 +99,7 @@ namespace engine_constants
             // Model = 2 : seuils (logit x 100) par tranche de profondeur (1, 2, 3,
             // 4-6, 7+) x cote du reduit (FL, FH), bucket_thresholds.py (erreurs
             // comptees, ~30 % d'economie) ; decalage global ; profondeur minimale.
-            PARAM_SPECIFIER int MoeZ[10] = {666, 789, 657, 1075, 812, 1159, 912, 1354, 421, 495};
+            PARAM_SPECIFIER int MoeZ[10] = {1290, 757, 890, 1317, 1009, 933, 677, 803, 398, 334}; // moe_game_R2_dsp, ~30 % d economie
             PARAM_SPECIFIER int MoeZOffset = 0;
             PARAM_SPECIFIER int MoeMinDepth = 7;
             // 1 : la recherche reduite du MoE ne met a jour ni l'historique ni les killers.
@@ -316,7 +316,7 @@ namespace engine_constants
             // Model = 2 : seuils (logit x 100) par tranche de profondeur (1, 2, 3,
             // 4-6, 7+) x cote du reduit (FL, FH), bucket_thresholds.py (erreurs
             // comptees, ~30 % d'economie) ; decalage global ; profondeur minimale.
-            PARAM_SPECIFIER int MoeZ[10] = {666, 789, 657, 1075, 812, 1159, 912, 1354, 421, 495};
+            PARAM_SPECIFIER int MoeZ[10] = {1290, 757, 890, 1317, 1009, 933, 677, 803, 398, 334}; // moe_game_R2_dsp, ~30 % d economie
             PARAM_SPECIFIER int MoeZOffset = 0;
             PARAM_SPECIFIER int MoeMinDepth = 7;
             // 1 : la recherche reduite du MoE ne met a jour ni l'historique ni les killers.
