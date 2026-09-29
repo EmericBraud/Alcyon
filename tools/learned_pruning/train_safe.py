@@ -1,6 +1,11 @@
 """Label "reduire est sur" (docs/learned-pruning-bilan.md), dump v3.
 
-    python3 train_safe.py <train.bin> <test.bin> <R> [--hidden H] [--epochs E] [--out safe_R.pt]
+    python3 train_safe.py <train.bin> <test.bin> <R> [--hidden H] [--epochs E] [--out safe_R.pt] [--moe none|ds|dsp]
+
+--moe (melange d'experts, comme les layer-stack buckets du NNUE) : couche l0
+et partie lineaire partagees, une tete (-> 32 -> 1) par bucket ; une seule
+tete evaluee par noeud. ds = profondeur (1, 2, 3, 4-6, 7+) x cote du resultat
+reduit (10 experts) ; dsp = ds x phase (<= 12 pieces ou plus, 20 experts).
 
 Mecanisme vise : chercher le noeud a depth - R, puis decider si l'on fait
 confiance a ce resultat reduit (on s'arrete) ou non (recherche complete).
@@ -37,7 +42,44 @@ def red_features(r, k):
     return np.stack([np.where(red_fh, 1.0, -1.0), margin, cost], 1).astype(np.float32), red_fh
 
 
-def tensors(r, l0, idx, k, mean=None, std=None):
+DEPTH_BUCKETS = np.array([0, 0, 1, 2, 3, 3, 3] + [4] * 60)  # index = depth
+
+
+def buckets(rr, red_fh, scheme):
+    if scheme == "none":
+        return np.zeros(len(rr), dtype=np.int64), 1
+    b = DEPTH_BUCKETS[np.minimum(rr["depth"], 66)] * 2 + red_fh.astype(np.int64)
+    if scheme == "ds":
+        return b, 10
+    pieces = rr["us"].sum(1) + rr["them"].sum(1) + 2
+    return b * 2 + (pieces > 12), 20
+
+
+class MoENet(nn.Module):
+    """train_mlp.Net avec une tete par bucket (l0 et lineaire partages)."""
+
+    def __init__(self, n_design, hidden, n_buckets):
+        super().__init__()
+        self.lin = nn.Linear(n_design, 1)
+        self.l0 = nn.Linear(1024, hidden)
+        n_in = hidden + n_design + train_mlp.N_DEPTHS
+        self.n_buckets = n_buckets
+        # Toutes les tetes en une matrice : [n_in] -> [n_buckets * 32], puis on
+        # garde la tranche du bucket de chaque noeud (gather), vectorise.
+        self.h1 = nn.Linear(n_in, n_buckets * 32)
+        self.h2_w = nn.Parameter(torch.randn(n_buckets, 32) * 0.1)
+        self.h2_b = nn.Parameter(torch.zeros(n_buckets))
+
+    def forward(self, d, l0, depth, bucket):
+        z = self.lin(d).squeeze(1)
+        h = torch.relu(self.l0(l0.float() / 127.0))
+        onehot = nn.functional.one_hot(depth, train_mlp.N_DEPTHS).float()
+        a = torch.relu(self.h1(torch.cat([h, d, onehot], 1)).view(-1, self.n_buckets, 32))
+        a = a[torch.arange(len(bucket)), bucket]
+        return z + (a * self.h2_w[bucket]).sum(1) + self.h2_b[bucket]
+
+
+def tensors(r, l0, idx, k, mean=None, std=None, scheme="none"):
     rr = r[idx]
     m, x = fit.features(rr)
     extra, red_fh = red_features(rr, k)
@@ -48,8 +90,10 @@ def tensors(r, l0, idx, k, mean=None, std=None):
     depth = np.minimum(rr["depth"], train_mlp.N_DEPTHS) - 1
     full_fh = rr["outcome"] != 1
     y = (red_fh == full_fh).astype(np.float32)
+    bucket, _ = buckets(rr, red_fh, scheme)
     return (torch.from_numpy(d), torch.from_numpy(np.ascontiguousarray(l0[idx])),
-            torch.from_numpy(depth.astype(np.int64)), torch.from_numpy(y), mean, std, red_fh, full_fh)
+            torch.from_numpy(depth.astype(np.int64)), torch.from_numpy(y), mean, std, red_fh, full_fh,
+            torch.from_numpy(bucket))
 
 
 def curve(conf, wrong, full_cost, trust_mask=None):
@@ -79,18 +123,26 @@ def main():
     a = dict(zip(sys.argv[4::2], sys.argv[5::2]))
     hidden, epochs = int(a.get("--hidden", 16)), int(a.get("--epochs", 20))
     out = a.get("--out", f"safe_{R}.pt")
+    scheme = a.get("--moe", "none")
     k = R - 1
     torch.manual_seed(0)
     rng = np.random.default_rng(0)
     rtr, l0tr, itr = train_mlp.load(train_path)
     rte, l0te, ite = train_mlp.load(test_path)
     itr = train_mlp.subsample(rtr, itr, rng)
-    dtr, xtr, ptr, ytr, mean, std, _, _ = tensors(rtr, l0tr, itr, k)
-    dte, xte, pte, yte, _, _, red_fh, full_fh = tensors(rte, l0te, ite, k, mean, std)
-    print(f"R={R} train {len(ytr)} test {len(yte)} ; le reduit a raison sur {yte.mean().item():.1%} du test", flush=True)
+    dtr, xtr, ptr, ytr, mean, std, _, _, btr = tensors(rtr, l0tr, itr, k, scheme=scheme)
+    dte, xte, pte, yte, _, _, red_fh, full_fh, bte = tensors(rte, l0te, ite, k, mean, std, scheme=scheme)
+    print(f"R={R} moe={scheme} train {len(ytr)} test {len(yte)} ; le reduit a raison sur {yte.mean().item():.1%} du test", flush=True)
 
-    net = train_mlp.Net(dtr.shape[1], hidden > 0, max(hidden, 1))
-    opt = torch.optim.Adam(net.parameters(), lr=2e-3)
+    if scheme == "none":
+        base_net = train_mlp.Net(dtr.shape[1], hidden > 0, max(hidden, 1))
+        net = lambda d, x, p, b: base_net(d, x, p)  # noqa: E731
+        params = base_net.parameters()
+    else:
+        base_net = MoENet(dtr.shape[1], hidden, buckets(rtr[itr[:1]], np.zeros(1, bool), scheme)[1])
+        net = base_net
+        params = base_net.parameters()
+    opt = torch.optim.Adam(params, lr=2e-3)
     steps = epochs * ((len(ytr) + BATCH - 1) // BATCH)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=2e-3, total_steps=steps, pct_start=0.05)
     loss_fn = nn.BCEWithLogitsLoss()
@@ -101,17 +153,19 @@ def main():
         for i in range(0, len(ytr), BATCH):
             b = perm[i:i + BATCH]
             opt.zero_grad()
-            loss = loss_fn(net(dtr[b], xtr[b], ptr[b]), ytr[b])
+            loss = loss_fn(net(dtr[b], xtr[b], ptr[b], btr[b]), ytr[b])
             loss.backward()
             opt.step()
             sched.step()
             total += loss.item() * len(b)
         with torch.no_grad():
-            te_loss = loss_fn(net(dte[ev], xte[ev], pte[ev]), yte[ev]).item()
+            te_loss = loss_fn(net(dte[ev], xte[ev], pte[ev], bte[ev]), yte[ev]).item()
         print(f"  epoch {ep + 1:2d}/{epochs} : train {total / len(ytr):.4f}  test {te_loss:.4f}", flush=True)
-    torch.save({"state": net.state_dict(), "mean": mean, "std": std, "hidden": hidden, "R": R}, out)
+    torch.save({"state": base_net.state_dict(), "mean": mean, "std": std, "hidden": hidden, "R": R, "moe": scheme}, out)
 
-    p_safe = train_mlp.predict(net, dte, xte, pte)
+    with torch.no_grad():
+        p_safe = torch.cat([torch.sigmoid(net(dte[i:i + BATCH], xte[i:i + BATCH], pte[i:i + BATCH], bte[i:i + BATCH]))
+                            for i in range(0, len(dte), BATCH)]).numpy()
     rt = rte[ite]
     wrong = red_fh != full_fh
     # Cout de la recherche complete sautee : sous-arbre du noeud moins les
