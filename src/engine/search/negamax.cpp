@@ -995,6 +995,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             // sur l'ordre des coups de la vraie recherche. La TT reste ecrite.
             if (!is_tactical && !(learned_probe > 0 && engine_constants::search::learned_pruning::MoeProbeIsolate))
             {
+                if (engine_constants::search::CounterMoveUpdate && prev_m != 0)
+                    counter_moves[Us][prev_m.get_from_piece()][prev_m.get_to_sq()] = m;
 
                 // MALUS : On punit tous les coups calmes testés AVANT et qui ont échoué
                 if (list.stage == PickerStages::QUIETS)

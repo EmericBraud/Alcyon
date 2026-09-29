@@ -28,6 +28,10 @@ namespace engine_constants
         // passe et s'appuie sur l'extension singuliere). Plafonnee a
         // ply < 2 * root_depth dans tous les cas (negamax.cpp).
         PARAM_SPECIFIER int CheckExtension = 0;
+        // Mise a jour du contre-coup sur coupure calme. Retiree par megarde dans
+        // 60eb372 (V 4.0.1) : counter_moves n'etait plus jamais ecrit, l'etape
+        // COUNTERS du MovePicker ne rendait rien.
+        PARAM_SPECIFIER int CounterMoveUpdate = 0;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -279,6 +283,10 @@ namespace engine_constants
         // passe et s'appuie sur l'extension singuliere). Plafonnee a
         // ply < 2 * root_depth dans tous les cas (negamax.cpp).
         PARAM_SPECIFIER int CheckExtension = 0;
+        // Mise a jour du contre-coup sur coupure calme. Retiree par megarde dans
+        // 60eb372 (V 4.0.1) : counter_moves n'etait plus jamais ecrit, l'etape
+        // COUNTERS du MovePicker ne rendait rien.
+        PARAM_SPECIFIER int CounterMoveUpdate = 0;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
