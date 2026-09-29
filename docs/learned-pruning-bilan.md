@@ -116,6 +116,7 @@ choisi sur une moitie du test et evalue sur l'autre.
 | parties, moe_m100 (plus agressif) | -28.0 +- 6.7 |
 | parties, mode ombre (reduit lance, jamais cru) | **-23.0 +- 6.9** |
 | parties, ombre + historiques isoles (`probe_isolate=1`) | -34.5 +- 6.7 (pire : isoler est retire) |
+| parties, MoE reentraine sur donnees de partie (`moe_game_R2_dsp`) | -31.3 +- 6.9 (pas mieux que moe0) |
 
 Lecture : l'essentiel de la perte vient de **lancer** la recherche reduite
 (ombre -23), pas de lui faire confiance (-4 +- 10 en plus, pour ~+1.9 ply).
@@ -132,8 +133,15 @@ positions) : le dataset bench n'est pas le contexte de partie.
 | erreur du reduit R=2 | 6.7 % | 4.7 % |
 
 En partie, la TT garde les recherches des coups precedents. Le reduit s'y
-trompe moins, mais il y apporte aussi moins. MoE reentraine sur les donnees
-de partie : voir plus bas.
+trompe moins, mais il y apporte aussi moins. Le MoE reentraine sur 345
+parties du moteur fait moins d'erreurs sur ce contexte : 0.23 % contre
+0.34 % a 30 % d'economie. En parties, il ne gagne rien pour autant (-31 contre
+-27, dans le bruit), ce qui confirme que le cout vient du reduit et pas de
+la decision.
+
+Parite C++/Python : `export_moe.py check` sur un dump fait avec
+**Threads=1** (le tampon l0 du dump est global, et a 10 threads il se
+melange : faux ecarts sur ~7 % des noeuds).
 
 ## Methode d'evaluation (celle qui marche)
 
