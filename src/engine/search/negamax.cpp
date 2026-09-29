@@ -813,6 +813,15 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         const bool oracle_late = search::oracle_quiet_enabled() && list.stage == QUIETS && !is_tactical;
         const long long oracle_n0 = oracle_late ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+        // Tirage deterministe, probabilite min(1, 2^(depth-1) / every).
+        const bool quiet_rec = search::quiet_dump_enabled() && list.stage == QUIETS && !is_tactical &&
+                               engine::random::splitmix64(board.get_hash() ^ (uint64_t(m.get_value()) << 20) ^ ply) % search::quiet_dump.every <
+                                   (1ULL << std::min(depth - 1, 62));
+        const long long quiet_n0 = quiet_rec ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
+        const int quiet_alpha = alpha;
+        const int quiet_order = quiet_rec ? list.list.scores[list.index - 1] : 0;
+#endif
         const long long oracle_all0 = oracle_removed_all, oracle_np0 = oracle_removed_nonpv;
 
         board.play<Us>(m);
@@ -854,6 +863,23 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         board.unplay<Us>(m);
 
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+        if (quiet_rec)
+        {
+            search::QuietRecord q{};
+            q.subtree = global_nodes.load(std::memory_order_relaxed) + local_nodes - quiet_n0;
+            q.depth = depth, q.ply = ply, q.rank = moves_searched, q.is_pv = is_pv;
+            q.cut_node = cut_node, q.improving = improving, q.gives_check = gives_check;
+            q.eval_alpha = static_eval_stack[ply] == kEvalNone ? kEvalNone : static_eval_stack[ply] - quiet_alpha;
+            q.order_score = quiet_order, q.history = history_moves[Us][m.get_from_sq()][m.get_to_sq()];
+            q.piece = m.get_from_piece();
+            q.to_rank = Us == WHITE ? m.get_to_sq() / 8 : 7 - m.get_to_sq() / 8;
+            q.tt_move = tt_move != 0, q.halfmove = board.get_halfmove_clock();
+            q.pieces = __builtin_popcountll(static_cast<const Board &>(board).get_occupancy(WHITE) | static_cast<const Board &>(board).get_occupancy(BLACK)), q.alpha = quiet_alpha;
+            q.useful = score > quiet_alpha, q.score_alpha = std::clamp(score - quiet_alpha, -2000, 2000);
+            std::fwrite(&q, sizeof(q), 1, search::quiet_dump.f);
+        }
+#endif
         // Sous-arbre inutile : il remplace les retraits deja comptes a l'interieur.
         if (oracle_late)
         {

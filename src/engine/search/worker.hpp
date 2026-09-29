@@ -110,6 +110,51 @@ namespace search
     constexpr bool oracle_quiet_enabled() { return false; }
 #endif
 
+// Dump des coups calmes tardifs (ALCYON_QUIET_DUMP=<fichier>,
+    // ALCYON_QUIET_DUMP_EVERY=N) : un enregistrement par coup de l'etape QUIETS
+    // cherche, tire avec la probabilite min(1, 2^(depth-1) / N) comme les dumps
+    // de noeuds. Label : le coup monte alpha. tools/learned_pruning/quiet_fit.py.
+    struct QuietRecord
+    {
+        std::int64_t subtree;                       // noeuds du sous-arbre du coup
+        std::int32_t depth, ply, rank, is_pv;       // rank = moves_searched (1 = premier)
+        std::int32_t cut_node, improving, gives_check, eval_alpha; // eval_alpha : kEvalNone si l'eval du noeud est inconnue
+        std::int32_t order_score, history, piece, to_rank; // to_rank relatif au camp qui joue
+        std::int32_t tt_move, halfmove, pieces, alpha;
+        std::int32_t useful, score_alpha;           // score > alpha ; score - alpha (borne)
+    };
+    static_assert(sizeof(QuietRecord) == 80, "reporter la disposition dans quiet_fit.py");
+
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+    struct QuietDump
+    {
+        std::FILE *f = nullptr;
+        unsigned long long every = 1;
+        ~QuietDump()
+        {
+            if (f)
+                std::fclose(f);
+        }
+    };
+    inline QuietDump quiet_dump;
+    inline bool quiet_dump_enabled()
+    {
+        static const bool on = []
+        {
+            const char *path = std::getenv("ALCYON_QUIET_DUMP");
+            if (!path)
+                return false;
+            if (const char *e = std::getenv("ALCYON_QUIET_DUMP_EVERY"))
+                quiet_dump.every = std::max(1ULL, std::strtoull(e, nullptr, 10));
+            quiet_dump.f = std::fopen(path, "wb");
+            return quiet_dump.f != nullptr;
+        }();
+        return on;
+    }
+#else
+    constexpr bool quiet_dump_enabled() { return false; }
+#endif
+
 #ifdef ALCYON_SEARCH_EXPERIMENTS
     inline bool prune_stats_enabled()
     {

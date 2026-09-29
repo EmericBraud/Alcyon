@@ -54,8 +54,10 @@ def play(engine, game_file, depth):
     lines = open(game_file).read().split()
     ply_min, moves = int(lines[0]), lines[1:]
     p = subprocess.Popen([engine], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+    # CTX_HASH : taille de la TT en Mo (defaut du moteur sinon ; les matchs tournent a 8).
+    hash_opt = f"setoption name Hash value {os.environ['CTX_HASH']}\n" if "CTX_HASH" in os.environ else ""
     p.stdin.write("uci\nsetoption name Threads value 1\nsetoption name OwnBook value false\n"
-                  "setoption name learned_prune_enabled value 0\nisready\n")
+                  f"setoption name learned_prune_enabled value 0\n{hash_opt}isready\n")
     while p.stdout.readline().strip() != "readyok":
         pass
     p.stdin.write("ucinewgame\n")  # une fois, au debut de la partie
