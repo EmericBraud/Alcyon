@@ -563,6 +563,7 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeZ[9], "learned_moe_z9", -2000, 9999),
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeZOffset, "learned_moe_z_offset", -2000, 2000),
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeMinDepth, "learned_moe_min_depth", 1, 64),
+            UCIOption<int>(&engine_constants::search::learned_pruning::MoeProbeIsolate, "learned_moe_probe_isolate", 0, 1),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),

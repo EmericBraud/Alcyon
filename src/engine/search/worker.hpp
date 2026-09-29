@@ -352,6 +352,8 @@ struct SearchWorker
     // verifiee, negamax.cpp) : la recherche reduite de ce noeud ne doit pas
     // redeclencher le mecanisme sur lui-meme. -1 = aucun.
     int learned_verify_ply = -1;
+    // > 0 pendant la recherche reduite du MoE (voir MoeProbeIsolate).
+    int learned_probe = 0;
 
     // Le noeud du ply suivant est une re-recherche LMR (pose par
     // late_move_reduction_search, consomme en tete de negamax). L'elagage

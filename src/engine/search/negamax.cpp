@@ -604,8 +604,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                         learned_verify_ply = ply;
                         const long long c0 = global_nodes.load(std::memory_order_relaxed) + local_nodes;
                         const int reduced = depth - learned_prune_moe::kR;
+                        ++learned_probe;
                         const int s = reduced > 0 ? negamax<Us>(reduced, alpha, beta, ply, allow_null, cut_node)
                                                   : qsearch<Us>(alpha, beta, ply);
+                        --learned_probe;
                         const int red_nodes = static_cast<int>(global_nodes.load(std::memory_order_relaxed) + local_nodes - c0);
                         learned_verify_ply = saved_verify_ply;
                         static_eval_stack[ply] = saved_eval;
@@ -808,7 +810,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 search::record_cutoff(moves_searched, is_tactical);
             shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
 
-            if (!is_tactical)
+            // Pendant la recherche reduite du MoE (learned_probe > 0), pas de mise
+            // a jour de l'historique ni des killers : en mode ombre (jamais de
+            // confiance) elle coutait deja ~23 Elo en parties reelles, sans
+            // perte de vitesse -- effets de bord d'une recherche moins profonde
+            // sur l'ordre des coups de la vraie recherche. La TT reste ecrite.
+            if (!is_tactical && !(learned_probe > 0 && engine_constants::search::learned_pruning::MoeProbeIsolate))
             {
 
                 // MALUS : On punit tous les coups calmes testés AVANT et qui ont échoué

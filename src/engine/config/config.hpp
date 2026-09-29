@@ -102,6 +102,8 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeZ[10] = {666, 789, 657, 1075, 812, 1159, 912, 1354, 421, 495};
             PARAM_SPECIFIER int MoeZOffset = 0;
             PARAM_SPECIFIER int MoeMinDepth = 7;
+            // 1 : la recherche reduite du MoE ne met a jour ni l'historique ni les killers.
+            PARAM_SPECIFIER int MoeProbeIsolate = 1;
         }
         namespace internal_iterative_reduction
         {
@@ -317,6 +319,8 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeZ[10] = {666, 789, 657, 1075, 812, 1159, 912, 1354, 421, 495};
             PARAM_SPECIFIER int MoeZOffset = 0;
             PARAM_SPECIFIER int MoeMinDepth = 7;
+            // 1 : la recherche reduite du MoE ne met a jour ni l'historique ni les killers.
+            PARAM_SPECIFIER int MoeProbeIsolate = 1;
         }
         namespace internal_iterative_reduction
         {
