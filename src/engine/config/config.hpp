@@ -26,6 +26,11 @@ namespace engine_constants
         // passe et s'appuie sur l'extension singuliere). Plafonnee a
         // ply < 2 * root_depth dans tous les cas (negamax.cpp).
         PARAM_SPECIFIER int CheckExtension = 0;
+        // Historiques conserves d'un coup a l'autre : chaque "go" recree ses
+        // workers, dont le constructeur vide les historiques. Recharges divises
+        // par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
+        PARAM_SPECIFIER int PersistHistory = 1;
+        PARAM_SPECIFIER int PersistHistoryShift = 1;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -214,6 +219,11 @@ namespace engine_constants
         // passe et s'appuie sur l'extension singuliere). Plafonnee a
         // ply < 2 * root_depth dans tous les cas (negamax.cpp).
         PARAM_SPECIFIER int CheckExtension = 0;
+        // Historiques conserves d'un coup a l'autre : chaque "go" recree ses
+        // workers, dont le constructeur vide les historiques. Recharges divises
+        // par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
+        PARAM_SPECIFIER int PersistHistory = 1;
+        PARAM_SPECIFIER int PersistHistoryShift = 1;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
