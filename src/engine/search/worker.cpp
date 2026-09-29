@@ -215,7 +215,14 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
                 best_root_move = out_move;
             return score;
         }
-        if (abs(score) >= engine_constants::eval::MateScore - engine_constants::search::aspiration::MateWindowMargin)
+        // Score proche d'un mat mais plus loin que cette profondeur (typiquement
+        // un mat laisse dans la TT par la recherche d'un coup precedent) : on
+        // elargit la fenetre UNE fois. Sans la condition sur la fenetre, un
+        // score qui retombait dans cette zone relancait la meme recherche a
+        // l'infini -- "go depth N" ne rendait jamais la main, et en partie
+        // tout le temps restant etait brule sur des recherches identiques.
+        if (abs(score) >= engine_constants::eval::MateScore - engine_constants::search::aspiration::MateWindowMargin &&
+            (alpha > -engine_constants::eval::MateScore || beta < engine_constants::eval::MateScore))
         {
             alpha = -engine_constants::eval::MateScore;
             beta = engine_constants::eval::MateScore;

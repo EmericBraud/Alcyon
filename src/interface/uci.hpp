@@ -661,12 +661,20 @@ public:
             }
             else if (token == "ucinewgame")
             {
+                // Joindre avant de toucher a l'etat partage (voir EngineManager::wait).
+                e.stop();
+                e.wait();
                 e.clear();
                 b.load_fen(constants::FenInitPos);
             }
             else if (token == "position")
             {
+                // `b` est aussi le plateau du thread de recherche
+                // (EngineManager::main_board) : stop() ne fait que lever des
+                // drapeaux, il faut attendre que ce thread ait fini de s'en
+                // servir avant de le reecrire.
                 e.stop();
+                e.wait();
                 parse_position(b, is);
             }
             else if (token == "go")
