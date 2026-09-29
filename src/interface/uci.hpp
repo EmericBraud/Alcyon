@@ -522,6 +522,8 @@ public:
             UCIOption<int>(&engine_constants::search::late_move_reduction::MaxDepthReduction, "lmr_max_depth_reduction"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::NoTTMoveBonus, "lmr_no_tt_move_bonus"),
             UCIOption<int>(&engine_constants::search::late_move_reduction::CutNodeBonus, "lmr_cut_node_bonus", 0, 6),
+            UCIOption<int>(&engine_constants::search::late_move_reduction::HistDiv, "lmr_hist_div", 0, 16384),
+            UCIOption<int>(&engine_constants::search::late_move_reduction::HistMaxR, "lmr_hist_max_r", 0, 4),
             UCIOption<int>(&engine_constants::search::late_move_reduction::NotImprovingBonus, "lmr_not_improving_bonus", 0, 3),
 
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::ImprovingDepthBonus, "rfp_improving_d_bonus", 0, 3),

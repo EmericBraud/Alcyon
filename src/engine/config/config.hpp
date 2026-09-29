@@ -141,6 +141,11 @@ namespace engine_constants
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 1;
+            // Historique du coup (papillon + continuations, comme le MovePicker) :
+            // r -= clamp(historique / HistDiv, -HistMaxR, HistMaxR). Un coup calme bien
+            // note est moins reduit, un coup mal note l'est plus (HistDiv = 0 : eteint).
+            PARAM_SPECIFIER int HistDiv = 1024;
+            PARAM_SPECIFIER int HistMaxR = 2;
 
             PARAM_SPECIFIER double TableInitConst = 0.63065940599962;
             PARAM_SPECIFIER double TableInitDiv = 2.301959991800665;
@@ -329,6 +334,11 @@ namespace engine_constants
             PARAM_SPECIFIER int MinDepth = 3;
             PARAM_SPECIFIER int MinMovesSearched = 5;
             PARAM_SPECIFIER int MaxDepthReduction = 2;
+            // Historique du coup (papillon + continuations, comme le MovePicker) :
+            // r -= clamp(historique / HistDiv, -HistMaxR, HistMaxR). Un coup calme bien
+            // note est moins reduit, un coup mal note l'est plus (HistDiv = 0 : eteint).
+            PARAM_SPECIFIER int HistDiv = 1024;
+            PARAM_SPECIFIER int HistMaxR = 2;
 
             PARAM_SPECIFIER double TableInitConst = 0.6295;
             PARAM_SPECIFIER double TableInitDiv = 2.3783;
