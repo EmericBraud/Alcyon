@@ -20,6 +20,7 @@ import math
 import os
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 BIG = 2_000_000_000
@@ -115,27 +116,26 @@ def run(engine, positions, n, out, depth=12):
     step = max(1, len(fens) // int(n))
     fens = fens[::step][:int(n)]
     jobs = int(os.environ.get("CE_JOBS", os.cpu_count()))
-    engines = []
+    lock = threading.Lock()
+    f = open(out, "w")
 
     def work(chunk):
         eng = Engine(engine)
-        res = []
         for fen in chunk:
             try:
-                res.append(one(eng, fen, int(depth)))
+                r = one(eng, fen, int(depth))
             except Exception as e:  # noqa: BLE001 -- une position ratee ne doit pas tuer la serie
-                res.append({"fen": fen, "kind": "error", "err": str(e)})
+                r = {"fen": fen, "kind": "error", "err": str(e)}
                 eng.p.kill()
                 eng = Engine(engine)
-        eng.send("quit")
-        return res
-
-    chunks = [fens[i::jobs] for i in range(jobs)]
-    with ThreadPoolExecutor(jobs) as ex, open(out, "w") as f:
-        for res in ex.map(work, chunks):
-            for r in res:
+            with lock:  # une ligne par position, au fil de l'eau (progression lisible)
                 f.write(json.dumps(r) + "\n")
-    del engines
+                f.flush()
+        eng.send("quit")
+
+    with ThreadPoolExecutor(jobs) as ex:
+        list(ex.map(work, [fens[i::jobs] for i in range(jobs)]))
+    f.close()
 
 
 def report(path):
