@@ -758,6 +758,46 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         }
     }
 
+    // ProbCut (Stockfish, etape 11) : une bonne prise qui tient au-dessus de
+    // beta + Margin a profondeur reduite fait tres probablement couper le noeud.
+    if (engine_constants::search::probcut::Enabled && !is_pv && !in_check && excluded_move == 0 &&
+        depth >= engine_constants::search::probcut::MinDepth &&
+        std::abs(beta) < engine_constants::eval::MateScore - engine_constants::search::MaxDepth)
+    {
+        namespace pc = engine_constants::search::probcut;
+        const int pc_beta = beta + pc::Margin;
+        const int static_eval = search::node_static_eval<Us>(*this, ply);
+        MoveList caps;
+        MoveGen::generate_pseudo_legal_captures<Us>(board, caps);
+        for (int i = 0; i < caps.count; ++i)
+        {
+            const Move m = caps.moves[i];
+            if (m == excluded_move)
+                continue;
+            const Piece target = (m.get_flags() == Move::EN_PASSANT_CAP) ? PAWN : static_cast<Piece>(m.get_to_piece());
+            const int promo = (m.get_flags() & Move::PROMOTION_MASK) ? 800 : 0;
+            // Filtre bon marche avant le SEE : meme gagnee pour rien, la prise n'atteint pas pc_beta.
+            if (static_eval + Eval::get_piece_score(target) + promo < pc_beta)
+                continue;
+            if (see<Us>(m.get_to_sq(), target, static_cast<Piece>(m.get_from_piece()), m.get_from_sq()) + promo < pc_beta - static_eval)
+                continue;
+            if (!board.template is_move_legal<Us>(m))
+                continue;
+            board.play<Us>(m);
+            int score = -qsearch<!Us>(-pc_beta, -pc_beta + 1, ply + 1);
+            if (score >= pc_beta)
+                score = -negamax<!Us>(depth - pc::Reduction, -pc_beta, -pc_beta + 1, ply + 1, true, !cut_node);
+            board.unplay<Us>(m);
+            if (shared_stop.load(std::memory_order_relaxed))
+                return 0;
+            if (score >= pc_beta)
+            {
+                shared_tt.store(board.get_hash(), depth - pc::Reduction + 1, ply, score, TT_BETA, m);
+                return score;
+            }
+        }
+    }
+
     // Place APRES le null move, comme Stockfish (son etape 11 suit l'etape
     // 10) : le NMP calcule sa reduction sur la profondeur pleine, l'IIR
     // reduit ensuite ce qui reste a explorer.

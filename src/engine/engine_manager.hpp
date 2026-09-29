@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <atomic>
+#include <memory>
 #include <chrono>
 #include <thread>
 #include <cmath>
@@ -44,6 +45,8 @@ class EngineManager
     TranspositionTable tt;
     TableBase tb;
     double lmr_table[64][64];
+    // Historiques entre deux recherches (PersistHistory), ~500 Ko : alloues une fois.
+    std::unique_ptr<SavedHeuristics> saved_heuristics = std::make_unique<SavedHeuristics>();
 
     std::jthread search_thread;
     alignas(64) std::atomic<bool> stop_search{false};
@@ -115,6 +118,7 @@ public:
     void clear()
     {
         tt.clear();
+        saved_heuristics->valid = false;
         stop_search.store(false);
         stop_requested.store(false, std::memory_order_relaxed);
         total_nodes.store(0);
@@ -437,6 +441,9 @@ private:
         workers.reserve(num_threads);
         for (int t = 0; t < num_threads; ++t)
             workers.emplace_back(*this, main_board, tt, tb, stop_search, total_nodes, start_time, time_limit, lmr_table, t);
+        if (engine_constants::search::PersistHistory && saved_heuristics->valid)
+            for (auto &worker : workers)
+                worker.load_heuristics(*saved_heuristics, engine_constants::search::PersistHistoryShift);
 
         std::vector<std::jthread> threads;
         threads.reserve(num_threads);
@@ -463,6 +470,8 @@ private:
         // le chemin normal d'un "go" ne le faisait pas.
         for (auto &worker : workers)
             total_nodes.fetch_add(worker.local_nodes, std::memory_order_relaxed);
+        if (engine_constants::search::PersistHistory)
+            workers[0].save_heuristics(*saved_heuristics);
 
         best_move = workers[0].best_root_move;
 

@@ -38,6 +38,21 @@ namespace engine_constants
         // historiques de continuation (sans lui, bonus seuls : elles saturent).
         PARAM_SPECIFIER int OrderAllQuiet = 0;
         PARAM_SPECIFIER int OrderContMalus = 0;
+        // Historiques conserves d'une recherche (d'un coup) a l'autre : sans cela
+        // chaque "go" recree ses workers et repart d'historiques vides. Recharges
+        // divises par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
+        PARAM_SPECIFIER int PersistHistory = 0;
+        PARAM_SPECIFIER int PersistHistoryShift = 1;
+        namespace probcut
+        {
+            // Noeud non-PV a depth >= MinDepth : une prise dont le SEE atteint
+            // beta + Margin - eval, qsearch puis recherche a depth - Reduction sur
+            // [pc_beta - 1, pc_beta] ; si elle tient, coupure (Stockfish, etape 11).
+            PARAM_SPECIFIER int Enabled = 0;
+            PARAM_SPECIFIER int MinDepth = 5;
+            PARAM_SPECIFIER int Margin = 200;
+            PARAM_SPECIFIER int Reduction = 4;
+        }
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -299,6 +314,21 @@ namespace engine_constants
         // historiques de continuation (sans lui, bonus seuls : elles saturent).
         PARAM_SPECIFIER int OrderAllQuiet = 0;
         PARAM_SPECIFIER int OrderContMalus = 0;
+        // Historiques conserves d'une recherche (d'un coup) a l'autre : sans cela
+        // chaque "go" recree ses workers et repart d'historiques vides. Recharges
+        // divises par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
+        PARAM_SPECIFIER int PersistHistory = 0;
+        PARAM_SPECIFIER int PersistHistoryShift = 1;
+        namespace probcut
+        {
+            // Noeud non-PV a depth >= MinDepth : une prise dont le SEE atteint
+            // beta + Margin - eval, qsearch puis recherche a depth - Reduction sur
+            // [pc_beta - 1, pc_beta] ; si elle tient, coupure (Stockfish, etape 11).
+            PARAM_SPECIFIER int Enabled = 0;
+            PARAM_SPECIFIER int MinDepth = 5;
+            PARAM_SPECIFIER int Margin = 200;
+            PARAM_SPECIFIER int Reduction = 4;
+        }
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;

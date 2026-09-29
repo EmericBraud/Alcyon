@@ -459,6 +459,18 @@ namespace search
 #endif
 }
 
+// Historiques conserves d'une recherche a l'autre (PersistHistory) : une copie
+// dans EngineManager, allouee une fois, rechargee dans chaque worker au depart
+// d'une recherche et sauvee depuis le thread principal a la fin.
+struct SavedHeuristics
+{
+    bool valid = false;
+    int history_moves[2][64][64];
+    Move counter_moves[2][7][64];
+    int continuation_hist_1[2][7][64][64];
+    int continuation_hist_2[2][7][64][64];
+};
+
 struct SearchWorker
 {
     const EngineManager &manager;
@@ -590,6 +602,27 @@ struct SearchWorker
     int qsearch(int alpha, int beta, int ply);
 
     // --- Heuristiques ---
+    void load_heuristics(const SavedHeuristics &h, int shift)
+    {
+        const int d = 1 << shift;
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < 64; ++i)
+                for (int j = 0; j < 64; ++j)
+                    history_moves[c][i][j] = h.history_moves[c][i][j] / d;
+        std::memcpy(counter_moves, h.counter_moves, sizeof(counter_moves));
+        int *dst1 = &continuation_hist_1[0][0][0][0], *dst2 = &continuation_hist_2[0][0][0][0];
+        const int *src1 = &h.continuation_hist_1[0][0][0][0], *src2 = &h.continuation_hist_2[0][0][0][0];
+        for (std::size_t k = 0; k < sizeof(continuation_hist_1) / sizeof(int); ++k)
+            dst1[k] = src1[k] / d, dst2[k] = src2[k] / d;
+    }
+    void save_heuristics(SavedHeuristics &h) const
+    {
+        std::memcpy(h.history_moves, history_moves, sizeof(history_moves));
+        std::memcpy(h.counter_moves, counter_moves, sizeof(counter_moves));
+        std::memcpy(h.continuation_hist_1, continuation_hist_1, sizeof(continuation_hist_1));
+        std::memcpy(h.continuation_hist_2, continuation_hist_2, sizeof(continuation_hist_2));
+        h.valid = true;
+    }
     void clear_heuristics()
     {
         std::memset(history_moves, 0, sizeof(history_moves));
