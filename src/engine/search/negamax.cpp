@@ -595,10 +595,19 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 //    cote du reduit (MoeZ, logit x100), decales de MoeZOffset.
                 if (lp::Model == 2)
                 {
-                    if (depth >= lp::MoeMinDepth)
+                    std::array<std::uint8_t, 1024> l0;
+                    bool probe = depth >= lp::MoeMinDepth;
+                    if (probe)
                     {
-                        std::array<std::uint8_t, 1024> l0;
                         board.nnue_l0(l0);
+                        if (lp::MoeGate)
+                        {
+                            const float z1 = lp::MoeGateModel ? learned_prune::mlp_logit(rec, l0) : learned_prune::logit(rec);
+                            probe = std::abs(z1) >= lp::MoeGate / 100.0f;
+                        }
+                    }
+                    if (probe)
+                    {
                         const int saved_verify_ply = learned_verify_ply;
                         const int saved_eval = static_eval_stack[ply];
                         learned_verify_ply = ply;

@@ -1,0 +1,21 @@
+2047155 noeuds depth >= 7 ; MoE croit 82.5% des noeuds
+
+== filtre regression : sondes lancees si |z1| >= g (en % du cout complet)
+  garde   sondes   cout sondes   dont non crues   gain   confiances gardees   erreurs / crus
+   100%  g=-1.00      10.55%          6.46%   35.00%           100.0%       0.441%
+    80%  g= 2.71       6.63%          3.34%   25.86%            90.3%       0.355%
+    60%  g= 3.74       3.21%          1.26%   14.98%            72.0%       0.229%
+    40%  g= 4.45       0.88%          0.15%    4.99%            50.2%       0.119%
+    30%  g= 5.06       0.43%          0.02%    2.55%            38.3%       0.074%
+    20%  g= 6.20       0.25%          0.00%    1.33%            25.8%       0.031%
+    10%  g= 8.20       0.10%          0.00%    0.45%            12.8%       0.005%
+
+== filtre mlp : sondes lancees si |z1| >= g (en % du cout complet)
+  garde   sondes   cout sondes   dont non crues   gain   confiances gardees   erreurs / crus
+   100%  g=-1.00      10.55%          6.46%   35.00%           100.0%       0.441%
+    80%  g= 2.86       4.67%          1.81%   24.99%            91.1%       0.323%
+    60%  g= 4.35       1.81%          0.31%   11.73%            73.7%       0.145%
+    40%  g= 6.28       0.58%          0.01%    3.74%            50.9%       0.035%
+    30%  g= 7.75       0.33%          0.00%    2.01%            38.6%       0.014%
+    20%  g=10.10       0.18%          0.00%    1.02%            26.1%       0.004%
+    10%  g=15.99       0.09%          0.00%    0.41%            13.4%       0.000%

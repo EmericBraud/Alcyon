@@ -102,6 +102,11 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeZ[10] = {1290, 757, 890, 1317, 1009, 933, 677, 803, 398, 334}; // moe_game_R2_dsp, ~30 % d economie
             PARAM_SPECIFIER int MoeZOffset = 0;
             PARAM_SPECIFIER int MoeMinDepth = 7;
+            // Filtre avant la sonde : recherche reduite lancee seulement si le
+            // predicteur sans recherche est sur de l'issue, |z1| >= MoeGate / 100
+            // (0 : toujours). MoeGateModel : 0 regression, 1 MLP l0.
+            PARAM_SPECIFIER int MoeGate = 0;
+            PARAM_SPECIFIER int MoeGateModel = 0;
             // 1 : la recherche reduite du MoE ne met a jour ni l'historique ni les killers.
             PARAM_SPECIFIER int MoeProbeIsolate = 0; // mesure : 1 fait pire (-35 contre -23 Elo en mode ombre)
         }
@@ -319,6 +324,11 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeZ[10] = {1290, 757, 890, 1317, 1009, 933, 677, 803, 398, 334}; // moe_game_R2_dsp, ~30 % d economie
             PARAM_SPECIFIER int MoeZOffset = 0;
             PARAM_SPECIFIER int MoeMinDepth = 7;
+            // Filtre avant la sonde : recherche reduite lancee seulement si le
+            // predicteur sans recherche est sur de l'issue, |z1| >= MoeGate / 100
+            // (0 : toujours). MoeGateModel : 0 regression, 1 MLP l0.
+            PARAM_SPECIFIER int MoeGate = 0;
+            PARAM_SPECIFIER int MoeGateModel = 0;
             // 1 : la recherche reduite du MoE ne met a jour ni l'historique ni les killers.
             PARAM_SPECIFIER int MoeProbeIsolate = 0; // mesure : 1 fait pire (-35 contre -23 Elo en mode ombre)
         }
