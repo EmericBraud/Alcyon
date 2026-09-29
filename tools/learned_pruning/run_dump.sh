@@ -1,6 +1,6 @@
 #!/bin/sh
 # Dump de docs/learned-pruning.md sur tous les coeurs.
-#   sh run_dump.sh <binaire> <positions> <dossier de sortie> <EVERY> [profondeur]
+#   [ALCYON_PRUNE_DUMP_LABEL=1] sh run_dump.sh <binaire> <positions> <dossier de sortie> <EVERY> [profondeur]
 # Lots de 20 positions dans une file : chaque coeur libre prend le suivant,
 # pour ne pas laisser des coeurs inactifs derriere un morceau lent.
 # Mecanisme appris force a 0 : les donnees viennent de l'arbre sans lui.
@@ -19,6 +19,7 @@ for p in tr te; do
   for f in ${p}_????.bin; do
     cat "$f" >> $p.bin && rm "$f"
     [ -f "$f.l0" ] && cat "$f.l0" >> $p.bin.l0 && rm "$f.l0"
+    [ -f "$f.v3" ] && touch $p.bin.v3 && rm "$f.v3"
   done
 done
 echo RUN_DONE
