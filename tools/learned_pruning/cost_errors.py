@@ -79,7 +79,9 @@ def after(fen, move):
 
 def one(eng, fen, depth):
     b_move, _, _, _ = eng.search(fen, depth, 0)
-    m_move, _, n, _ = eng.search(fen, depth, 1)
+    # CE_CONTROL=1 : etalonnage, M = base a profondeur - 1 (ce que vaut un ply).
+    control = os.environ.get("CE_CONTROL") == "1"
+    m_move, _, n, _ = eng.search(fen, depth - 1, 0) if control else eng.search(fen, depth, 1)
     rec = {"fen": fen, "B": b_move, "M": m_move, "N": n}
     if m_move == b_move:
         rec["kind"] = "same"
@@ -87,6 +89,9 @@ def one(eng, fen, depth):
     eb = 1 - expected(eng.search(after(fen, b_move), depth + 1, 0)[1])
     em = 1 - expected(eng.search(after(fen, m_move), depth + 1, 0)[1])
     rec["loss"] = eb - em
+    if control:
+        rec["kind"] = "control"
+        return rec
     if eb - em < 0.02:
         rec["kind"] = "not_worse"
         return rec
