@@ -165,6 +165,43 @@ coups calmes tardifs non-PV font environ 73 % de l'arbre, et 10 % de cette
 part valent environ 0.2 ply. Au niveau du noeud, l'existant avait deja tout
 pris.
 
+## Au niveau du coup : resultats
+
+Dump des coups calmes tardifs (`ALCYON_QUIET_DUMP`, profondeurs equilibrees
+par `ALCYON_QUIET_DUMP_P`, l0 de la position apres le coup), MLP l0 a 12
+experts (`quiet_mlp.py`), table profondeur x rang, export et parite
+(`quiet_export.py`), decision = +1 ply de LMR sous un seuil de P(utile) /
+cout attendu (`learned_quiet_mode`).
+
+Hors ligne, l0 aide aux faibles profondeurs (d1-3 : 24 % du cout retirable
+a 1 % de perte, contre 19 % en scalaire et 8.5 % pour le rang). Mais dans un
+classement global, la table profondeur x rang fait presque tout (45 %),
+parce que l'essentiel du retirable est aux grandes profondeurs.
+
+| variante | solde predit | Elo (4000 parties) |
+|---|---|---|
+| table, 0.1 % | +0.30 ply | -1.9 +- 6.8 |
+| table, 1 % | +0.22 ply | -5.3 +- 6.8 |
+| MLP l0 d<=6, 0.1 % / 1 % | +0.18 / -0.12 ply | (pas de match) |
+| hybride, 0.1 % / 1 % | +0.16 / -0.04 ply | (pas de match) |
+
+1. **Le predicteur en plies a un biais optimiste d'environ 0.3 ply.**
+   Quatre points : -0.2 predit -> ~-25 Elo, +0.2 a +0.3 -> ~0. Il sert a
+   classer et ecarter des variantes, pas a promettre un gain : viser au
+   moins +0.5 predit avant un match.
+2. **La table dit "plus de LMR aux grandes profondeurs"** (presque tous les
+   coups calmes tardifs a d >= 7-10), et c'est neutre en parties : la LMR
+   reglee par SPSA est deja pres de l'optimum.
+3. **Dans la recherche, le MLP l0 ne fait mieux ni que la table ni que la
+   base.** Aux faibles profondeurs, une reduction se paie en re-recherches
+   pour peu d'economie (+3.9 % de noeuds).
+4. **Pieges du dump au niveau du coup :** lire l'historique APRES la
+   recherche du coup fuit le label (sa coupure l'a deja augmente) ; ecrire
+   la sortie du moteur au debut du coup et l'enregistrement a la fin les
+   desaligne (coups imbriques) ; a d12 fixe, profondeur restante et ply sont
+   confondus (d10 = ply 2), donc la table ne dit pas lequel des deux porte
+   l'effet ; elle est vide a d13+.
+
 ## Sur le moteur (bugs trouves en chemin)
 
 Tous trouves en chassant des anomalies de mesure :
