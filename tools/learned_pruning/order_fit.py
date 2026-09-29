@@ -24,9 +24,9 @@ import torch.nn as nn
 
 I64 = ["node", "subtree"]
 I32 = ("depth ply cut_node improving eval_beta pos picked searched is_cut order_score history cont1 cont2 "
-       "piece from_ to gives_check n_quiets halfmove pieces").split()
+       "piece from_ to gives_check n_quiets halfmove pieces child_eval legal").split()
 DTYPE = np.dtype([(n, "<i8") for n in I64] + [(n, "<i4") for n in I32])
-assert DTYPE.itemsize == 96
+assert DTYPE.itemsize == 104
 EVAL_NONE = 1 << 30
 
 
@@ -65,6 +65,11 @@ def move_features(r):
     cols = [signlog(r["order_score"]), signlog(r["history"]), signlog(r["cont1"]), signlog(r["cont2"]),
             r["gives_check"], r["depth"] / 10, r["ply"] / 10, r["cut_node"], r["improving"], eb, known,
             r["halfmove"] / 50, r["pieces"] / 32, np.log1p(r["n_quiets"])]
+    if os.environ.get("ORDER_CHILD_EVAL") == "1":
+        # eval statique apres le coup - beta (> 0 : le coup "voit" deja la coupure)
+        ce = r["child_eval"].astype(np.float64)
+        ck = r["legal"] == 1
+        cols += [np.where(ck, np.clip(ce, -1500, 1500) / 200, 0), ck, np.where(ck, ce > 0, 0)]
     x = np.column_stack(cols).astype(np.float32)
     return x
 

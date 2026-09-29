@@ -214,8 +214,9 @@ namespace search
         std::int32_t is_cut, order_score, history, cont1;
         std::int32_t cont2, piece, from, to;
         std::int32_t gives_check, n_quiets, halfmove, pieces;
+        std::int32_t child_eval, legal; // eval statique apres le coup (notre point de vue) - beta
     };
-    static_assert(sizeof(OrderRecord) == 96, "reporter la disposition dans order_fit.py");
+    static_assert(sizeof(OrderRecord) == 104, "reporter la disposition dans order_fit.py");
 
 #ifdef ALCYON_SEARCH_EXPERIMENTS
     struct OrderDump

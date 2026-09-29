@@ -1009,6 +1009,14 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                     r.piece = q.get_from_piece(), r.from = q.get_from_sq(), r.to = q.get_to_sq();
                     r.gives_check = board.template gives_check<Us>(q);
                     r.n_quiets = list.list.count, r.halfmove = board.get_halfmove_clock(), r.pieces = pieces;
+                    r.legal = board.template is_move_legal<Us>(q);
+                    r.child_eval = kEvalNone;
+                    if (r.legal)
+                    {
+                        board.template play<Us>(q);
+                        r.child_eval = -Eval::prune_eval_relative<!Us>(board, -engine_constants::eval::Inf, engine_constants::eval::Inf) - beta;
+                        board.template unplay<Us>(q);
+                    }
                     std::fwrite(&r, sizeof(r), 1, search::order_dump.f);
                 }
 #ifdef NNUE_EVAL
