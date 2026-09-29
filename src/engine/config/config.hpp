@@ -25,7 +25,7 @@ namespace engine_constants
         // Extension d'echec (+1 ply) : 1 = active, 0 = aucune (Stockfish s'en
         // passe et s'appuie sur l'extension singuliere). Plafonnee a
         // ply < 2 * root_depth dans tous les cas (negamax.cpp).
-        PARAM_SPECIFIER int CheckExtension = 1;
+        PARAM_SPECIFIER int CheckExtension = 0;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -213,7 +213,7 @@ namespace engine_constants
         // Extension d'echec (+1 ply) : 1 = active, 0 = aucune (Stockfish s'en
         // passe et s'appuie sur l'extension singuliere). Plafonnee a
         // ply < 2 * root_depth dans tous les cas (negamax.cpp).
-        PARAM_SPECIFIER int CheckExtension = 1;
+        PARAM_SPECIFIER int CheckExtension = 0;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
