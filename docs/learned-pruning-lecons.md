@@ -202,6 +202,42 @@ parce que l'essentiel du retirable est aux grandes profondeurs.
    confondus (d10 = ply 2), donc la table ne dit pas lequel des deux porte
    l'effet ; elle est vide a d13+.
 
+## Ordonnancement des coups (2026-09-29, apres-midi)
+
+Levier sans risque : rien n'est elague, seul l'ordre change.
+
+1. **Plafond** (`ALCYON_ORACLE_ORDER`, 345 parties rejouees, d12) : un ordre
+   parfait retirerait 40.6 % des noeuds (~1.2 ply). 79.9 % des coupures se
+   font au premier coup. Les coupures par coups calmes tardifs (16 % des
+   coupures) portent 74.5 % du gaspillage.
+2. **Le contre-coup etait mort.** `counter_moves` n'etait plus jamais ecrit
+   depuis 60eb372 (V 4.0.1). Retabli (`counter_move_update`) : -11 % de
+   noeuds au bench, mais -0.5 % en parties rejouees, donc presque rien.
+3. **Les historiques repartent de zero a chaque coup.** `start_workers`
+   recree les workers a chaque "go" et leur constructeur vide tout.
+   Correctif derriere une option : `persist_history`, avec vieillissement
+   par `persist_history_shift`. C'est aussi pourquoi le bench (historiques
+   vides) et les parties donnent des resultats differents pour
+   l'ordonnancement.
+4. **Mises a jour classiques** (malus sur les continuations, mise a jour a
+   chaque coupure calme) : +-1 % de noeuds en parties, sans effet.
+5. **Reseau d'ordonnancement** (`ALCYON_ORDER_DUMP`, `order_fit.py`, softmax
+   par noeud) :
+   - avec l0 du noeud et les features du coup, il ne fait que reproduire
+     l'ordre actuel (+0.5 % de gaspillage) ;
+   - avec l'**eval statique apres le coup** (moins beta), il retire 32.9 %
+     du gaspillage de l'etape QUIETS.
+   Une regle simple en fait l'essentiel (-24.8 %) : d'abord les coups dont
+   l'eval de l'enfant atteint beta, dans l'ordre des historiques, puis les
+   autres par historiques + eval. Le seuil est pile a beta, par la dynamique
+   de la recherche : l'enfant sous son alpha des son eval statique echoue bas
+   a peu de frais.
+6. **Mais le gain est aux faibles profondeurs** (d >= 3 : -12 % ; d >= 7 :
+   -1.9 %), la ou l'eval de chaque enfant coute le plus relativement au
+   sous-arbre (`order_child_eval_min_depth`). Il vient aussi des noeuds all
+   qui finissent par couper (67 % du gaspillage), donc s'en tenir aux noeuds
+   cut n'aide pas.
+
 ## Sur le moteur (bugs trouves en chemin)
 
 Tous trouves en chassant des anomalies de mesure :
