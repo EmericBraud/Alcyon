@@ -93,8 +93,15 @@ namespace engine_constants
             PARAM_SPECIFIER int GradedZ0High = 400;
             PARAM_SPECIFIER int GradedZ0Low = 400;
             PARAM_SPECIFIER int GradedRMax = 3;
-            // 0 : regression par profondeur ; 1 : MLP avec l0 (build NNUE).
+            // 0 : regression par profondeur ; 1 : MLP avec l0 ; 2 : MoE "reduire
+            // est sur" (build NNUE).
             PARAM_SPECIFIER int Model = 0;
+            // Model = 2 : seuils (logit x 100) par tranche de profondeur (1, 2, 3,
+            // 4-6, 7+) x cote du reduit (FL, FH), bucket_thresholds.py (erreurs
+            // comptees, ~30 % d'economie) ; decalage global ; profondeur minimale.
+            PARAM_SPECIFIER int MoeZ[10] = {666, 789, 657, 1075, 812, 1159, 912, 1354, 421, 495};
+            PARAM_SPECIFIER int MoeZOffset = 0;
+            PARAM_SPECIFIER int MoeMinDepth = 7;
         }
         namespace internal_iterative_reduction
         {
@@ -301,8 +308,15 @@ namespace engine_constants
             PARAM_SPECIFIER int GradedZ0High = 400;
             PARAM_SPECIFIER int GradedZ0Low = 400;
             PARAM_SPECIFIER int GradedRMax = 3;
-            // 0 : regression par profondeur ; 1 : MLP avec l0 (build NNUE).
+            // 0 : regression par profondeur ; 1 : MLP avec l0 ; 2 : MoE "reduire
+            // est sur" (build NNUE).
             PARAM_SPECIFIER int Model = 0;
+            // Model = 2 : seuils (logit x 100) par tranche de profondeur (1, 2, 3,
+            // 4-6, 7+) x cote du reduit (FL, FH), bucket_thresholds.py (erreurs
+            // comptees, ~30 % d'economie) ; decalage global ; profondeur minimale.
+            PARAM_SPECIFIER int MoeZ[10] = {666, 789, 657, 1075, 812, 1159, 912, 1354, 421, 495};
+            PARAM_SPECIFIER int MoeZOffset = 0;
+            PARAM_SPECIFIER int MoeMinDepth = 7;
         }
         namespace internal_iterative_reduction
         {

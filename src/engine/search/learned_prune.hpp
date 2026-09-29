@@ -14,9 +14,11 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <cmath>
 #include <cstring>
 
 #include "engine/search/learned_prune_mlp_weights.hpp"
+#include "engine/search/learned_prune_moe_weights.hpp"
 #include "engine/search/learned_prune_weights.hpp"
 #include "engine/search/worker.hpp"
 
@@ -26,6 +28,7 @@ namespace learned_prune
     constexpr int kDesign = 1 + 2 * kScalars;
     static_assert(kInputs == kDesign, "reexporter les poids (fit.features a change)");
     static_assert(learned_prune_mlp::kDesign == kDesign, "reexporter le MLP (fit.features a change)");
+    static_assert(learned_prune_moe::kDesign == kDesign + 3, "reexporter le MoE (train_safe.red_features a change)");
     constexpr int kPieceCp[5] = {100, 300, 300, 500, 900};
 
     inline float clip_pawns(int v, int lim = 1500) { return std::clamp(v, -lim, lim) / 100.0f; }
@@ -129,6 +132,72 @@ namespace learned_prune
             for (int i = 0; i < kDesign; ++i)
                 a += kH1W[k][kHidden + i] * d[i];
             out += kH2W[k] * std::max(a, 0.0f);
+        }
+        return z + out;
+    }
+
+    // MoE "reduire est sur" (train_safe.MoENet, schema dsp) : logit de
+    // P(la recherche a depth - kR est du meme cote de beta que la recherche
+    // complete), sachant ce que cette recherche reduite a rendu.
+    // Bucket = (tranche de profondeur x cote du reduit) x phase ; les seuils
+    // du moteur sont par tranche x cote (bucket / 2).
+    inline int moe_bucket(const search::PruneRecord &r, bool red_fh)
+    {
+        const int d = r.depth <= 1 ? 0 : r.depth == 2 ? 1 : r.depth == 3 ? 2 : r.depth <= 6 ? 3 : 4;
+        int pieces = 2;
+        for (int p = 0; p < 5; ++p)
+            pieces += r.us[p] + r.them[p];
+        return (d * 2 + red_fh) * 2 + (pieces > 12);
+    }
+
+    inline float moe_logit(const search::PruneRecord &r, const std::array<std::uint8_t, 1024> &l0,
+                           int red_score, int red_nodes, int &bucket)
+    {
+        using namespace learned_prune_moe;
+        // Pas kDesign : dans cet espace de noms il designe learned_prune::kDesign (75).
+        constexpr int kIn = learned_prune_moe::kDesign;
+        float d[kIn];
+        design(r, d);
+        const bool red_fh = red_score >= r.beta;
+        d[kIn - 3] = red_fh ? 1.0f : -1.0f;
+        d[kIn - 2] = clip_pawns(red_score - r.beta);
+        d[kIn - 1] = std::log1p(static_cast<float>(red_nodes)) / 10.0f;
+
+        float z = kLinB;
+        for (int k = 0; k < kIn; ++k)
+            z += kLinW[k] * d[k];
+
+        float h[kHidden];
+        for (int j = 0; j < kHidden; ++j)
+            h[j] = kL0B[j];
+        for (int b = 0; b < 1024; b += 8)
+        {
+            std::uint64_t block;
+            std::memcpy(&block, l0.data() + b, 8);
+            while (block)
+            {
+                const int i = b + std::countr_zero(block) / 8;
+                const float v = l0[i];
+                for (int j = 0; j < kHidden; ++j)
+                    h[j] += v * kL0WT[i][j];
+                block &= ~(std::uint64_t{0xFF} << (std::countr_zero(block) / 8 * 8));
+            }
+        }
+        for (int j = 0; j < kHidden; ++j)
+            h[j] = std::max(h[j], 0.0f);
+
+        bucket = moe_bucket(r, red_fh);
+        const int depth_idx = std::min(r.depth, kDepths) - 1;
+        float out = kH2B[bucket];
+        for (int k = 0; k < kHead; ++k)
+        {
+            const int row = bucket * kHead + k;
+            float a = kH1B[row] + kH1W[row][kHidden + kIn + depth_idx];
+            for (int j = 0; j < kHidden; ++j)
+                a += kH1W[row][j] * h[j];
+            for (int i = 0; i < kIn; ++i)
+                a += kH1W[row][kHidden + i] * d[i];
+            out += kH2W[bucket][k] * std::max(a, 0.0f);
         }
         return z + out;
     }

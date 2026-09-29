@@ -538,6 +538,17 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             }
             learned_verify_ply = saved_verify_ply;
             static_eval_stack[ply] = saved_eval;
+#ifdef NNUE_EVAL
+            // Parite du MoE (export_moe.py check) : son logit, avec la recherche
+            // reduite du label a depth - kR.
+            if (engine_constants::search::learned_pruning::Model == 2)
+            {
+                int bucket;
+                const int k = learned_prune_moe::kR - 1;
+                dump_rec.learned_z = learned_prune::moe_logit(dump_rec, search::prune_dump.l0_at_ply[ply],
+                                                              dump_rec.red_score[k], dump_rec.red_nodes[k], bucket);
+            }
+#endif
         }
     }
 #ifdef NNUE_EVAL
@@ -576,6 +587,45 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 search::PruneRecord rec;
                 search::fill_prune_record<Us>(*this, rec, static_eval, depth, ply, beta, cut_node, allow_null);
 #ifdef NNUE_EVAL
+                // Model = 2 : MoE "reduire est sur" (docs/learned-pruning-bilan.md).
+                // 1. ce meme noeud a depth - kR, meme fenetre (sa TT sert ensuite a
+                //    la recherche complete, comme un IID) ; 2. le MoE, qui voit ce
+                //    que la recherche reduite a rendu, dit si l'on peut s'y fier ;
+                //    sinon recherche normale. Seuils par tranche de profondeur x
+                //    cote du reduit (MoeZ, logit x100), decales de MoeZOffset.
+                if (lp::Model == 2)
+                {
+                    if (depth >= lp::MoeMinDepth)
+                    {
+                        std::array<std::uint8_t, 1024> l0;
+                        board.nnue_l0(l0);
+                        const int saved_verify_ply = learned_verify_ply;
+                        const int saved_eval = static_eval_stack[ply];
+                        learned_verify_ply = ply;
+                        const long long c0 = global_nodes.load(std::memory_order_relaxed) + local_nodes;
+                        const int reduced = depth - learned_prune_moe::kR;
+                        const int s = reduced > 0 ? negamax<Us>(reduced, alpha, beta, ply, allow_null, cut_node)
+                                                  : qsearch<Us>(alpha, beta, ply);
+                        const int red_nodes = static_cast<int>(global_nodes.load(std::memory_order_relaxed) + local_nodes - c0);
+                        learned_verify_ply = saved_verify_ply;
+                        static_eval_stack[ply] = saved_eval;
+                        int bucket;
+                        const float z = learned_prune::moe_logit(rec, l0, s, red_nodes, bucket);
+                        // Enabled = 3 : controle, confiance au reduit tiree au hasard.
+                        const bool trust = lp::Enabled == 3
+                                               ? engine::random::splitmix64(board.get_hash() ^ ply) % 1000 < static_cast<unsigned>(lp::RandomPermille)
+                                               : z >= (lp::MoeZ[bucket / 2] + lp::MoeZOffset) / 100.0f;
+                        if (trust && search::prune_stats_enabled())
+                            search::learned_fires[std::min(depth, search::kPruneDepths) - 1].fetch_add(1, std::memory_order_relaxed);
+                        if (trust && lp::Enabled != 2)
+                        {
+                            stat(search::PO_LEARNED);
+                            return s;
+                        }
+                    }
+                }
+                else
+                {
                 float z;
                 if (lp::Model == 1)
                 {
@@ -641,6 +691,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                     stat(search::PO_LEARNED);
                     return z >= 0 ? beta : alpha;
                 }
+#ifdef NNUE_EVAL
+                }
+#endif
             }
         }
     }
