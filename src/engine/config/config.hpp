@@ -168,6 +168,17 @@ namespace engine_constants
             PARAM_SPECIFIER int QuietMode = 0;
             PARAM_SPECIFIER int QuietLoss = 0;
             PARAM_SPECIFIER int QuietExtraR = 1;
+            // Modulation des elagages existants par le modele de noeud (P(fail-high),
+            // calcule avant le RFP) : ModModel 0 regression, 1 MLP l0. Quand le logit
+            // x100 >= ModRfpZ : RFP permis jusqu'a ModRfpDepth et marge x ModRfpMarginPct %.
+            // Quand il est >= ModNmpZ : R du NMP + ModNmpR. ModOn = 0 : eteint.
+            PARAM_SPECIFIER int ModOn = 0;
+            PARAM_SPECIFIER int ModModel = 0;
+            PARAM_SPECIFIER int ModRfpZ = 400;
+            PARAM_SPECIFIER int ModRfpDepth = 6;
+            PARAM_SPECIFIER int ModRfpMarginPct = 100;
+            PARAM_SPECIFIER int ModNmpZ = 400;
+            PARAM_SPECIFIER int ModNmpR = 0;
         }
         namespace internal_iterative_reduction
         {
@@ -449,6 +460,17 @@ namespace engine_constants
             PARAM_SPECIFIER int QuietMode = 0;
             PARAM_SPECIFIER int QuietLoss = 0;
             PARAM_SPECIFIER int QuietExtraR = 1;
+            // Modulation des elagages existants par le modele de noeud (P(fail-high),
+            // calcule avant le RFP) : ModModel 0 regression, 1 MLP l0. Quand le logit
+            // x100 >= ModRfpZ : RFP permis jusqu'a ModRfpDepth et marge x ModRfpMarginPct %.
+            // Quand il est >= ModNmpZ : R du NMP + ModNmpR. ModOn = 0 : eteint.
+            PARAM_SPECIFIER int ModOn = 0;
+            PARAM_SPECIFIER int ModModel = 0;
+            PARAM_SPECIFIER int ModRfpZ = 400;
+            PARAM_SPECIFIER int ModRfpDepth = 6;
+            PARAM_SPECIFIER int ModRfpMarginPct = 100;
+            PARAM_SPECIFIER int ModNmpZ = 400;
+            PARAM_SPECIFIER int ModNmpR = 0;
         }
         namespace internal_iterative_reduction
         {

@@ -121,10 +121,14 @@ namespace search
     }
 
     template <Color Us>
-    inline bool reverse_futility_pruning(SearchWorker &worker, int depth, int ply, bool in_check, bool is_pv, int beta, int &return_score)
+    inline bool reverse_futility_pruning(SearchWorker &worker, int depth, int ply, bool in_check, bool is_pv, int beta, int &return_score,
+                                         bool confident = false)
     {
         namespace rfp = engine_constants::search::reverse_futility_pruning;
-        if (depth <= rfp::MaxDepth && !in_check && ply > 0 && !is_pv)
+        namespace lp = engine_constants::search::learned_pruning;
+        // Modele de noeud tres sur d'un fail-high (ModOn) : fenetre et marge ajustees.
+        const int max_depth = confident ? std::max<int>(rfp::MaxDepth, lp::ModRfpDepth) : rfp::MaxDepth;
+        if (depth <= max_depth && !in_check && ply > 0 && !is_pv)
         {
             // Un seul test, sur le reseau complet (voir
             // Eval::prune_eval_relative). La seconde passe qui existait ici
@@ -138,7 +142,9 @@ namespace search
             // plys, le pari est plus sur, donc on exige moins de marge et on
             // coupe plus souvent. C'est le "depth - improving" de Stockfish.
             const int improving = is_improving(worker, ply) ? engine_constants::search::reverse_futility_pruning::ImprovingDepthBonus : 0;
-            const int margin = rfp::MarginDepthFactor * (depth - improving) + rfp::MarginConst;
+            int margin = rfp::MarginDepthFactor * (depth - improving) + rfp::MarginConst;
+            if (confident)
+                margin = margin * lp::ModRfpMarginPct / 100;
             if (static_eval - margin >= beta)
             {
                 // Fail-HARD, comme avant : on rend beta, pas static_eval.
@@ -197,7 +203,8 @@ namespace search
     }
 
     template <Color Us>
-    inline bool nmp(SearchWorker &worker, int depth, int ply, bool allow_null, bool in_check, bool is_mate_node, int alpha, int beta, int &return_score)
+    inline bool nmp(SearchWorker &worker, int depth, int ply, bool allow_null, bool in_check, bool is_mate_node, int alpha, int beta, int &return_score,
+                    int extra_r = 0)
     {
         // Garde zugzwang : sans piece autre que les pions, "passer son tour"
         // n'est pas une borne inferieure du vrai coup -- en finale de pions
@@ -211,7 +218,7 @@ namespace search
             int stored_ep;
             worker.get_tt().prefetch(worker.get_board().get_hash());
             worker.get_board().play_null_move(stored_ep);
-            int R = engine_constants::search::null_move_pruning::RConst + depth / engine_constants::search::null_move_pruning::RDiv;
+            int R = engine_constants::search::null_move_pruning::RConst + depth / engine_constants::search::null_move_pruning::RDiv + extra_r;
             R = std::min(R, depth - 1);
             int score = -worker.negamax<!Us>(depth - 1 - R, -beta, -beta + 1, ply + 1, false, false);
             worker.get_board().unplay_null_move(stored_ep);
@@ -493,12 +500,36 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (search::should_qsearch(depth, ply, in_check))
         return qsearch<Us>(alpha, beta, ply);
 
+    // Modulation par le modele de noeud (ModOn) : logit de P(fail-high), calcule
+    // une fois ici et lu par le RFP et le NMP. -inf quand il n'est pas calcule.
+    float mod_z = -1e9f;
+    if (engine_constants::search::learned_pruning::ModOn && !is_pv && !in_check && ply > 0 && excluded_move == 0 &&
+        std::abs(beta) < engine_constants::eval::SyzygyScore)
+    {
+        const int se = search::node_static_eval<Us>(*this, ply);
+        if (std::abs(se) < engine_constants::eval::SyzygyScore)
+        {
+            search::PruneRecord rec;
+            search::fill_prune_record<Us>(*this, rec, se, depth, ply, beta, cut_node, allow_null);
+#ifdef NNUE_EVAL
+            if (engine_constants::search::learned_pruning::ModModel == 1)
+            {
+                std::array<std::uint8_t, 1024> l0;
+                board.nnue_l0(l0);
+                mod_z = learned_prune::mlp_logit(rec, l0);
+            }
+            else
+#endif
+                mod_z = learned_prune::logit(rec);
+        }
+    }
+
     {
         // Fail-hard conserve : le helper rend beta (voir son commentaire).
         // Le score passe par une sortie pour laisser la place au fail-soft,
         // qui fera l'objet d'un SPRT separe.
         int rfp_score;
-        if (search::reverse_futility_pruning<Us>(*this, depth, ply, in_check, is_pv, beta, rfp_score))
+        if (search::reverse_futility_pruning<Us>(*this, depth, ply, in_check, is_pv, beta, rfp_score, mod_z >= engine_constants::search::learned_pruning::ModRfpZ / 100.0f))
         {
             stat(search::PO_RFP);
             return rfp_score;
@@ -755,7 +786,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     {
         int return_score;
-        if (search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score))
+        if (search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score,
+                            mod_z >= engine_constants::search::learned_pruning::ModNmpZ / 100.0f ? engine_constants::search::learned_pruning::ModNmpR : 0))
         {
             stat(search::PO_NMP);
             return return_score;

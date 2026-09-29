@@ -575,6 +575,13 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::QuietMode, "learned_quiet_mode", 0, 3),
             UCIOption<int>(&engine_constants::search::learned_pruning::QuietLoss, "learned_quiet_loss", 0, 1),
             UCIOption<int>(&engine_constants::search::learned_pruning::QuietExtraR, "learned_quiet_r", 0, 4),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ModOn, "mod_on", 0, 1),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ModModel, "mod_model", 0, 1),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ModRfpZ, "mod_rfp_z", -2000, 2000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ModRfpDepth, "mod_rfp_depth", 0, 20),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ModRfpMarginPct, "mod_rfp_margin_pct", 10, 200),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ModNmpZ, "mod_nmp_z", -2000, 2000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::ModNmpR, "mod_nmp_r", 0, 4),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),
