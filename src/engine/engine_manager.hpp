@@ -488,11 +488,18 @@ private:
 
         if (ponder_enabled.load(std::memory_order_relaxed) && !stop_requested.load(std::memory_order_relaxed))
         {
+            // main_board EST le plateau de l'interface UCI (reference). Le coup
+            // joue ici pour lire le coup de ponder doit etre annule AVANT
+            // d'emettre bestmove : des que l'interface le lit, elle envoie
+            // "position ...", qui reecrit ce plateau depuis l'autre thread.
+            // L'annulation faite apres (par un garde de portee) courait contre
+            // ce "position" : plateau corrompu, "Error parsing move", free()
+            // sur un historique detruit, et coups illegaux en tournoi.
             main_board.play(best_move);
-            auto guard = ALCYON_SCOPE_EXIT([&best_move, this]
-                                            { main_board.unplay(best_move); });
             Move second_move = tt.get_move(main_board.get_hash());
-            if (main_board.is_move_pseudo_legal(second_move) && main_board.is_move_legal(second_move))
+            const bool ponder_ok = main_board.is_move_pseudo_legal(second_move) && main_board.is_move_legal(second_move);
+            main_board.unplay(best_move);
+            if (ponder_ok)
             {
                 logs::uci << "bestmove " << best_move.to_uci() << " ponder " << second_move.to_uci() << std::endl;
                 return;
