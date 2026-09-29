@@ -202,6 +202,67 @@ namespace search
     constexpr bool quiet_dump_enabled() { return false; }
 #endif
 
+// Dump d'ordonnancement (ALCYON_ORDER_DUMP=<fichier>, ALCYON_ORDER_DUMP_P="p1,p2,..."
+    // par profondeur) : aux noeuds tires ou un coup de l'etape QUIETS coupe, TOUS les
+    // coups calmes de l'etape (cherches ou non), et l'l0 du noeud dans "<dump>.l0"
+    // (un par noeud, dans l'ordre des id). tools/learned_pruning/order_fit.py.
+    struct OrderRecord
+    {
+        std::int64_t node, subtree;                  // id du noeud ; noeuds du sous-arbre si cherche
+        std::int32_t depth, ply, cut_node, improving;
+        std::int32_t eval_beta, pos, picked, searched; // pos : place dans la liste (ordre de tirage si picked)
+        std::int32_t is_cut, order_score, history, cont1;
+        std::int32_t cont2, piece, from, to;
+        std::int32_t gives_check, n_quiets, halfmove, pieces;
+    };
+    static_assert(sizeof(OrderRecord) == 96, "reporter la disposition dans order_fit.py");
+
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+    struct OrderDump
+    {
+        std::FILE *f = nullptr, *f_l0 = nullptr;
+        std::uint64_t p32[64] = {};
+        long long next_node = 0;
+        ~OrderDump()
+        {
+            if (f)
+                std::fclose(f);
+            if (f_l0)
+                std::fclose(f_l0);
+        }
+    };
+    inline OrderDump order_dump;
+    inline bool order_dump_enabled()
+    {
+        static const bool on = []
+        {
+            const char *path = std::getenv("ALCYON_ORDER_DUMP");
+            if (!path)
+                return false;
+            const char *e = std::getenv("ALCYON_ORDER_DUMP_P");
+            double p = 1.0;
+            for (int d = 1; d < 64; ++d)
+            {
+                if (e && *e)
+                {
+                    char *end;
+                    p = std::strtod(e, &end);
+                    e = *end == ',' ? end + 1 : end;
+                }
+                order_dump.p32[d] = static_cast<std::uint64_t>(std::clamp(p, 0.0, 1.0) * 4294967296.0);
+            }
+            order_dump.f = std::fopen(path, "wb");
+#ifdef NNUE_EVAL
+            order_dump.f_l0 = std::fopen((std::string(path) + ".l0").c_str(), "wb");
+#endif
+            return order_dump.f != nullptr;
+        }();
+        return on;
+    }
+#else
+    constexpr bool order_dump_enabled() { return false; }
+#endif
+
 #ifdef ALCYON_SEARCH_EXPERIMENTS
     inline bool prune_stats_enabled()
     {

@@ -784,6 +784,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // Coups calmes cherches (OrderAllQuiet) : le malus ne touche qu'eux.
     Move quiets_tried[64];
     int n_quiets_tried = 0;
+    long long quiets_tried_nodes[64]; // ALCYON_ORDER_DUMP seulement
     const long long ord_node_n0 = search::oracle_order_enabled() ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
     const long long ord_node_r0 = oracle_ord_removed;
 
@@ -818,7 +819,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         ++moves_searched;
 
-        const long long ord_move_n0 = search::oracle_order_enabled() ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
+        const long long ord_move_n0 = (search::oracle_order_enabled() || search::order_dump_enabled()) ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
         const long long ord_move_r0 = oracle_ord_removed;
         const bool oracle_late = search::oracle_quiet_enabled() && list.stage == QUIETS && !is_tactical;
         const long long oracle_n0 = oracle_late ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
@@ -970,11 +971,56 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         // --- MISE À JOUR DES SCORES ET DES TABLES ---
         if (score < beta && !is_tactical && n_quiets_tried < 64)
+        {
+            if (search::order_dump_enabled())
+                quiets_tried_nodes[n_quiets_tried] = global_nodes.load(std::memory_order_relaxed) + local_nodes - ord_move_n0;
             quiets_tried[n_quiets_tried++] = m;
+        }
         if (score >= beta)
         {
             if (search::order_stats_enabled())
                 search::record_cutoff(moves_searched, is_tactical);
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+            if (search::order_dump_enabled() && list.stage == QUIETS && !is_tactical &&
+                (engine::random::splitmix64(board.get_hash() ^ 0x5bd1e995ULL ^ ply) & 0xFFFFFFFFULL) < search::order_dump.p32[std::min(depth, 63)])
+            {
+                const long long node = search::order_dump.next_node++;
+                const long long cut_nodes = global_nodes.load(std::memory_order_relaxed) + local_nodes - ord_move_n0;
+                const int pieces = __builtin_popcountll(static_cast<const Board &>(board).get_occupancy(WHITE) |
+                                                        static_cast<const Board &>(board).get_occupancy(BLACK));
+                const int ev = static_eval_stack[ply];
+                for (int j = 0; j < list.list.count; ++j)
+                {
+                    const Move q = list.list.moves[j];
+                    search::OrderRecord r{};
+                    r.node = node, r.depth = depth, r.ply = ply, r.cut_node = cut_node, r.improving = improving;
+                    r.eval_beta = ev == kEvalNone ? kEvalNone : ev - beta;
+                    r.pos = j, r.picked = j < list.index, r.is_cut = q == m;
+                    r.searched = r.is_cut;
+                    for (int k = 0; k < n_quiets_tried; ++k)
+                        if (quiets_tried[k] == q)
+                            r.searched = 1, r.subtree = quiets_tried_nodes[k];
+                    if (r.is_cut)
+                        r.subtree = cut_nodes;
+                    r.order_score = list.list.scores[j];
+                    r.history = history_moves[Us][q.get_from_sq()][q.get_to_sq()];
+                    r.cont1 = prev_m != 0 ? continuation_hist_1[Us][prev_m.get_from_piece()][prev_m.get_to_sq()][q.get_to_sq()] : 0;
+                    r.cont2 = prev_prev_m != 0 ? continuation_hist_2[Us][prev_prev_m.get_from_piece()][prev_prev_m.get_to_sq()][q.get_to_sq()] : 0;
+                    r.piece = q.get_from_piece(), r.from = q.get_from_sq(), r.to = q.get_to_sq();
+                    r.gives_check = board.template gives_check<Us>(q);
+                    r.n_quiets = list.list.count, r.halfmove = board.get_halfmove_clock(), r.pieces = pieces;
+                    std::fwrite(&r, sizeof(r), 1, search::order_dump.f);
+                }
+#ifdef NNUE_EVAL
+                if (search::order_dump.f_l0)
+                {
+                    std::array<std::uint8_t, 1024> l0;
+                    board.nnue_l0(l0);
+                    std::fwrite(l0.data(), 1, 1024, search::order_dump.f_l0);
+                }
+#endif
+            }
+#endif
             if (search::oracle_order_enabled())
             {
                 ++ord_cut;
