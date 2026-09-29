@@ -1,0 +1,38 @@
+R=1 train 7013273 test 6325057 ; le reduit a raison sur 98.3% du test
+  epoch  1/20 : train 0.5922  test 0.3665
+  epoch  2/20 : train 0.2744  test 0.1674
+  epoch  3/20 : train 0.1612  test 0.1069
+  epoch  4/20 : train 0.1219  test 0.0838
+  epoch  5/20 : train 0.1051  test 0.0738
+  epoch  6/20 : train 0.0970  test 0.0691
+  epoch  7/20 : train 0.0927  test 0.0670
+  epoch  8/20 : train 0.0904  test 0.0661
+  epoch  9/20 : train 0.0891  test 0.0656
+  epoch 10/20 : train 0.0883  test 0.0656
+  epoch 11/20 : train 0.0879  test 0.0655
+  epoch 12/20 : train 0.0876  test 0.0655
+  epoch 13/20 : train 0.0874  test 0.0655
+  epoch 14/20 : train 0.0874  test 0.0655
+  epoch 15/20 : train 0.0873  test 0.0656
+  epoch 16/20 : train 0.0873  test 0.0656
+  epoch 17/20 : train 0.0872  test 0.0656
+  epoch 18/20 : train 0.0872  test 0.0656
+  epoch 19/20 : train 0.0872  test 0.0656
+  epoch 20/20 : train 0.0872  test 0.0656
+
+erreurs non detectees (% des noeuds) a cout complet economise de 10%, 20%, 30%, 40%, 50%
+  toujours   0.19%   0.33%   0.52%   0.65%   0.77%
+  pfh        0.06%   0.12%   0.18%   0.23%   0.33%
+  safe       0.03%   0.07%   0.13%   0.19%   0.27%
+
+par profondeur, a 30 % du cout economise :
+  depth   1 : pfh  1.15%   safe  2.65%
+  depth   2 : pfh  1.13%   safe  2.55%
+  depth   3 : pfh  0.48%   safe  0.82%
+  depth   4 : pfh  0.23%   safe  0.46%
+  depth   5 : pfh  0.15%   safe  0.36%
+  depth   6 : pfh  0.14%   safe  0.37%
+  depth   7 : pfh  0.13%   safe  0.23%
+  depth   8 : pfh  0.12%   safe  0.23%
+  depth   9 : pfh  0.11%   safe  0.25%
+  depth 10+ : pfh  0.18%   safe  0.22%
