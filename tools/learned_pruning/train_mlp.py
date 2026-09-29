@@ -32,9 +32,7 @@ N_DEPTHS = len(fit.SLICES)
 
 def load(path):
     """Enregistrements filtres comme fit.load, et leurs l0 alignes."""
-    size = os.path.getsize(path)
-    assert size % fit.DTYPE.itemsize == 0, "dump v2 attendu"
-    r = np.fromfile(path, dtype=fit.DTYPE)
+    r = np.fromfile(path, dtype=fit.dtype_for(path))
     l0 = np.memmap(path + ".l0", dtype=np.uint8, mode="r", shape=(len(r), 1024))
     ok = (np.abs(r["beta"]) < 9000) & (np.abs(r["static_eval"]) < 9000)
     return r, l0, np.nonzero(ok)[0]

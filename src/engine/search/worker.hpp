@@ -142,8 +142,13 @@ namespace search
         std::int32_t us[5], them[5];                 // pions, cavaliers, fous, tours, dames
         float learned_z;                             // logit calcule par le moteur (verif. de parite)
         std::int32_t research;                       // noeud atteint par une re-recherche LMR (0 dans les dumps anciens)
+        // v3 -- label "reduire est sur" (ALCYON_PRUNE_DUMP_LABEL=1) : score et
+        // cout en noeuds de ce meme noeud cherche a depth-1 (indice 0) et
+        // depth-2 (indice 1), meme fenetre, avant la recherche normale.
+        std::int32_t red_score[2];
+        std::int32_t red_nodes[2];
     };
-    static_assert(sizeof(PruneRecord) == 120, "reporter la disposition dans fit.py");
+    static_assert(sizeof(PruneRecord) == 136, "reporter la disposition dans fit.py (DTYPE_V3)");
 
     // Fichier parallele "<dump>.l0" : pour chaque enregistrement, l'entree
     // l0 de la pile de couches NNUE au point de decision (build NNUE).
@@ -201,6 +206,10 @@ namespace search
             if (const char *e = std::getenv("ALCYON_PRUNE_DUMP_EVERY"))
                 prune_dump.every = std::max(1ULL, std::strtoull(e, nullptr, 10));
             prune_dump.f = std::fopen(path, "wb");
+            // Marqueur de format : fit.py lit "<dump>.v3" pour choisir DTYPE_V3
+            // (les tailles 120 et 136 ne suffisent pas toujours a trancher).
+            if (std::FILE *m = std::fopen((std::string(path) + ".v3").c_str(), "w"))
+                std::fclose(m);
 #ifdef NNUE_EVAL
             prune_dump.f_l0 = std::fopen((std::string(path) + ".l0").c_str(), "wb");
 #endif
@@ -235,6 +244,16 @@ namespace search
     }
 #else
     constexpr unsigned long long l0_check_every() { return 0; }
+#endif
+
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+    inline bool prune_dump_label_enabled()
+    {
+        static const bool on = std::getenv("ALCYON_PRUNE_DUMP_LABEL") != nullptr;
+        return on;
+    }
+#else
+    constexpr bool prune_dump_label_enabled() { return false; }
 #endif
 
     inline bool prune_dump_sample(int depth)

@@ -432,7 +432,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // search::PruneRecord). Hors build d'experimentation stats_node vaut
     // false et tout disparait.
     const bool stats_node = (search::prune_stats_enabled() || search::prune_dump_enabled()) &&
-                            !is_pv && !in_check && ply > 0 && depth >= 1 && excluded_move == 0;
+                            !is_pv && !in_check && ply > 0 && depth >= 1 && excluded_move == 0 &&
+                            ply != learned_verify_ply;
     const int stats_depth = depth;
     const long long stats_clock = stats_node ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
     // Eval calculee hors du cache static_eval_stack : le remplir ici
@@ -509,6 +510,30 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 #else
         dump_rec.learned_z = learned_prune::logit(dump_rec);
 #endif
+        dump_rec.red_score[0] = dump_rec.red_score[1] = 0;
+        dump_rec.red_nodes[0] = dump_rec.red_nodes[1] = 0;
+        if (search::prune_dump_label_enabled())
+        {
+            // Label "reduire est sur" (docs/learned-pruning-bilan.md) : ce meme
+            // noeud, meme fenetre, a depth-2 PUIS depth-1, avant la recherche
+            // normale -- dans l'autre ordre, l'entree TT laissee a depth-1
+            // couperait la recherche a depth-2. Le resultat complet est l'issue
+            // normale du noeud (outcome). Pas de dump ni de mecanisme sur ces
+            // recherches (learned_verify_ply), cache d'eval du ply restaure.
+            const int saved_verify_ply = learned_verify_ply;
+            const int saved_eval = static_eval_stack[ply];
+            learned_verify_ply = ply;
+            for (int k = 1; k >= 0; --k)
+            {
+                const int reduced = depth - (k + 1);
+                const long long c0 = global_nodes.load(std::memory_order_relaxed) + local_nodes;
+                dump_rec.red_score[k] = reduced > 0 ? negamax<Us>(reduced, alpha, beta, ply, allow_null, cut_node)
+                                                    : qsearch<Us>(alpha, beta, ply);
+                dump_rec.red_nodes[k] = static_cast<int>(global_nodes.load(std::memory_order_relaxed) + local_nodes - c0);
+            }
+            learned_verify_ply = saved_verify_ply;
+            static_eval_stack[ply] = saved_eval;
+        }
     }
 #ifdef NNUE_EVAL
     if (search::l0_check_every() && !is_pv && !in_check && ply > 0 && depth >= 1 &&

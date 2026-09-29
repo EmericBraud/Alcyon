@@ -45,7 +45,20 @@ DTYPE_V1 = np.dtype([
     ("us", "<i4", 5), ("them", "<i4", 5),
 ])
 DTYPE = np.dtype(DTYPE_V1.descr + [("learned_z", "<f4"), ("research", "<i4")])
-assert DTYPE_V1.itemsize == 112 and DTYPE.itemsize == 120
+# v3 : label "reduire est sur" (red_score / red_nodes : indice 0 = depth-1,
+# 1 = depth-2), signale par le fichier "<dump>.v3".
+DTYPE_V3 = np.dtype(DTYPE.descr + [("red_score", "<i4", 2), ("red_nodes", "<i4", 2)])
+assert DTYPE_V1.itemsize == 112 and DTYPE.itemsize == 120 and DTYPE_V3.itemsize == 136
+
+
+def dtype_for(path):
+    if os.path.exists(path + ".v3"):
+        return DTYPE_V3
+    size = os.path.getsize(path)
+    v1, v2 = size % DTYPE_V1.itemsize == 0, size % DTYPE.itemsize == 0
+    if v1 == v2:
+        sys.exit(f"{path} : format indecidable ({size} octets)")
+    return DTYPE if v2 else DTYPE_V1
 
 K_EVAL_NONE = 1 << 30
 NO_PIECE = 6
@@ -57,11 +70,7 @@ MAX_TRAIN = 2_000_000
 
 
 def load(path):
-    size = os.path.getsize(path)
-    v1, v2 = size % DTYPE_V1.itemsize == 0, size % DTYPE.itemsize == 0
-    if v1 == v2:
-        sys.exit(f"{path} : format indecidable ({size} octets)")
-    r = np.fromfile(path, dtype=DTYPE if v2 else DTYPE_V1)
+    r = np.fromfile(path, dtype=dtype_for(path))
     # Fenetres de mat : hors perimetre (exclues du reseau, cf. le doc).
     ok = (np.abs(r["beta"]) < 9000) & (np.abs(r["static_eval"]) < 9000)
     # FIT_EXCLUDE_NMP=1 : seulement les noeuds vraiment cherches. Les noeuds
