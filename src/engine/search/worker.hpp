@@ -327,6 +327,8 @@ struct SearchWorker
     Move out_move = 0;
 
     int max_extended_depth;
+    // Profondeur de l'iteration en cours (fixee a ply 0) : borne des extensions.
+    int root_depth = 0;
 
     // Ply du noeud en cours de verification par l'elagage appris (reduction
     // verifiee, negamax.cpp) : la recherche reduite de ce noeud ne doit pas
