@@ -33,12 +33,18 @@ struct MovePicker
     Move prev_prev_move;
     Move tt_move;
     int thread_id;
+    // Ordonnancement par l'eval de l'enfant (OrderChildEvalMinDepth) : beta du
+    // noeud, et si on l'applique.
+    int beta = 0;
+    bool child_eval = false;
 
     // NOUVEAU : On stocke l'info ici pour que negamax la lise en toute sécurité
     bool current_is_tactical;
 
-    MovePicker(VBoard &board, Move _tt_move, int _ply, Move _prev_move, int _thread_id)
+    MovePicker(VBoard &board, Move _tt_move, int _ply, Move _prev_move, int _thread_id, int _beta = 0, bool _child_eval = false)
     {
+        beta = _beta;
+        child_eval = _child_eval;
         list.clear();
         stage = TT;
         index = 0;
@@ -216,7 +222,16 @@ struct MovePicker
                     }
                     int history_score = worker.history_moves[Us][m.get_from_sq()][m.get_to_sq()];
                     history_score = worker.score_quiet_history(history_score, m, prev_move, prev_prev_move, Us);
-                    list.scores[i] = history_score + noise;
+                    int score = history_score + noise;
+                    if (child_eval && board.template is_move_legal<Us>(m))
+                    {
+                        board.template play<Us>(m);
+                        const int ce = -Eval::prune_eval_relative<!Us>(board, -engine_constants::eval::Inf, engine_constants::eval::Inf) - beta;
+                        board.template unplay<Us>(m);
+                        score = ce >= 0 ? (1 << 22) + score
+                                        : score + engine_constants::search::OrderChildEvalRestW * std::clamp(ce, -1000, 1000) / 100;
+                    }
+                    list.scores[i] = score;
                     list.is_tactical[i] = false;
                     list[i++] = m;
                 }

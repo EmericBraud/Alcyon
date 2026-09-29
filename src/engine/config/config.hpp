@@ -43,6 +43,13 @@ namespace engine_constants
         // divises par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
         PARAM_SPECIFIER int PersistHistory = 0;
         PARAM_SPECIFIER int PersistHistoryShift = 1;
+        // Ordonnancement des coups calmes par l'eval statique apres le coup
+        // (order_fit.py : -25 % de gaspillage dans l'etape QUIETS hors ligne) : a
+        // depth >= OrderChildEvalMinDepth (0 : eteint), d'abord les coups dont
+        // l'eval de l'enfant atteint beta (dans l'ordre des historiques), puis les
+        // autres par historiques + OrderChildEvalRestW / 100 * (eval - beta).
+        PARAM_SPECIFIER int OrderChildEvalMinDepth = 0;
+        PARAM_SPECIFIER int OrderChildEvalRestW = 100;
         namespace probcut
         {
             // Noeud non-PV a depth >= MinDepth : une prise dont le SEE atteint
@@ -319,6 +326,13 @@ namespace engine_constants
         // divises par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
         PARAM_SPECIFIER int PersistHistory = 0;
         PARAM_SPECIFIER int PersistHistoryShift = 1;
+        // Ordonnancement des coups calmes par l'eval statique apres le coup
+        // (order_fit.py : -25 % de gaspillage dans l'etape QUIETS hors ligne) : a
+        // depth >= OrderChildEvalMinDepth (0 : eteint), d'abord les coups dont
+        // l'eval de l'enfant atteint beta (dans l'ordre des historiques), puis les
+        // autres par historiques + OrderChildEvalRestW / 100 * (eval - beta).
+        PARAM_SPECIFIER int OrderChildEvalMinDepth = 0;
+        PARAM_SPECIFIER int OrderChildEvalRestW = 100;
         namespace probcut
         {
             // Noeud non-PV a depth >= MinDepth : une prise dont le SEE atteint

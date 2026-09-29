@@ -585,6 +585,8 @@ public:
             UCIOption<int>(&engine_constants::search::OrderContMalus, "order_cont_malus", 0, 1),
             UCIOption<int>(&engine_constants::search::PersistHistory, "persist_history", 0, 1),
             UCIOption<int>(&engine_constants::search::PersistHistoryShift, "persist_history_shift", 0, 8),
+            UCIOption<int>(&engine_constants::search::OrderChildEvalMinDepth, "order_child_eval_min_depth", 0, 64),
+            UCIOption<int>(&engine_constants::search::OrderChildEvalRestW, "order_child_eval_rest_w", 0, 1000),
             UCIOption<int>(&engine_constants::search::probcut::Enabled, "probcut", 0, 1),
             UCIOption<int>(&engine_constants::search::probcut::MinDepth, "probcut_min_depth", 2, 20),
             UCIOption<int>(&engine_constants::search::probcut::Margin, "probcut_margin", 0, 1000),

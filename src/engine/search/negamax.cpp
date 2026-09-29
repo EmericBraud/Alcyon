@@ -813,7 +813,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     const auto *history = board.get_history();
     const Move prev_m = ply > 0 ? history->back().move : 0;
     const Move prev_prev_m = (history->size() >= 2) ? (*history)[history->size() - 2].move : 0;
-    MovePicker list(board, tt_move, ply, prev_m, thread_id);
+    MovePicker list(board, tt_move, ply, prev_m, thread_id, beta,
+                    engine_constants::search::OrderChildEvalMinDepth > 0 && depth >= engine_constants::search::OrderChildEvalMinDepth);
 
     // 7. PVS Loop (Principal Variation Search)
     int alpha_orig = alpha;
