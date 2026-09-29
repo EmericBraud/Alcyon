@@ -108,6 +108,63 @@ se trompe sont ceux qui decident du coup joue, et les elagages a la main
     Test simple : mecanisme sans action = bench identique a la base au
     noeud pres.
 
+## L'erreur de methode, et le predicteur qui en sort
+
+**Diagnostic** (`cost_errors.py`, 20 000 positions de parties, d12, TT
+videe ; etalonnage : base d11 contre d12) :
+
+| a d12 | coup change | pires | meilleurs | perte nette / position |
+|---|---|---|---|---|
+| base d11 (un ply de moins) | 11.4 % | 835 | 362 | +0.0024 |
+| MoE actif | 22.6 % | 1 040 | 947 | +0.0016 (0.67 ply) |
+| mode ombre | 19.3 % | 753 | 928 | -0.0004 (-0.17 ply) |
+
+1. **Le gain avait ete mesure dans un contexte ou il est gonfle.** Offline,
+   au bench et dans la qualite du coup, la TT etait vide au depart. La
+   sonde y prouve a bas prix ce qu'en partie la TT sait deja. En partie, le
+   gain en noeuds est environ moitie moindre, et le cout en qualite reste
+   le meme.
+2. **La decision a la racine est chaotique.** Le MoE change le coup deux
+   fois plus souvent que retirer un ply, mais presque autant en mieux
+   qu'en pire. La perte est un petit biais sous un grand bruit. Seuls 191
+   des 630 cas pires ont un coupable unique, dont 61 % de vraies erreurs au
+   sens du label (1.3 % dans le temoin). Ces coupables ont un z plus pres
+   du seuil, une eval plus proche de beta et plus souvent une entree TT :
+   une tendance, pas une signature. Aucune mesure noeud par noeud ne peut
+   voir ce biais.
+3. **Le predicteur en plies :** solde = economie en partie (`ttd.py`,
+   noeuds a d12, EBF de partie 1.54) - cout en qualite a profondeur egale
+   (`cost_errors.py`, en plies grace a l'etalonnage d11/d12). Environ 5
+   minutes par variante.
+
+| config | qualite (plies) | economie (plies) | solde predit | Elo mesure |
+|---|---|---|---|---|
+| mode ombre | +0.17 | -0.38 | -0.2 | -23 |
+| MoE actif | -0.67 | +0.47 | -0.2 | -27 |
+
+Les deux points concordent par des chemins opposes (+-0.13 ply par terme),
+ce qui donne environ 100 Elo par ply a 5+0.05. Toute variante se juge par
+ce solde avant un match.
+
+## Plafond au niveau du coup
+
+Oracle des coups calmes tardifs (`ALCYON_ORACLE_QUIET`, etape QUIETS du
+MovePicker : apres coup TT, bonnes prises, killers, contre-coup). Il
+supprime, dans l'arbre tel quel, chaque coup qui ne monte pas alpha. Mesure
+sur 345 parties rejouees, TT conservee :
+
+| profondeur | retirable, tous noeuds | retirable, non-PV seuls | coups calmes tardifs inutiles |
+|---|---|---|---|
+| d10 | 92.8 % | 64.7 % | 96.16 % |
+| d12 | 94.7 % | 73.2 % | 96.16 % |
+
+C'est l'ecart a l'arbre minimal, pas un gain atteignable : l'oracle sait
+d'avance. La difficulte, ce sont les 3.8 % de coups utiles, que la LMR et
+la LMP traitent deja par rang. Mais le levier est la : les sous-arbres de
+coups calmes tardifs non-PV font environ 73 % de l'arbre, et 10 % de cette
+part valent environ 0.2 ply. Au niveau du noeud, l'existant avait deja tout
+pris.
+
 ## Sur le moteur (bugs trouves en chemin)
 
 Tous trouves en chassant des anomalies de mesure :
@@ -146,6 +203,11 @@ identique). Un SPRT de non-regression reste a faire.
 
 ## Ce qui reste
 
+- **Au niveau du coup, sur les coups calmes tardifs** (plafond ci-dessus).
+  Dump des coups avec leurs features (rang, historiques, SEE, echec, eval
+  - alpha) et le label "utile". Puis part des noeuds retirables a 99 % de
+  rappel des coups utiles, et integration en modulation de la LMR (+-1
+  ply), jugee par le predicteur en plies.
 - **Moduler l'existant au lieu d'ajouter.** Utiliser la sortie du reseau,
   sans recherche, pour decaler de +-1 ply la LMR, ou la marge du RFP ou du
   NMP. Une erreur n'y coute qu'un ply de reduction, et ces mecanismes sont
