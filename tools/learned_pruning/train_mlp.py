@@ -31,18 +31,26 @@ N_DEPTHS = len(fit.SLICES)
 
 
 def load(path):
-    """Enregistrements filtres comme fit.load, et leurs l0 alignes."""
+    """Enregistrements filtres comme fit.load, et leurs l0 alignes.
+    Plusieurs dumps separes par des virgules : concatenes (l0 en memoire)."""
+    if "," in path:
+        parts = [load(p) for p in path.split(",")]
+        r = np.concatenate([p[0] for p in parts])
+        l0 = np.concatenate([np.asarray(p[1]) for p in parts])
+        offs = np.cumsum([0] + [len(p[0]) for p in parts[:-1]])
+        return r, l0, np.concatenate([p[2] + o for p, o in zip(parts, offs)])
     r = np.fromfile(path, dtype=fit.dtype_for(path))
     l0 = np.memmap(path + ".l0", dtype=np.uint8, mode="r", shape=(len(r), 1024))
     ok = (np.abs(r["beta"]) < 9000) & (np.abs(r["static_eval"]) < 9000)
     return r, l0, np.nonzero(ok)[0]
 
 
-def subsample(r, idx, rng):
+def subsample(r, idx, rng, max_per_depth=None):
+    cap = max_per_depth or MAX_PER_DEPTH
     keep = []
     for lo, hi in fit.SLICES:
         s = idx[(r["depth"][idx] >= lo) & (r["depth"][idx] <= hi)]
-        keep.append(s if len(s) <= MAX_PER_DEPTH else rng.choice(s, MAX_PER_DEPTH, replace=False))
+        keep.append(s if len(s) <= cap else rng.choice(s, cap, replace=False))
     return np.sort(np.concatenate(keep))
 
 

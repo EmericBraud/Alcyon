@@ -1,6 +1,7 @@
 """Label "reduire est sur" (docs/learned-pruning-bilan.md), dump v3.
 
-    python3 train_safe.py <train.bin> <test.bin> <R> [--hidden H] [--epochs E] [--out safe_R.pt] [--moe none|ds|dsp]
+    python3 train_safe.py <train.bin[,autre.bin]> <test.bin> <R> [--hidden H] [--epochs E] [--out safe_R.pt]
+                          [--moe none|ds|dsp] [--wd W] [--max-per-depth N]
 
 --moe (melange d'experts, comme les layer-stack buckets du NNUE) : couche l0
 et partie lineaire partagees, une tete (-> 32 -> 1) par bucket ; une seule
@@ -124,12 +125,14 @@ def main():
     hidden, epochs = int(a.get("--hidden", 16)), int(a.get("--epochs", 20))
     out = a.get("--out", f"safe_{R}.pt")
     scheme = a.get("--moe", "none")
+    wd = float(a.get("--wd", 0))
+    cap = int(a.get("--max-per-depth", train_mlp.MAX_PER_DEPTH))
     k = R - 1
     torch.manual_seed(0)
     rng = np.random.default_rng(0)
     rtr, l0tr, itr = train_mlp.load(train_path)
     rte, l0te, ite = train_mlp.load(test_path)
-    itr = train_mlp.subsample(rtr, itr, rng)
+    itr = train_mlp.subsample(rtr, itr, rng, cap)
     dtr, xtr, ptr, ytr, mean, std, _, _, btr = tensors(rtr, l0tr, itr, k, scheme=scheme)
     dte, xte, pte, yte, _, _, red_fh, full_fh, bte = tensors(rte, l0te, ite, k, mean, std, scheme=scheme)
     print(f"R={R} moe={scheme} train {len(ytr)} test {len(yte)} ; le reduit a raison sur {yte.mean().item():.1%} du test", flush=True)
@@ -142,7 +145,7 @@ def main():
         base_net = MoENet(dtr.shape[1], hidden, buckets(rtr[itr[:1]], np.zeros(1, bool), scheme)[1])
         net = base_net
         params = base_net.parameters()
-    opt = torch.optim.Adam(params, lr=2e-3)
+    opt = torch.optim.AdamW(params, lr=2e-3, weight_decay=wd) if wd else torch.optim.Adam(params, lr=2e-3)
     steps = epochs * ((len(ytr) + BATCH - 1) // BATCH)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=2e-3, total_steps=steps, pct_start=0.05)
     loss_fn = nn.BCEWithLogitsLoss()
