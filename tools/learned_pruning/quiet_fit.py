@@ -62,6 +62,9 @@ def curve(score, useful, cost, w):
     return [c[np.searchsorted(u, x, side="right") - 1] if (u <= x).any() else 0.0 for x in LOSSES]
 
 
+BANDS = [(1, 3), (4, 6), (7, 64)]
+
+
 def main():
     folder = sys.argv[1]
     every = int(sys.argv[2]) if len(sys.argv) > 2 else 512
@@ -70,30 +73,41 @@ def main():
     ytr, yte = tr["useful"], te["useful"]
     print(f"train {len(tr)} coups, test {len(te)} ; utiles (pondere) {np.average(yte, weights=wte):.2%}")
     cost = te["subtree"].astype(np.float64)
+    rng = np.random.default_rng(0)
 
-    # Rang : taux d'utilite empirique par (profondeur, rang) appris en train.
+    # Tables par (profondeur, rang) apprises en train : taux d'utilite et cout moyen.
     key = lambda r: np.minimum(r["depth"], 20) * 256 + np.minimum(r["rank"], 255)  # noqa: E731
     ktr, kte = key(tr), key(te)
-    num = np.bincount(ktr, weights=wtr * ytr, minlength=21 * 256)
     den = np.bincount(ktr, weights=wtr, minlength=21 * 256)
-    rank_rate = (num + 1e-3) / (den + 1)
+    rank_rate = (np.bincount(ktr, weights=wtr * ytr, minlength=21 * 256) + 1e-3) / (den + 1)
+    cost_hat = (np.bincount(ktr, weights=wtr * tr["subtree"], minlength=21 * 256) + 1) / (den + 1)
 
     xtr, xte = features(tr), features(te)
-    rng = np.random.default_rng(0)
-    sub = rng.choice(len(tr), min(len(tr), 4_000_000), replace=False)
-    model = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.1, max_leaf_nodes=63)
-    model.fit(xtr[sub], ytr[sub], sample_weight=wtr[sub])
-    p = model.predict_proba(xte)[:, 1]
+    p = np.zeros(len(te))
+    # Un modele par tranche de profondeur (les experts du MoE), classes equilibrees.
+    for lo, hi in BANDS:
+        mtr = np.nonzero((tr["depth"] >= lo) & (tr["depth"] <= hi))[0]
+        mte = (te["depth"] >= lo) & (te["depth"] <= hi)
+        sub = rng.choice(mtr, min(len(mtr), 4_000_000), replace=False)
+        model = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.1, max_leaf_nodes=63,
+                                               class_weight="balanced")
+        model.fit(xtr[sub], ytr[sub])
+        p[mte] = model.predict_proba(xte[mte])[:, 1]
 
+    # Classement par perte attendue par noeud economise : P(utile) / cout attendu.
+    ranks = [("hasard", rng.random(len(te))),
+             ("rang / cout", rank_rate[kte] / cost_hat[kte]),
+             ("modele / cout", p / cost_hat[kte]),
+             ("modele seul", p)]
     head = "  ".join(f"perte {x:.1%}" for x in LOSSES)
     print(f"\npart du cout des coups calmes tardifs retirable, selon la part des coups utiles perdus :\n  {'classement':22s}{head}")
-    for name, s in [("hasard", rng.random(len(te))), ("rang (depth x rang)", rank_rate[kte]), ("modele (toutes features)", p)]:
+    for name, s in ranks:
         print(f"  {name:22s}" + "  ".join(f"{v:10.1%}" for v in curve(s, yte, cost, wte)))
-    for lo, hi in [(1, 3), (4, 6), (7, 64)]:
+    for lo, hi in BANDS:
         m = (te["depth"] >= lo) & (te["depth"] <= hi)
         print(f"\n  depth {lo}-{hi} ({m.sum()} coups, utiles {np.average(yte[m], weights=wte[m]):.2%}, "
               f"{(cost[m] * wte[m]).sum() / (cost * wte).sum():.0%} du cout)")
-        for name, s in [("rang", rank_rate[kte]), ("modele", p)]:
+        for name, s in ranks[1:]:
             print(f"    {name:20s}" + "  ".join(f"{v:10.1%}" for v in curve(s[m], yte[m], cost[m], wte[m])))
 
 
