@@ -31,6 +31,12 @@ namespace engine_constants
         // par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
         PARAM_SPECIFIER int PersistHistory = 1;
         PARAM_SPECIFIER int PersistHistoryShift = 1;
+        // Correction history : table par structure de pions de l'ecart moyen
+        // (score de recherche - eval statique), ajoutee a l'eval statique des
+        // noeuds et du stand pat. Poids de mise a jour min(depth + 1, 16) / 256 ;
+        // correction bornee a +-CorrHistMax cp. Conservee avec PersistHistory.
+        PARAM_SPECIFIER int CorrHist = 1;
+        PARAM_SPECIFIER int CorrHistMax = 100;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -224,6 +230,12 @@ namespace engine_constants
         // par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
         PARAM_SPECIFIER int PersistHistory = 1;
         PARAM_SPECIFIER int PersistHistoryShift = 1;
+        // Correction history : table par structure de pions de l'ecart moyen
+        // (score de recherche - eval statique), ajoutee a l'eval statique des
+        // noeuds et du stand pat. Poids de mise a jour min(depth + 1, 16) / 256 ;
+        // correction bornee a +-CorrHistMax cp. Conservee avec PersistHistory.
+        PARAM_SPECIFIER int CorrHist = 1;
+        PARAM_SPECIFIER int CorrHistMax = 100;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;

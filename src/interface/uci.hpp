@@ -502,6 +502,8 @@ public:
             UCIOption<int>(&engine_constants::search::CheckExtension, "check_extension", 0, 1),
             UCIOption<int>(&engine_constants::search::PersistHistory, "persist_history", 0, 1),
             UCIOption<int>(&engine_constants::search::PersistHistoryShift, "persist_history_shift", 0, 8),
+            UCIOption<int>(&engine_constants::search::CorrHist, "corr_hist", 0, 1),
+            UCIOption<int>(&engine_constants::search::CorrHistMax, "corr_hist_max", 0, 1000),
             UCIOption<int>(&engine_constants::search::null_move_pruning::MinDepth, "nmp_min_depth"),
             UCIOption<int>(&engine_constants::search::null_move_pruning::RConst, "nmp_r_const"),
             UCIOption<int>(&engine_constants::search::null_move_pruning::RDiv, "nmp_r_div"),
