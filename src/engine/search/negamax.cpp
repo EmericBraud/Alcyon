@@ -827,6 +827,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         board.play<Us>(m);
 
         bool gives_check = board.is_king_attacked<!Us>();
+#if defined(ALCYON_SEARCH_EXPERIMENTS) && defined(NNUE_EVAL)
+        if (quiet_rec && search::quiet_dump.f_l0)
+            board.nnue_l0(search::quiet_dump.l0_at_ply[ply]);
+#endif
 
         // Extensions plafonnees a ply < 2 * root_depth (comme Stockfish). Sans
         // borne, dans une finale de dames ou presque chaque coup donne echec,
@@ -878,6 +882,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             q.pieces = __builtin_popcountll(static_cast<const Board &>(board).get_occupancy(WHITE) | static_cast<const Board &>(board).get_occupancy(BLACK)), q.alpha = quiet_alpha;
             q.useful = score > quiet_alpha, q.score_alpha = std::clamp(score - quiet_alpha, -2000, 2000);
             std::fwrite(&q, sizeof(q), 1, search::quiet_dump.f);
+            if (search::quiet_dump.f_l0)
+                std::fwrite(search::quiet_dump.l0_at_ply[ply].data(), 1, 1024, search::quiet_dump.f_l0);
         }
 #endif
         // Sous-arbre inutile : il remplace les retraits deja comptes a l'interieur.

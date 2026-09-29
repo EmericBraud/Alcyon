@@ -129,11 +129,16 @@ namespace search
     struct QuietDump
     {
         std::FILE *f = nullptr;
+        std::FILE *f_l0 = nullptr; // "<dump>.l0" (build NNUE) : l0 de la position APRES le coup
         unsigned long long every = 1;
+        // Une case par ply : un seul coup tire en cours par ply (un thread).
+        std::array<std::uint8_t, 1024> l0_at_ply[engine_constants::search::MaxDepth + 8];
         ~QuietDump()
         {
             if (f)
                 std::fclose(f);
+            if (f_l0)
+                std::fclose(f_l0);
         }
     };
     inline QuietDump quiet_dump;
@@ -147,6 +152,9 @@ namespace search
             if (const char *e = std::getenv("ALCYON_QUIET_DUMP_EVERY"))
                 quiet_dump.every = std::max(1ULL, std::strtoull(e, nullptr, 10));
             quiet_dump.f = std::fopen(path, "wb");
+#ifdef NNUE_EVAL
+            quiet_dump.f_l0 = std::fopen((std::string(path) + ".l0").c_str(), "wb");
+#endif
             return quiet_dump.f != nullptr;
         }();
         return on;
