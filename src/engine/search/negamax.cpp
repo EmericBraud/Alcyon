@@ -341,6 +341,11 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (max_extended_depth < ply)
         max_extended_depth = ply;
 
+    // Profondeur de l'iteration en cours, lue avant toute modification de
+    // depth (IIR, extensions) : borne des extensions, voir plus bas.
+    if (ply == 0)
+        root_depth = depth;
+
     if (search::is_null(board, ply))
         return (board.get_history_size() < 20) ? -25 : 0;
 
@@ -479,10 +484,15 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         bool gives_check = board.is_king_attacked<!Us>();
 
+        // Extensions plafonnees a ply < 2 * root_depth (comme Stockfish). Sans
+        // borne, dans une finale de dames ou presque chaque coup donne echec,
+        // la profondeur ne diminuait plus : seldepth 33 pour une profondeur 15
+        // et 131M noeuds sur 8/2Q5/8/8/3kqP2/8/7K/8 w - - 5 69.
         int extension = 0;
-        if (gives_check && depth >= 2)
+        const bool can_extend = ply < 2 * root_depth;
+        if (engine_constants::search::CheckExtension && gives_check && depth >= 2 && can_extend)
             extension = 1;
-        if (is_singular)
+        if (is_singular && can_extend)
             extension = 1;
         int new_depth = depth - 1 + extension;
 

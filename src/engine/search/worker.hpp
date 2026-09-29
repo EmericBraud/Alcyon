@@ -131,6 +131,8 @@ struct SearchWorker
     Move out_move = 0;
 
     int max_extended_depth;
+    // Profondeur de l'iteration en cours (fixee a ply 0) : borne des extensions.
+    int root_depth = 0;
 
     // CONSTRUCTEUR PRINCIPAL
     // Appelé par l'orchestrateur pour chaque thread
