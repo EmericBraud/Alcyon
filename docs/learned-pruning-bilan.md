@@ -139,6 +139,26 @@ parties du moteur fait moins d'erreurs sur ce contexte : 0.23 % contre
 -27, dans le bruit), ce qui confirme que le cout vient du reduit et pas de
 la decision.
 
+**Enquete sur le cout du mode ombre** (parties 5+0.05, 4000 chacune ;
+`ttd.py` = rejeu de 345 parties, TT conservee, Hash 8, noeuds a d12) :
+
+| test | resultat |
+|---|---|
+| filtre MLP avant la sonde, g435 (6x moins de sondes), ombre | -12.1 +- 6.8 |
+| sonde sans ecriture TT a sa racine, ombre | -29.8 +- 6.9 (la TT n'y est pour rien) |
+| pas de sonde dans une sonde, ombre | -26.5 +- 6.8 |
+| bug corrige : le bloc remplissait le cache d'eval (improving) partout | ombre -27.3 +- 6.8 : reel mais sans effet |
+| temoin inerte (options du MoE, aucune sonde) | +1.0 +- 6.0 : la perte vient des sondes |
+| ttd d12 : ombre / ombre sans emboitement | +17.7 % / +14.1 % de noeuds (bench : +8.8 % / +2 %) |
+| ttd d12 : MoE actif / min_depth 9 | **-18.3 %** / -7.7 % de noeuds |
+
+Conclusion : en partie, la sonde coute ~2x plus que sur le bench, et ce
+surcout croit avec la profondeur (+7 % a d10, +18 % a d12). Le MoE actif
+atteint pourtant d12 avec 18 % de noeuds en moins, et perd 27 Elo : ce
+sont ses erreurs qui coutent (~40 Elo). "Sonde puis confiance" est
+abandonne. Reste la piste "moduler LMR / RFP / NMP" (sans recherche, une
+erreur n'y coute qu'un ply de reduction).
+
 Parite C++/Python : `export_moe.py check` sur un dump fait avec
 **Threads=1** (le tampon l0 du dump est global, et a 10 threads il se
 melange : faux ecarts sur ~7 % des noeuds).
