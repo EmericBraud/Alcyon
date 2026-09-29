@@ -61,7 +61,7 @@ class Engine:
             elif line.startswith("info string moe_trust_events"):
                 events = int(t[-1])
             elif line.startswith("info string moe_trust ev"):
-                traces.append(dict(zip(t[2::2], map(float, t[3::2]))))
+                traces.append(dict(zip(t[3::2], map(float, t[4::2]))))  # "info string moe_trust ev N ..."
         return move, score, events, traces
 
 
@@ -125,6 +125,7 @@ def run(engine, positions, n, out, depth=12):
                 res.append(one(eng, fen, int(depth)))
             except Exception as e:  # noqa: BLE001 -- une position ratee ne doit pas tuer la serie
                 res.append({"fen": fen, "kind": "error", "err": str(e)})
+                eng.p.kill()
                 eng = Engine(engine)
         eng.send("quit")
         return res
