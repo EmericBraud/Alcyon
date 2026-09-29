@@ -91,6 +91,16 @@ def main():
         vals = [err_at(c, t) for t in (0.1, 0.2, 0.3, 0.4, 0.5)]
         print(f"  {name:13s} " + "  ".join(f"{v:8.4%}" for v in vals))
 
+    # Seuils en logit x100 (entiers), directement utilisables par le moteur
+    # (learned_moe_z0..z9), a plusieurs points de fonctionnement.
+    for target in (0.2, 0.3, 0.4, 0.5):
+        c = min((c for c in per if c[0] >= target), key=lambda c: c[1], default=None)
+        if c is None:
+            continue
+        t = np.clip(T[np.arange(n_b), c[3]], 1e-6, 1 - 1e-7)
+        z = np.where(T[np.arange(n_b), c[3]] > 1, 9999, np.round(100 * np.log(t / (1 - t))).astype(int))
+        print(f"ZTHR {err_mode} {int(target * 100)} : " + " ".join(str(int(v)) for v in z))
+
     # Seuils retenus au point de fonctionnement a 30 % d'economie.
     best = min((c for c in per if c[0] >= 0.3), key=lambda c: c[1], default=None)
     if best is not None:
