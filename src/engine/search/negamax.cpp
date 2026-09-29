@@ -27,9 +27,13 @@ namespace search
     {
         int &slot = worker.static_eval_stack[ply];
         if (slot == SearchWorker::kEvalNone)
+        {
             slot = Eval::prune_eval_relative<Us>(worker.get_board(),
                                                  -engine_constants::eval::Inf,
                                                  engine_constants::eval::Inf);
+            if (std::abs(slot) < engine_constants::eval::SyzygyScore - 1000)
+                slot += worker.correction<Us>();
+        }
         return slot;
     }
 
@@ -1087,6 +1091,11 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             }
             if (!probe_root_no_tt)
                 shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
+            // Correction history : borne basse informative si elle depasse l'eval.
+            if (engine_constants::search::CorrHist && !in_check && !is_tactical && excluded_move == 0 &&
+                static_eval_stack[ply] != kEvalNone && score > static_eval_stack[ply] &&
+                std::abs(score) < engine_constants::eval::SyzygyScore - 1000)
+                update_correction<Us>(score - static_eval_stack[ply], depth);
 
             // Pendant la recherche reduite du MoE (learned_probe > 0), pas de mise
             // a jour de l'historique ni des killers : en mode ombre (jamais de
@@ -1198,6 +1207,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     // 9. Sauvegarde TT Finale
     TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
+    // Correction history : borne haute informative si elle est sous l'eval, exacte toujours.
+    if (engine_constants::search::CorrHist && !in_check && excluded_move == 0 && static_eval_stack[ply] != kEvalNone &&
+        (best_move_this_node == 0 || !(best_move_this_node.is_capture() || best_move_this_node.is_promotion())) &&
+        (flag == TT_EXACT || best_score < static_eval_stack[ply]) &&
+        std::abs(best_score) < engine_constants::eval::SyzygyScore - 1000)
+        update_correction<Us>(best_score - static_eval_stack[ply], depth);
     if (!probe_root_no_tt)
         shared_tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node);
 

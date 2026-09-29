@@ -50,6 +50,13 @@ namespace engine_constants
         // autres par historiques + OrderChildEvalRestW / 100 * (eval - beta).
         PARAM_SPECIFIER int OrderChildEvalMinDepth = 0;
         PARAM_SPECIFIER int OrderChildEvalRestW = 100;
+        // Correction history : table par structure de pions de l'ecart moyen
+        // (score de recherche - eval statique), ajoutee a l'eval statique des
+        // noeuds (et du stand pat si CorrHistQs). Poids de mise a jour
+        // min(depth + 1, 16) / 256 ; correction bornee a +-CorrHistMax cp.
+        PARAM_SPECIFIER int CorrHist = 0;
+        PARAM_SPECIFIER int CorrHistQs = 1;
+        PARAM_SPECIFIER int CorrHistMax = 100;
         namespace probcut
         {
             // Noeud non-PV a depth >= MinDepth : une prise dont le SEE atteint
@@ -333,6 +340,13 @@ namespace engine_constants
         // autres par historiques + OrderChildEvalRestW / 100 * (eval - beta).
         PARAM_SPECIFIER int OrderChildEvalMinDepth = 0;
         PARAM_SPECIFIER int OrderChildEvalRestW = 100;
+        // Correction history : table par structure de pions de l'ecart moyen
+        // (score de recherche - eval statique), ajoutee a l'eval statique des
+        // noeuds (et du stand pat si CorrHistQs). Poids de mise a jour
+        // min(depth + 1, 16) / 256 ; correction bornee a +-CorrHistMax cp.
+        PARAM_SPECIFIER int CorrHist = 0;
+        PARAM_SPECIFIER int CorrHistQs = 1;
+        PARAM_SPECIFIER int CorrHistMax = 100;
         namespace probcut
         {
             // Noeud non-PV a depth >= MinDepth : une prise dont le SEE atteint
