@@ -17,6 +17,25 @@ moins qu'un vrai ply** : pas rentable en l'etat.
   position ou la recherche explosait (`8/5p2/q6k/2r5/5p2/2N5/1K6/7q w - - 8 68` :
   33M noeuds a profondeur 11, 9 787 apres). SPRT 54 : +2.7 +- 8.5 sur 2 272
   parties, valide.
+- **Pas d'extension d'echec** (commit 12b8030) : dans les finales de dames,
+  chaque echec prolongeait la recherche (seldepth ~2x, 100M+ noeuds) ; le
+  plafond ply < 2 x profondeur ne suffisait pas. SPRT 55 : +3.3 +- 4.7 sur
+  7 896 parties, applique pour la robustesse.
+- **Boucle infinie de l'aspiration** (commit 3d4ec32) : un score "presque
+  mat" plus lointain que la profondeur (souvent venu de la TT d'un coup
+  precedent) relancait la meme recherche a l'infini ; `go depth` ne rendait
+  jamais la main, et en partie tout le temps restant etait brule.
+- **Course sur le plateau partage** (commit 37d4d60) : `main_board` est le
+  plateau de l'interface ; la branche ponder annulait son coup APRES avoir
+  emis bestmove, pendant que "position" reecrivait deja le plateau, et
+  "position" / "ucinewgame" ne joignaient pas la recherche. Sous charge :
+  coups rejetes, free(): invalid size, 192 blocages sur 345 parties
+  rejouees ; tres probablement les 112 coups illegaux vus en tournoi.
+  Apres correctif : 345/345 parties rejouees sans incident, et 400 parties
+  fastchess sans coup illegal ni perte au temps.
+
+Les deux derniers sont fusionnes dans `main` (e709aca) sans SPRT (bench
+identique) ; un SPRT de non-regression reste a faire.
 
 ## Le mecanisme (dans la branche)
 
