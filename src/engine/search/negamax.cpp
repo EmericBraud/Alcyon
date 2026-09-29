@@ -572,6 +572,12 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                         // On ne punit que les coups calmes (pas les captures/promotions)
 
                         update_hist(history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()], -bonus);
+                        // Malus aussi sur les continuations : sans lui elles ne recoivent
+                        // que des bonus et saturent (gravite de update_hist).
+                        if (prev_m != 0)
+                            update_hist(continuation_hist_1[Us][prev_m.get_from_piece()][prev_m.get_to_sq()][failed_move.get_to_sq()], -bonus);
+                        if (prev_prev_m != 0)
+                            update_hist(continuation_hist_2[Us][prev_prev_m.get_from_piece()][prev_prev_m.get_to_sq()][failed_move.get_to_sq()], -bonus);
                     }
                 }
 
