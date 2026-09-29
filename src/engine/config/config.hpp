@@ -109,6 +109,9 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeGateModel = 0;
             // 1 : la recherche reduite du MoE ne met a jour ni l'historique ni les killers.
             PARAM_SPECIFIER int MoeProbeIsolate = 0; // mesure : 1 fait pire (-35 contre -23 Elo en mode ombre)
+            // 1 : la racine de la recherche reduite n'ecrit pas dans la TT (sinon son
+            // entree a depth - kR, meme cle, change SE / IIR / RFP de la recherche complete).
+            PARAM_SPECIFIER int MoeProbeNoTT = 0;
         }
         namespace internal_iterative_reduction
         {
@@ -331,6 +334,9 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeGateModel = 0;
             // 1 : la recherche reduite du MoE ne met a jour ni l'historique ni les killers.
             PARAM_SPECIFIER int MoeProbeIsolate = 0; // mesure : 1 fait pire (-35 contre -23 Elo en mode ombre)
+            // 1 : la racine de la recherche reduite n'ecrit pas dans la TT (sinon son
+            // entree a depth - kR, meme cle, change SE / IIR / RFP de la recherche complete).
+            PARAM_SPECIFIER int MoeProbeNoTT = 0;
         }
         namespace internal_iterative_reduction
         {

@@ -436,6 +436,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     // Etapes 0 et 1 de docs/learned-pruning.md (search::record_prune,
     // search::PruneRecord). Hors build d'experimentation stats_node vaut
     // false et tout disparait.
+    // Racine de la recherche reduite du MoE (learned_verify_ply pose par la sonde).
+    const bool probe_root_no_tt = learned_probe > 0 && ply == learned_verify_ply &&
+                                  engine_constants::search::learned_pruning::MoeProbeNoTT;
     const bool stats_node = (search::prune_stats_enabled() || search::prune_dump_enabled()) &&
                             !is_pv && !in_check && ply > 0 && depth >= 1 && excluded_move == 0 &&
                             ply != learned_verify_ply;
@@ -817,7 +820,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         {
             if (search::order_stats_enabled())
                 search::record_cutoff(moves_searched, is_tactical);
-            shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
+            if (!probe_root_no_tt)
+                shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
 
             // Pendant la recherche reduite du MoE (learned_probe > 0), pas de mise
             // a jour de l'historique ni des killers : en mode ombre (jamais de
@@ -890,7 +894,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     if (moves_searched == 0)
     {
         int score = in_check ? -engine_constants::eval::MateScore + ply : 0;
-        shared_tt.store(board.get_hash(), depth, ply, score, TT_EXACT, 0);
+        if (!probe_root_no_tt)
+            shared_tt.store(board.get_hash(), depth, ply, score, TT_EXACT, 0);
         stat(score >= beta ? search::PO_FAIL_HIGH : search::PO_FAIL_LOW);
         return score;
     }
@@ -900,7 +905,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     // 9. Sauvegarde TT Finale
     TTFlag flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-    shared_tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node);
+    if (!probe_root_no_tt)
+        shared_tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node);
 
     stat(best_score >= beta ? search::PO_FAIL_HIGH : search::PO_FAIL_LOW);
     return best_score;
