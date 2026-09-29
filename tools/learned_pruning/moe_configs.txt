@@ -1,0 +1,11 @@
+# MoE "reduire est sur" (learned_prune_model=2) a budget egal, qualite du coup.
+moe_cnt|12|learned_prune_model=2 learned_moe_min_depth=7
+moe_cnt_m100|12|learned_prune_model=2 learned_moe_min_depth=7 learned_moe_z_offset=-100
+moe_cnt_p100|12|learned_prune_model=2 learned_moe_min_depth=7 learned_moe_z_offset=100
+moe_cost30|12|learned_prune_model=2 learned_moe_min_depth=1 learned_moe_z0=216 learned_moe_z1=424 learned_moe_z2=264 learned_moe_z3=408 learned_moe_z4=275 learned_moe_z5=562 learned_moe_z6=282 learned_moe_z7=531 learned_moe_z8=383 learned_moe_z9=525
+moe_cost20|12|learned_prune_model=2 learned_moe_min_depth=1 learned_moe_z0=329 learned_moe_z1=517 learned_moe_z2=264 learned_moe_z3=723 learned_moe_z4=297 learned_moe_z5=582 learned_moe_z6=303 learned_moe_z7=598 learned_moe_z8=440 learned_moe_z9=554
+rand_moe_p800|12|learned_prune_model=2 learned_prune_enabled=3 learned_prune_random_permille=800 learned_moe_min_depth=7
+ctl_off|12|learned_prune_enabled=0
+ctl_h4|12|learned_prune_enabled=0 Hash=4
+base_x2|12|learned_prune_enabled=0 budget_scale=2
+base_x4|12|learned_prune_enabled=0 budget_scale=4
