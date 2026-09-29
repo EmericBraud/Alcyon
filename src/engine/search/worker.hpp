@@ -354,6 +354,8 @@ struct SearchWorker
     int learned_verify_ply = -1;
     // > 0 pendant la recherche reduite du MoE (voir MoeProbeIsolate).
     int learned_probe = 0;
+    // Confiances du MoE depuis le debut de la recherche (MoeVetoLo / MoeTrace).
+    int moe_trust_events = 0;
 
     // Le noeud du ply suivant est une re-recherche LMR (pose par
     // late_move_reduction_search, consomme en tete de negamax). L'elagage

@@ -640,8 +640,36 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                             search::learned_fires[std::min(depth, search::kPruneDepths) - 1].fetch_add(1, std::memory_order_relaxed);
                         if (trust && lp::Enabled != 2)
                         {
-                            stat(search::PO_LEARNED);
-                            return s;
+                            const int ev = moe_trust_events++;
+#ifdef SPSA_TUNING
+                            if (ev == lp::MoeTrace || (lp::MoeSample > 0 && ev % lp::MoeSample == lp::MoeSample - 1))
+                            {
+                                // Verdict : recherche complete du meme noeud, sans confiance
+                                // du MoE en dessous (Enabled = 2, un seul thread).
+                                const int saved_enabled = lp::Enabled;
+                                lp::Enabled = 2;
+                                learned_verify_ply = ply;
+                                const int full = negamax<Us>(depth, alpha, beta, ply, allow_null, cut_node);
+                                learned_verify_ply = saved_verify_ply;
+                                static_eval_stack[ply] = saved_eval;
+                                lp::Enabled = saved_enabled;
+                                int mat_us = 0, mat_them = 0;
+                                for (int i = 0; i < 5; ++i)
+                                    mat_us += rec.us[i], mat_them += rec.them[i];
+                                logs::uci << "info string moe_trust ev " << ev << " depth " << depth << " ply " << ply
+                                          << " bucket " << bucket << " z " << z << " thr " << (lp::MoeZ[bucket / 2] + lp::MoeZOffset) / 100.0f
+                                          << " beta " << beta << " red " << s << " full " << full << " red_nodes " << red_nodes
+                                          << " eval " << static_eval << " tt_found " << rec.tt_found << " tt_depth " << rec.tt_depth
+                                          << " tt_flag " << rec.tt_flag << " tt_score " << rec.tt_score << " cut " << cut_node
+                                          << " prev_capture " << (rec.prev_to_piece != NO_PIECE ? 1 : 0)
+                                          << " pieces " << mat_us + mat_them << " halfmove " << rec.halfmove << std::endl;
+                            }
+#endif
+                            if (ev < lp::MoeVetoLo || ev >= lp::MoeVetoHi)
+                            {
+                                stat(search::PO_LEARNED);
+                                return s;
+                            }
                         }
                     }
                 }

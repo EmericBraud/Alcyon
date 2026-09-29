@@ -290,6 +290,7 @@ void SearchWorker::iterative_deepening()
     int last_score = 0;
     Move prev_best_root = 0;
     int stable_iterations = 0; // iterations consecutives sans changement du coup racine
+    moe_trust_events = 0;
     for (int depth = 1; depth < engine_constants::search::MaxDepth; ++depth)
     {
         last_score = negamax_with_aspiration(depth, last_score);
@@ -370,6 +371,8 @@ void SearchWorker::iterative_deepening()
                 logs::uci
                     << std::endl;
             }
+            if (thread_id == 0 && engine_constants::search::learned_pruning::Model == 2)
+                logs::uci << "info string moe_trust_events " << moe_trust_events << std::endl;
             return;
         }
         // Une ligne "info" par profondeur TERMINEE, comme tout moteur UCI :
@@ -402,6 +405,8 @@ void SearchWorker::iterative_deepening()
                 << std::endl;
         }
     }
+    if (thread_id == 0 && engine_constants::search::learned_pruning::Model == 2)
+        logs::uci << "info string moe_trust_events " << moe_trust_events << std::endl;
     if (thread_id == 0)
     {
         shared_stop.store(true, std::memory_order_relaxed);

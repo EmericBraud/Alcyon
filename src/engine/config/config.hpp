@@ -114,6 +114,14 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeProbeNoTT = 0;
             // 1 : pas de sonde a l'interieur d'une sonde (les surcouts s'emboitent).
             PARAM_SPECIFIER int MoeNoNested = 0;
+            // Diagnostic (erreurs qui coutent) : confiances numerotees par recherche ;
+            // celles d'indice dans [MoeVetoLo, MoeVetoHi) sont refusees ; celle
+            // d'indice MoeTrace (et une sur MoeSample) est decrite par une info
+            // string, avec le verdict d'une recherche complete du meme noeud.
+            PARAM_SPECIFIER int MoeVetoLo = 0;
+            PARAM_SPECIFIER int MoeVetoHi = 0;
+            PARAM_SPECIFIER int MoeTrace = -1;
+            PARAM_SPECIFIER int MoeSample = 0;
         }
         namespace internal_iterative_reduction
         {
@@ -341,6 +349,14 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeProbeNoTT = 0;
             // 1 : pas de sonde a l'interieur d'une sonde (les surcouts s'emboitent).
             PARAM_SPECIFIER int MoeNoNested = 0;
+            // Diagnostic (erreurs qui coutent) : confiances numerotees par recherche ;
+            // celles d'indice dans [MoeVetoLo, MoeVetoHi) sont refusees ; celle
+            // d'indice MoeTrace (et une sur MoeSample) est decrite par une info
+            // string, avec le verdict d'une recherche complete du meme noeud.
+            PARAM_SPECIFIER int MoeVetoLo = 0;
+            PARAM_SPECIFIER int MoeVetoHi = 0;
+            PARAM_SPECIFIER int MoeTrace = -1;
+            PARAM_SPECIFIER int MoeSample = 0;
         }
         namespace internal_iterative_reduction
         {

@@ -568,6 +568,10 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeProbeIsolate, "learned_moe_probe_isolate", 0, 1),
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeProbeNoTT, "learned_moe_probe_no_tt", 0, 1),
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeNoNested, "learned_moe_no_nested", 0, 1),
+            UCIOption<int>(&engine_constants::search::learned_pruning::MoeVetoLo, "learned_moe_veto_lo", 0, 2000000000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::MoeVetoHi, "learned_moe_veto_hi", 0, 2000000000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::MoeTrace, "learned_moe_trace", -1, 2000000000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::MoeSample, "learned_moe_sample", 0, 2000000000),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),
