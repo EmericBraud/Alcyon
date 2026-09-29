@@ -33,10 +33,10 @@ def run(engine, game_file, depth, opts):
             line = p.stdout.readline()
             if not line:
                 sys.exit(f"{game_file} : moteur mort au ply {ply}")
-            if line.startswith("info string oracle"):
-                t = line.split()
-                for k, v in zip(t[3::2], t[4::2]):  # "info string oracle nodes N ..."
-                    oracle[k] = oracle.get(k, 0) + int(v)
+            if line.startswith("info string oracle") or line.startswith("info string oorder"):
+                t = line.split()  # "info string <tag> cle valeur ..."
+                for k, v in zip(t[3::2], t[4::2]):
+                    oracle[t[2] + ":" + k] = oracle.get(t[2] + ":" + k, 0) + int(v)
             elif line.startswith("info") and " nodes " in line:
                 last = line.split()
             if line.startswith("bestmove"):
@@ -62,9 +62,18 @@ def main():
     for r in res:
         for k, v in r[3].items():
             o[k] = o.get(k, 0) + v
-    if o:  # oracle des coups calmes tardifs (ALCYON_ORACLE_QUIET, build d'experimentation)
-        print(f"  oracle : retirable {o['removed_all'] / o['nodes']:.1%} des noeuds (non-PV seuls {o['removed_nonpv'] / o['nodes']:.1%}) ; "
-              f"coups calmes tardifs inutiles {o['useless'] / o['late']:.2%} de {o['late']}")
+    if "oracle:nodes" in o:  # oracle des coups calmes tardifs (ALCYON_ORACLE_QUIET)
+        g = lambda k: o["oracle:" + k]  # noqa: E731
+        print(f"  oracle : retirable {g('removed_all') / g('nodes'):.1%} des noeuds (non-PV seuls {g('removed_nonpv') / g('nodes'):.1%}) ; "
+              f"coups calmes tardifs inutiles {g('useless') / g('late'):.2%} de {g('late')}")
+    if "oorder:nodes" in o:  # oracle d'ordonnancement (ALCYON_ORACLE_ORDER)
+        g = lambda k: o["oorder:" + k]  # noqa: E731
+        names = ["TT", "promotions", "bonnes prises", "killers", "contre-coup", "calmes", "mauvaises prises", "?"]
+        print(f"  ordre : retirable {g('removed') / g('nodes'):.1%} des noeuds ; coupures au 1er coup {g('first') / g('cut'):.1%} de {g('cut')}")
+        wt = sum(g(f"waste_s{i}") for i in range(8))
+        for i in range(7):
+            if g(f"cut_s{i}"):
+                print(f"    coupures par {names[i]:17s} {g(f'cut_s{i}') / g('cut'):6.1%} ; gaspillage avant elles {g(f'waste_s{i}') / wt:6.1%}")
 
 
 if __name__ == "__main__":

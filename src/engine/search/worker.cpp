@@ -292,6 +292,9 @@ void SearchWorker::iterative_deepening()
     int stable_iterations = 0; // iterations consecutives sans changement du coup racine
     moe_trust_events = 0;
     oracle_removed_all = oracle_removed_nonpv = oracle_late = oracle_useless = 0;
+    oracle_ord_removed = ord_cut = ord_first = 0;
+    for (int i = 0; i < 8; ++i)
+        ord_stage[i] = ord_waste_stage[i] = 0;
     for (int depth = 1; depth < engine_constants::search::MaxDepth; ++depth)
     {
         last_score = negamax_with_aspiration(depth, last_score);
@@ -378,6 +381,14 @@ void SearchWorker::iterative_deepening()
                 logs::uci << "info string oracle nodes " << global_nodes.load(std::memory_order_relaxed) + local_nodes
                           << " removed_all " << oracle_removed_all << " removed_nonpv " << oracle_removed_nonpv
                           << " late " << oracle_late << " useless " << oracle_useless << std::endl;
+            if (thread_id == 0 && search::oracle_order_enabled())
+            {
+                logs::uci << "info string oorder nodes " << global_nodes.load(std::memory_order_relaxed) + local_nodes
+                          << " removed " << oracle_ord_removed << " cut " << ord_cut << " first " << ord_first;
+                for (int i = 0; i < 8; ++i)
+                    logs::uci << " cut_s" << i << " " << ord_stage[i] << " waste_s" << i << " " << ord_waste_stage[i];
+                logs::uci << std::endl;
+            }
             return;
         }
         // Une ligne "info" par profondeur TERMINEE, comme tout moteur UCI :

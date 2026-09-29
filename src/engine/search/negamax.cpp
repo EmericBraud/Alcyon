@@ -781,6 +781,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     int best_score = -engine_constants::eval::Inf;
     Move best_move_this_node = 0;
     int moves_searched = 0;
+    const long long ord_node_n0 = search::oracle_order_enabled() ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
+    const long long ord_node_r0 = oracle_ord_removed;
 
     while (true)
     {
@@ -813,6 +815,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
         ++moves_searched;
 
+        const long long ord_move_n0 = search::oracle_order_enabled() ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
+        const long long ord_move_r0 = oracle_ord_removed;
         const bool oracle_late = search::oracle_quiet_enabled() && list.stage == QUIETS && !is_tactical;
         const long long oracle_n0 = oracle_late ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
 #ifdef ALCYON_SEARCH_EXPERIMENTS
@@ -966,6 +970,21 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         {
             if (search::order_stats_enabled())
                 search::record_cutoff(moves_searched, is_tactical);
+            if (search::oracle_order_enabled())
+            {
+                ++ord_cut;
+                ++ord_stage[std::min<int>(list.stage, 7)];
+                if (moves_searched == 1)
+                    ++ord_first;
+                else
+                {
+                    // Coups precedents retires en entier (leurs retraits internes avec) ;
+                    // les retraits deja comptes dans le sous-arbre du coup qui coupe restent.
+                    const long long waste = ord_move_n0 - ord_node_n0;
+                    ord_waste_stage[std::min<int>(list.stage, 7)] += waste;
+                    oracle_ord_removed = ord_node_r0 + waste + (oracle_ord_removed - ord_move_r0);
+                }
+            }
             if (!probe_root_no_tt)
                 shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
 

@@ -100,6 +100,19 @@ namespace search
     // economiserait en supprimant, dans l'arbre tel quel, chaque coup de l'etape
     // QUIETS du MovePicker qui ne monte pas alpha. Plafond d'un elagage appris
     // au niveau du coup. Un seul thread.
+// Oracle d'ordonnancement (ALCYON_ORACLE_ORDER) : noeuds depenses dans les
+    // coups cherches AVANT le coup qui coupe. Un ordre parfait les economiserait
+    // (plafond d'un ordonnancement appris, sans risque : rien n'est elague).
+#ifdef ALCYON_SEARCH_EXPERIMENTS
+    inline bool oracle_order_enabled()
+    {
+        static const bool on = std::getenv("ALCYON_ORACLE_ORDER") != nullptr;
+        return on;
+    }
+#else
+    constexpr bool oracle_order_enabled() { return false; }
+#endif
+
 #ifdef ALCYON_SEARCH_EXPERIMENTS
     inline bool oracle_quiet_enabled()
     {
@@ -455,6 +468,10 @@ struct SearchWorker
     // Oracle (search::oracle_quiet_enabled) : noeuds retirables, tous noeuds /
     // noeuds non-PV seulement ; coups calmes tardifs cherches, dont inutiles.
     long long oracle_removed_all = 0, oracle_removed_nonpv = 0, oracle_late = 0, oracle_useless = 0;
+    // Oracle d'ordonnancement : noeuds retirables, coupures, coupures au 1er coup,
+    // coupures par etape du MovePicker (TT, prises, killers, contre-coup, calmes,
+    // mauvaises prises) et noeuds gaspilles avant une coupure venue de chaque etape.
+    long long oracle_ord_removed = 0, ord_cut = 0, ord_first = 0, ord_stage[8] = {}, ord_waste_stage[8] = {};
 
     // Le noeud du ply suivant est une re-recherche LMR (pose par
     // late_move_reduction_search, consomme en tete de negamax). L'elagage
