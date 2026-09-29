@@ -122,6 +122,13 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeVetoHi = 0;
             PARAM_SPECIFIER int MoeTrace = -1;
             PARAM_SPECIFIER int MoeSample = 0;
+            // Coups calmes tardifs (learned_quiet.hpp) : 0 eteint, 1 table profondeur x
+            // rang, 2 MLP l0 a depth <= 6, 3 MLP a depth <= 6 et table au-dela. Sous le
+            // seuil de log(P(utile) / cout attendu) (kThr[mode-1][QuietLoss], 0 : 0.1 %
+            // de coups utiles perdus, 1 : 1 %), QuietExtraR plys de LMR en plus.
+            PARAM_SPECIFIER int QuietMode = 0;
+            PARAM_SPECIFIER int QuietLoss = 0;
+            PARAM_SPECIFIER int QuietExtraR = 1;
         }
         namespace internal_iterative_reduction
         {
@@ -357,6 +364,13 @@ namespace engine_constants
             PARAM_SPECIFIER int MoeVetoHi = 0;
             PARAM_SPECIFIER int MoeTrace = -1;
             PARAM_SPECIFIER int MoeSample = 0;
+            // Coups calmes tardifs (learned_quiet.hpp) : 0 eteint, 1 table profondeur x
+            // rang, 2 MLP l0 a depth <= 6, 3 MLP a depth <= 6 et table au-dela. Sous le
+            // seuil de log(P(utile) / cout attendu) (kThr[mode-1][QuietLoss], 0 : 0.1 %
+            // de coups utiles perdus, 1 : 1 %), QuietExtraR plys de LMR en plus.
+            PARAM_SPECIFIER int QuietMode = 0;
+            PARAM_SPECIFIER int QuietLoss = 0;
+            PARAM_SPECIFIER int QuietExtraR = 1;
         }
         namespace internal_iterative_reduction
         {

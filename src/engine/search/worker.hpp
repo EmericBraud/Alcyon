@@ -130,6 +130,7 @@ namespace search
     {
         std::FILE *f = nullptr;
         std::FILE *f_l0 = nullptr; // "<dump>.l0" (build NNUE) : l0 de la position APRES le coup
+        std::FILE *f_z = nullptr;  // "<dump>.z" (ALCYON_QUIET_DUMP_Z) : logit du MLP, parite
         unsigned long long every = 1;
         // ALCYON_QUIET_DUMP_P="p1,p2,..." : probabilite de tirage par profondeur
         // (la derniere vaut pour les profondeurs suivantes), a la place de EVERY,
@@ -138,12 +139,15 @@ namespace search
         std::uint64_t p32[64] = {};
         // Une case par ply : un seul coup tire en cours par ply (un thread).
         std::array<std::uint8_t, 1024> l0_at_ply[engine_constants::search::MaxDepth + 8];
+        float z_at_ply[engine_constants::search::MaxDepth + 8] = {};
         ~QuietDump()
         {
             if (f)
                 std::fclose(f);
             if (f_l0)
                 std::fclose(f_l0);
+            if (f_z)
+                std::fclose(f_z);
         }
     };
     inline QuietDump quiet_dump;
@@ -174,6 +178,8 @@ namespace search
             quiet_dump.f = std::fopen(path, "wb");
 #ifdef NNUE_EVAL
             quiet_dump.f_l0 = std::fopen((std::string(path) + ".l0").c_str(), "wb");
+            if (std::getenv("ALCYON_QUIET_DUMP_Z"))
+                quiet_dump.f_z = std::fopen((std::string(path) + ".z").c_str(), "wb");
 #endif
             return quiet_dump.f != nullptr;
         }();
@@ -443,6 +449,9 @@ struct SearchWorker
     int learned_probe = 0;
     // Confiances du MoE depuis le debut de la recherche (MoeVetoLo / MoeTrace).
     int moe_trust_events = 0;
+    // Reduction LMR en plus pour le coup en cours (learned_quiet_mode), lue par
+    // late_move_reduction_search.
+    int quiet_extra_r = 0;
     // Oracle (search::oracle_quiet_enabled) : noeuds retirables, tous noeuds /
     // noeuds non-PV seulement ; coups calmes tardifs cherches, dont inutiles.
     long long oracle_removed_all = 0, oracle_removed_nonpv = 0, oracle_late = 0, oracle_useless = 0;

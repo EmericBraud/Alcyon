@@ -77,14 +77,16 @@ def after(fen, move):
     return b.fen()
 
 
-def one(eng, fen, depth):
+def one(eng, fen, depth, eng_m=None):
     b_move, _, _, _ = eng.search(fen, depth, 0)
     # CE_CONTROL=1 : etalonnage, M = base a profondeur - 1 (ce que vaut un ply).
     # CE_CONTROL=shadow : M = mode ombre (sondes lancees, jamais crues).
     mode = os.environ.get("CE_CONTROL", "")
-    control = mode != ""
+    control = mode != "" or eng_m is not None
     if mode == "1":
         m_move, _, n, _ = eng.search(fen, depth - 1, 0)
+    elif eng_m is not None:  # CE_MOPTS : moteur de la variante, mecanisme MoE eteint
+        m_move, _, n, _ = eng_m.search(fen, depth, 0)
     else:
         m_move, _, n, _ = eng.search(fen, depth, 2 if mode == "shadow" else 1)
     rec = {"fen": fen, "B": b_move, "M": m_move, "N": n}
@@ -129,19 +131,37 @@ def run(engine, positions, n, out, depth=12):
     lock = threading.Lock()
     f = open(out, "w")
 
+    # CE_MOPTS="nom=valeur,..." : la recherche M est faite par un second moteur
+    # portant ces options (ex. learned_quiet_mode=1,learned_quiet_loss=0).
+    mopts = [kv.split("=", 1) for kv in os.environ.get("CE_MOPTS", "").split(",") if kv]
+
+    def engine_m():
+        if not mopts:
+            return None
+        e = Engine(engine)
+        e.send("".join(f"setoption name {k} value {v}\n" for k, v in mopts) + "isready")
+        e.wait("readyok")
+        return e
+
     def work(chunk):
         eng = Engine(engine)
+        eng_m = engine_m()
         for fen in chunk:
             try:
-                r = one(eng, fen, int(depth))
+                r = one(eng, fen, int(depth), eng_m)
             except Exception as e:  # noqa: BLE001 -- une position ratee ne doit pas tuer la serie
                 r = {"fen": fen, "kind": "error", "err": str(e)}
                 eng.p.kill()
                 eng = Engine(engine)
+                if eng_m is not None:
+                    eng_m.p.kill()
+                    eng_m = engine_m()
             with lock:  # une ligne par position, au fil de l'eau (progression lisible)
                 f.write(json.dumps(r) + "\n")
                 f.flush()
         eng.send("quit")
+        if eng_m is not None:
+            eng_m.send("quit")
 
     with ThreadPoolExecutor(jobs) as ex:
         list(ex.map(work, [fens[i::jobs] for i in range(jobs)]))

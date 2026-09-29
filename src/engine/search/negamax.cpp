@@ -5,6 +5,7 @@
 #include "engine/engine_manager.hpp"
 #include "engine/search/move_picker.hpp"
 #include "engine/search/learned_prune.hpp"
+#include "engine/search/learned_quiet.hpp"
 
 #include "common/fatal.hpp"
 
@@ -326,6 +327,7 @@ namespace search
             // Position qui ne s'ameliore pas : rien n'indique que ces coups
             // tardifs meritent leur profondeur, on reduit plus fort.
             r += engine_constants::search::late_move_reduction::NotImprovingBonus * !improving;
+            r += worker.quiet_extra_r; // learned_quiet_mode
             r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
 
             // Sonde speculative : on ATTEND son echec, donc on declare
@@ -826,6 +828,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         const int quiet_alpha = alpha;
         const int quiet_order = quiet_rec ? list.list.scores[list.index - 1] : 0;
 #endif
+        // Lus AVANT play et avant la recherche du coup : apres, l'historique du coup
+        // porte deja sa propre coupure (fuite du label) et halfmove est celui de l'enfant.
+        const int pre_history = history_moves[Us][m.get_from_sq()][m.get_to_sq()];
+        const int pre_halfmove = board.get_halfmove_clock();
         const long long oracle_all0 = oracle_removed_all, oracle_np0 = oracle_removed_nonpv;
 
         board.play<Us>(m);
@@ -835,6 +841,55 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (quiet_rec && search::quiet_dump.f_l0)
             board.nnue_l0(search::quiet_dump.l0_at_ply[ply]);
 #endif
+        // Coups calmes tardifs appris (learned_quiet.hpp) : reduction LMR en plus
+        // si P(utile) / cout attendu est sous le seuil du mode.
+        quiet_extra_r = 0;
+        {
+            namespace lp = engine_constants::search::learned_pruning;
+            const bool late_quiet = list.stage == QUIETS && !is_tactical;
+#if defined(ALCYON_SEARCH_EXPERIMENTS) && defined(NNUE_EVAL)
+            const bool want_z = quiet_rec && search::quiet_dump.f_z;
+#else
+            constexpr bool want_z = false;
+#endif
+            if (late_quiet && (lp::QuietMode || want_z))
+            {
+                const bool use_mlp = (lp::QuietMode == 2 || lp::QuietMode == 3) && depth <= 6;
+                float log_s = 0;
+                bool act = false;
+#ifdef NNUE_EVAL
+                if (use_mlp || want_z)
+                {
+                    const learned_quiet::Input in{depth, ply, moves_searched, is_pv, cut_node, improving, gives_check,
+                                                  static_eval_stack[ply] - alpha, static_eval_stack[ply] != kEvalNone,
+                                                  list.list.scores[list.index - 1], pre_history,
+                                                  int(m.get_from_piece()), Us == WHITE ? m.get_to_sq() / 8 : 7 - m.get_to_sq() / 8,
+                                                  tt_move != 0, pre_halfmove,
+                                                  __builtin_popcountll(static_cast<const Board &>(board).get_occupancy(WHITE) |
+                                                                       static_cast<const Board &>(board).get_occupancy(BLACK))};
+                    std::array<std::uint8_t, 1024> l0;
+                    board.nnue_l0(l0);
+                    const float z = learned_quiet::logit(in, l0);
+#if defined(ALCYON_SEARCH_EXPERIMENTS)
+                    if (want_z) // ecrit avec l'enregistrement, apres la recherche du coup
+                        search::quiet_dump.z_at_ply[ply] = z;
+#endif
+                    if (use_mlp)
+                    {
+                        log_s = -std::log1p(std::exp(-z)) - learned_quiet::log_cost(depth, moves_searched);
+                        act = true;
+                    }
+                }
+#endif
+                if (lp::QuietMode == 1 || (lp::QuietMode == 3 && depth > 6))
+                {
+                    log_s = learned_quiet::log_rate(depth, moves_searched) - learned_quiet::log_cost(depth, moves_searched);
+                    act = true;
+                }
+                if (act && lp::QuietMode && log_s < learned_quiet::kThr[lp::QuietMode - 1][lp::QuietLoss])
+                    quiet_extra_r = lp::QuietExtraR;
+            }
+        }
 
         // Extensions plafonnees a ply < 2 * root_depth (comme Stockfish). Sans
         // borne, dans une finale de dames ou presque chaque coup donne echec,
@@ -879,15 +934,17 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             q.depth = depth, q.ply = ply, q.rank = moves_searched, q.is_pv = is_pv;
             q.cut_node = cut_node, q.improving = improving, q.gives_check = gives_check;
             q.eval_alpha = static_eval_stack[ply] == kEvalNone ? kEvalNone : static_eval_stack[ply] - quiet_alpha;
-            q.order_score = quiet_order, q.history = history_moves[Us][m.get_from_sq()][m.get_to_sq()];
+            q.order_score = quiet_order, q.history = pre_history;
             q.piece = m.get_from_piece();
             q.to_rank = Us == WHITE ? m.get_to_sq() / 8 : 7 - m.get_to_sq() / 8;
-            q.tt_move = tt_move != 0, q.halfmove = board.get_halfmove_clock();
+            q.tt_move = tt_move != 0, q.halfmove = pre_halfmove;
             q.pieces = __builtin_popcountll(static_cast<const Board &>(board).get_occupancy(WHITE) | static_cast<const Board &>(board).get_occupancy(BLACK)), q.alpha = quiet_alpha;
             q.useful = score > quiet_alpha, q.score_alpha = std::clamp(score - quiet_alpha, -2000, 2000);
             std::fwrite(&q, sizeof(q), 1, search::quiet_dump.f);
             if (search::quiet_dump.f_l0)
                 std::fwrite(search::quiet_dump.l0_at_ply[ply].data(), 1, 1024, search::quiet_dump.f_l0);
+            if (search::quiet_dump.f_z)
+                std::fwrite(&search::quiet_dump.z_at_ply[ply], sizeof(float), 1, search::quiet_dump.f_z);
         }
 #endif
         // Sous-arbre inutile : il remplace les retraits deja comptes a l'interieur.

@@ -572,6 +572,9 @@ public:
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeVetoHi, "learned_moe_veto_hi", 0, 2000000000),
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeTrace, "learned_moe_trace", -1, 2000000000),
             UCIOption<int>(&engine_constants::search::learned_pruning::MoeSample, "learned_moe_sample", 0, 2000000000),
+            UCIOption<int>(&engine_constants::search::learned_pruning::QuietMode, "learned_quiet_mode", 0, 3),
+            UCIOption<int>(&engine_constants::search::learned_pruning::QuietLoss, "learned_quiet_loss", 0, 1),
+            UCIOption<int>(&engine_constants::search::learned_pruning::QuietExtraR, "learned_quiet_r", 0, 4),
 
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::MinDepth, "iir_min_depth"),
             UCIOption<int>(&engine_constants::search::internal_iterative_reduction::Reduction, "iir_reduction"),
