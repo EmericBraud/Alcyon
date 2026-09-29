@@ -37,6 +37,10 @@ namespace engine_constants
         // correction bornee a +-CorrHistMax cp. Conservee avec PersistHistory.
         PARAM_SPECIFIER int CorrHist = 1;
         PARAM_SPECIFIER int CorrHistMax = 100;
+        // Elagage par l'historique : noeud non-PV a depth <= HistPruneDepth, coup calme
+        // (hors premier coup, hors echec) dont l'historique < -HistPruneMargin * depth.
+        PARAM_SPECIFIER int HistPruneDepth = 3;
+        PARAM_SPECIFIER int HistPruneMargin = 1024;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -236,6 +240,10 @@ namespace engine_constants
         // correction bornee a +-CorrHistMax cp. Conservee avec PersistHistory.
         PARAM_SPECIFIER int CorrHist = 1;
         PARAM_SPECIFIER int CorrHistMax = 100;
+        // Elagage par l'historique : noeud non-PV a depth <= HistPruneDepth, coup calme
+        // (hors premier coup, hors echec) dont l'historique < -HistPruneMargin * depth.
+        PARAM_SPECIFIER int HistPruneDepth = 3;
+        PARAM_SPECIFIER int HistPruneMargin = 1024;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;

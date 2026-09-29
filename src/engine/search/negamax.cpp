@@ -474,6 +474,13 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (search::should_lmp(in_check, depth, is_tactical, moves_searched, improving))
             continue;
 
+        // Elagage par l'historique (HistPruneDepth) : un coup calme que l'historique
+        // juge tres mauvais, pres des feuilles, n'est pas cherche.
+        if (!is_pv && !in_check && !is_tactical && moves_searched >= 1 && depth <= engine_constants::search::HistPruneDepth &&
+            score_quiet_history(history_moves[Us][m.get_from_sq()][m.get_to_sq()], m, prev_m, prev_prev_m, Us) <
+                -engine_constants::search::HistPruneMargin * depth)
+            continue;
+
         if (futil_pruning && moves_searched >= 1 && !is_tactical)
         {
             if (!board.template gives_check<Us>(m))
