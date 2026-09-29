@@ -256,9 +256,27 @@ namespace search
     constexpr bool prune_dump_label_enabled() { return false; }
 #endif
 
+    // ALCYON_PRUNE_DUMP_SHALLOW_BOOST=K multiplie la probabilite a depth <= 3
+    // (les noeuds les plus nombreux de l'arbre, et les plus mal predits : sans
+    // ca, 17 000 exemples seulement pour certains buckets de depth 1) ;
+    // ALCYON_PRUNE_DUMP_MAX_DEPTH=D ne tire que jusqu'a depth D.
     inline bool prune_dump_sample(int depth)
     {
-        const unsigned long long keep = 1ULL << std::min(depth - 1, 40);
+        static const unsigned long long boost = []
+        {
+            const char *e = std::getenv("ALCYON_PRUNE_DUMP_SHALLOW_BOOST");
+            return e ? std::max(1ULL, std::strtoull(e, nullptr, 10)) : 1ULL;
+        }();
+        static const int max_depth = []
+        {
+            const char *e = std::getenv("ALCYON_PRUNE_DUMP_MAX_DEPTH");
+            return e ? std::atoi(e) : 1 << 30;
+        }();
+        if (depth > max_depth)
+            return false;
+        unsigned long long keep = 1ULL << std::min(depth - 1, 40);
+        if (depth <= 3)
+            keep *= boost;
         return engine::random::splitmix64(prune_dump.counter++) % prune_dump.every < keep;
     }
 
