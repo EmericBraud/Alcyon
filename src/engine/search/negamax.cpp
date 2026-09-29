@@ -537,6 +537,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
             if (!is_tactical)
             {
+                // Contre-coup : la mise a jour avait disparu dans 60eb372 (V 4.0.1),
+                // l'etape COUNTERS du MovePicker ne rendait plus jamais rien.
+                if (prev_m != 0)
+                    counter_moves[Us][prev_m.get_from_piece()][prev_m.get_to_sq()] = m;
 
                 // MALUS : On punit tous les coups calmes testés AVANT et qui ont échoué
                 if (list.stage == PickerStages::QUIETS)
