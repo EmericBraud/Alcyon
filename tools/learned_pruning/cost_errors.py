@@ -80,8 +80,13 @@ def after(fen, move):
 def one(eng, fen, depth):
     b_move, _, _, _ = eng.search(fen, depth, 0)
     # CE_CONTROL=1 : etalonnage, M = base a profondeur - 1 (ce que vaut un ply).
-    control = os.environ.get("CE_CONTROL") == "1"
-    m_move, _, n, _ = eng.search(fen, depth - 1, 0) if control else eng.search(fen, depth, 1)
+    # CE_CONTROL=shadow : M = mode ombre (sondes lancees, jamais crues).
+    mode = os.environ.get("CE_CONTROL", "")
+    control = mode != ""
+    if mode == "1":
+        m_move, _, n, _ = eng.search(fen, depth - 1, 0)
+    else:
+        m_move, _, n, _ = eng.search(fen, depth, 2 if mode == "shadow" else 1)
     rec = {"fen": fen, "B": b_move, "M": m_move, "N": n}
     if m_move == b_move:
         rec["kind"] = "same"
