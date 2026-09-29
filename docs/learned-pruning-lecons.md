@@ -238,6 +238,37 @@ Levier sans risque : rien n'est elague, seul l'ordre change.
    qui finissent par couper (67 % du gaspillage), donc s'en tenir aux noeuds
    cut n'aide pas.
 
+## Modulation du RFP et du NMP par le modele de noeud (2026-09-29, soir)
+
+Le modele de noeud (regression, ou MLP 16 sur l0) est calcule avant le RFP
+(`mod_on`). Quand P(fail-high) est tres haute : RFP etendu jusqu'a d9, marge
+du RFP x 75 %, ou R du NMP + 1. Matchs de 4000 parties en 5+0.05, gains du
+jour actives des deux cotes :
+
+| variante | regression | MLP l0 |
+|---|---|---|
+| temoin (calcule, jamais utilise) | +0.2 | -- |
+| RFP etendu a d9 | -3.3 | +3.4 (calcul restreint) |
+| marge RFP x 75 % | +1.2 | -- |
+| NMP R + 1 | +3.5 (sans restriction) / -2.2 (eval >= beta) | -19.4 (calcul restreint) |
+
+1. **Calcule a chaque noeud, le MLP coute 26 % de nps** (-67 Elo). Il faut
+   le restreindre aux noeuds ou il peut changer une decision : RFP etendu
+   -0.7 % de nps, NMP -8.7 %.
+2. **Son cout regle, il ne fait pas mieux que la regression**, qui ne gagne
+   pas non plus. Sur le NMP, il se trompe plus souvent la ou une erreur
+   coute.
+3. **Fenetre de profondeur limitee** (sonde + MoE a d3-4 ou d5-6) : -23 et
+   -18 Elo. Restreindre la profondeur ne sauve pas le mecanisme : la
+   derniere iteration n'est jamais corrigee, et les erreurs des precedentes
+   degradent l'ordre de la suivante.
+
+**Conclusion : la piste "MLP dans l'elagage" est fermee.** Toutes les formes
+testees en parties (noeud, coup, fenetre de profondeur, ordonnancement,
+modulation) sont au mieux neutres. Les gains sont venus de tables apprises
+en ligne pendant la partie : historiques conserves (+17.5), contre-coup
+(+9.1), correction history (+3.4).
+
 ## Sur le moteur (bugs trouves en chemin)
 
 Tous trouves en chassant des anomalies de mesure :
