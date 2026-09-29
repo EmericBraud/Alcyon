@@ -581,6 +581,8 @@ public:
 
             UCIOption<int>(&engine_constants::search::CheckExtension, "check_extension", 0, 1),
             UCIOption<int>(&engine_constants::search::CounterMoveUpdate, "counter_move_update", 0, 1),
+            UCIOption<int>(&engine_constants::search::OrderAllQuiet, "order_all_quiet", 0, 1),
+            UCIOption<int>(&engine_constants::search::OrderContMalus, "order_cont_malus", 0, 1),
             UCIOption<int>(&engine_constants::search::null_move_pruning::MinDepth, "nmp_min_depth"),
             UCIOption<int>(&engine_constants::search::null_move_pruning::RConst, "nmp_r_const"),
             UCIOption<int>(&engine_constants::search::null_move_pruning::RDiv, "nmp_r_div"),

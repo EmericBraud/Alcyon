@@ -781,6 +781,9 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     int best_score = -engine_constants::eval::Inf;
     Move best_move_this_node = 0;
     int moves_searched = 0;
+    // Coups calmes cherches (OrderAllQuiet) : le malus ne touche qu'eux.
+    Move quiets_tried[64];
+    int n_quiets_tried = 0;
     const long long ord_node_n0 = search::oracle_order_enabled() ? global_nodes.load(std::memory_order_relaxed) + local_nodes : 0;
     const long long ord_node_r0 = oracle_ord_removed;
 
@@ -966,6 +969,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         }
 
         // --- MISE À JOUR DES SCORES ET DES TABLES ---
+        if (score < beta && !is_tactical && n_quiets_tried < 64)
+            quiets_tried[n_quiets_tried++] = m;
         if (score >= beta)
         {
             if (search::order_stats_enabled())
@@ -998,8 +1003,27 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                 if (engine_constants::search::CounterMoveUpdate && prev_m != 0)
                     counter_moves[Us][prev_m.get_from_piece()][prev_m.get_to_sq()] = m;
 
+                if (engine_constants::search::OrderAllQuiet)
+                {
+                    const int bonus = depth * depth;
+                    auto cont = [&](Move mv, int b)
+                    {
+                        if (prev_m != 0)
+                            update_hist(continuation_hist_1[Us][prev_m.get_from_piece()][prev_m.get_to_sq()][mv.get_to_sq()], b);
+                        if (prev_prev_m != 0)
+                            update_hist(continuation_hist_2[Us][prev_prev_m.get_from_piece()][prev_prev_m.get_to_sq()][mv.get_to_sq()], b);
+                    };
+                    update_hist(history_moves[Us][m.get_from_sq()][m.get_to_sq()], bonus);
+                    cont(m, bonus);
+                    for (int j = 0; j < n_quiets_tried; ++j)
+                    {
+                        update_hist(history_moves[Us][quiets_tried[j].get_from_sq()][quiets_tried[j].get_to_sq()], -bonus);
+                        if (engine_constants::search::OrderContMalus)
+                            cont(quiets_tried[j], -bonus);
+                    }
+                }
                 // MALUS : On punit tous les coups calmes testés AVANT et qui ont échoué
-                if (list.stage == PickerStages::QUIETS)
+                else if (list.stage == PickerStages::QUIETS)
                 {
                     int bonus = depth * depth;
 
@@ -1028,6 +1052,13 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
                         // On ne punit que les coups calmes (pas les captures/promotions)
 
                         update_hist(history_moves[Us][failed_move.get_from_sq()][failed_move.get_to_sq()], -bonus);
+                        if (engine_constants::search::OrderContMalus)
+                        {
+                            if (prev_m != 0)
+                                update_hist(continuation_hist_1[Us][prev_m.get_from_piece()][prev_m.get_to_sq()][failed_move.get_to_sq()], -bonus);
+                            if (prev_prev_m != 0)
+                                update_hist(continuation_hist_2[Us][prev_prev_m.get_from_piece()][prev_prev_m.get_to_sq()][failed_move.get_to_sq()], -bonus);
+                        }
                     }
                 }
 

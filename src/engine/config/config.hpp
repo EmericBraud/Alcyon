@@ -32,6 +32,12 @@ namespace engine_constants
         // 60eb372 (V 4.0.1) : counter_moves n'etait plus jamais ecrit, l'etape
         // COUNTERS du MovePicker ne rendait rien.
         PARAM_SPECIFIER int CounterMoveUpdate = 0;
+        // OrderAllQuiet : historiques mis a jour sur TOUTE coupure calme (killers et
+        // contre-coup compris, pas seulement l'etape QUIETS), malus sur les seuls
+        // coups calmes reellement cherches. OrderContMalus : malus aussi sur les
+        // historiques de continuation (sans lui, bonus seuls : elles saturent).
+        PARAM_SPECIFIER int OrderAllQuiet = 0;
+        PARAM_SPECIFIER int OrderContMalus = 0;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
@@ -287,6 +293,12 @@ namespace engine_constants
         // 60eb372 (V 4.0.1) : counter_moves n'etait plus jamais ecrit, l'etape
         // COUNTERS du MovePicker ne rendait rien.
         PARAM_SPECIFIER int CounterMoveUpdate = 0;
+        // OrderAllQuiet : historiques mis a jour sur TOUTE coupure calme (killers et
+        // contre-coup compris, pas seulement l'etape QUIETS), malus sur les seuls
+        // coups calmes reellement cherches. OrderContMalus : malus aussi sur les
+        // historiques de continuation (sans lui, bonus seuls : elles saturent).
+        PARAM_SPECIFIER int OrderAllQuiet = 0;
+        PARAM_SPECIFIER int OrderContMalus = 0;
         namespace aspiration
         {
             PARAM_SPECIFIER int EnableDepth = 5;
