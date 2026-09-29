@@ -502,12 +502,20 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     // Modulation par le modele de noeud (ModOn) : logit de P(fail-high), calcule
     // une fois ici et lu par le RFP et le NMP. -inf quand il n'est pas calcule.
+    // Calcule seulement la ou il peut changer une decision (le MLP coutait 26 %
+    // de nps calcule a tous les noeuds) : fenetre du RFP module, ou NMP qui va etre
+    // tente ; dans les deux cas eval >= beta (condition necessaire d'un fail-high sur).
     float mod_z = -1e9f;
     if (engine_constants::search::learned_pruning::ModOn && !is_pv && !in_check && ply > 0 && excluded_move == 0 &&
         std::abs(beta) < engine_constants::eval::SyzygyScore)
     {
-        const int se = search::node_static_eval<Us>(*this, ply);
-        if (std::abs(se) < engine_constants::eval::SyzygyScore)
+        namespace lp = engine_constants::search::learned_pruning;
+        namespace rfp = engine_constants::search::reverse_futility_pruning;
+        const bool need_rfp = lp::ModRfpDepth > rfp::MaxDepth ? (depth > rfp::MaxDepth && depth <= lp::ModRfpDepth)
+                                                              : (lp::ModRfpMarginPct != 100 && depth <= rfp::MaxDepth);
+        const bool need_nmp = lp::ModNmpR > 0 && allow_null && depth >= engine_constants::search::null_move_pruning::MinDepth;
+        const int se = (need_rfp || need_nmp) ? search::node_static_eval<Us>(*this, ply) : 0;
+        if ((need_rfp || need_nmp) && se >= beta && std::abs(se) < engine_constants::eval::SyzygyScore)
         {
             search::PruneRecord rec;
             search::fill_prune_record<Us>(*this, rec, se, depth, ply, beta, cut_node, allow_null);
