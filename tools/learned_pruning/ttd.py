@@ -35,7 +35,7 @@ def run(engine, game_file, depth, opts):
                 sys.exit(f"{game_file} : moteur mort au ply {ply}")
             if line.startswith("info string oracle"):
                 t = line.split()
-                for k, v in zip(t[2::2], t[3::2]):
+                for k, v in zip(t[3::2], t[4::2]):  # "info string oracle nodes N ..."
                     oracle[k] = oracle.get(k, 0) + int(v)
             elif line.startswith("info") and " nodes " in line:
                 last = line.split()
