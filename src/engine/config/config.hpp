@@ -31,8 +31,10 @@ namespace engine_constants
         // statique dans razoring / RFP / futility quand sa borne est
         // compatible (borne basse et score > eval, borne haute et score <
         // eval, exacte). 0 = comportement d'origine.
-        // Masque : 1 razoring, 2 RFP, 4 futility.
-        PARAM_SPECIFIER int TtEvalRefine = 0;
+        // Masque : 1 razoring, 2 RFP, 4 futility. Valide : razoring seul
+        // (+10.2 +- 10.6, 1 500 parties, docs/signal-entier.md) ; RFP (-9) et
+        // futility (-1) restent eteints.
+        PARAM_SPECIFIER int TtEvalRefine = 1;
         // N'utiliser l'entree TT que si sa profondeur >= depth - gap.
         PARAM_SPECIFIER int TtEvalDepthGap = 99;
         // 1 = pas de NMP quand la TT (profondeur >= depth - 3) donne une borne
