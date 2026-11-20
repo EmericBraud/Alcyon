@@ -7,8 +7,10 @@
 #include "engine/config/eval.hpp"
 #include "engine/engine_manager.hpp"
 #include "worker.hpp"
+#include "engine/search/tm_mlp_weights.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <bit>
 #include <limits>
 #include <cstdlib>
@@ -286,6 +288,37 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
     }
 }
 
+namespace
+{
+    // P(le meilleur coup change a l'iteration suivante), MLP appris hors-ligne
+    // (tools/time_management). Entrees dans l'ordre de train_tm.py.
+    double tm_mlp_change_prob(const float (&x)[tm_mlp::kIn])
+    {
+        float a[64], b[64];
+        for (int i = 0; i < tm_mlp::kIn; ++i)
+            a[i] = (x[i] - tm_mlp::kMean[i]) / tm_mlp::kScale[i];
+        const float *W[] = {tm_mlp::kW0, tm_mlp::kW1, tm_mlp::kW2};
+        const float *B[] = {tm_mlp::kB0, tm_mlp::kB1, tm_mlp::kB2};
+        static_assert(tm_mlp::kLayers == 3, "export a 3 couches attendu");
+        int n_in = tm_mlp::kIn;
+        float *in = a, *out = b;
+        for (int l = 0; l < tm_mlp::kLayers; ++l)
+        {
+            const int n_out = tm_mlp::kSizes[l];
+            for (int j = 0; j < n_out; ++j)
+            {
+                float acc = B[l][j];
+                for (int i = 0; i < n_in; ++i)
+                    acc += in[i] * W[l][i * n_out + j];
+                out[j] = (l + 1 < tm_mlp::kLayers) ? std::max(acc, 0.0f) : acc;
+            }
+            std::swap(in, out);
+            n_in = n_out;
+        }
+        return 1.0 / (1.0 + std::exp(-double(in[0])));
+    }
+}
+
 void SearchWorker::iterative_deepening()
 {
     int last_score = 0;
@@ -327,8 +360,10 @@ void SearchWorker::iterative_deepening()
             prev_best_root = current_best;
             // Journal par iteration pour apprendre la gestion du temps
             // (ALCYON_TM_LOG) : signaux disponibles a la fin de l'iteration.
+            // Signaux de fin d'iteration : journal (ALCYON_TM_LOG) et MLP.
             static const bool tm_log = std::getenv("ALCYON_TM_LOG") != nullptr;
-            if (tm_log && nodes_total > 0)
+            double tm_p_change = -1.0;
+            if ((tm_log || engine_constants::search::time::TmMlp) && nodes_total > 0)
             {
                 long long best_n = root_move_nodes[current_best.get_from_sq()][current_best.get_to_sq()];
                 long long second_n = 0;
@@ -341,10 +376,26 @@ void SearchWorker::iterative_deepening()
                             if (!(f == current_best.get_from_sq() && t == current_best.get_to_sq()))
                                 second_n = std::max(second_n, root_move_nodes[f][t]);
                         }
-                std::fprintf(stderr, "TM %d %lld %d %lld %d %.4f %.4f %d %d %d %d %d %d\n", depth, manager.elapsed_ms(), soft,
-                             nodes_total, stable_iterations, double(best_n) / nodes_total, double(second_n) / nodes_total,
-                             last_score, prev_iter_score, root_moves, max_extended_depth,
-                             std::popcount(board.get_occupancy<NO_COLOR>()), int(current_best.get_value()));
+                const double frac_best = double(best_n) / nodes_total;
+                const double frac_second = double(second_n) / nodes_total;
+                const int pieces = std::popcount(board.get_occupancy<NO_COLOR>());
+                if (tm_log)
+                    std::fprintf(stderr, "TM %d %lld %d %lld %d %.4f %.4f %d %d %d %d %d %d\n", depth, manager.elapsed_ms(), soft,
+                                 nodes_total, stable_iterations, frac_best, frac_second,
+                                 last_score, prev_iter_score, root_moves, max_extended_depth,
+                                 pieces, int(current_best.get_value()));
+                if (engine_constants::search::time::TmMlp && depth >= 4)
+                {
+                    const float sc = float(std::clamp(last_score, -2000, 2000));
+                    const float pv = float(std::clamp(prev_iter_score, -2000, 2000));
+                    const float x[tm_mlp::kIn] = {float(depth), float(std::min(stable_iterations, 20)), float(frac_best),
+                                                  float(frac_second), std::abs(sc), pv - sc, std::abs(pv - sc),
+                                                  float(root_moves), float(max_extended_depth - depth), float(pieces),
+                                                  float(std::log1p(double(nodes_total)))};
+                    tm_p_change = tm_mlp_change_prob(x);
+                    if (tm_log)
+                        std::fprintf(stderr, "TMP %.6f\n", tm_p_change);
+                }
             }
             if (soft > 0)
             {
@@ -356,6 +407,13 @@ void SearchWorker::iterative_deepening()
                                                      tc::StabilityFactor2, tc::StabilityFactor3,
                                                      tc::StabilityFactor4};
                 double factor = kStability[std::min(stable_iterations, 4)];
+                if (tm_p_change >= 0.0)
+                {
+                    // Facteur = (p / reference)^gamma : la table de stabilite
+                    // suivait deja le rapport du risque de changement au taux de base.
+                    const double ratio = std::max(tm_p_change, 1e-4) / (tc::TmMlpRef / 1000.0);
+                    factor = std::clamp(std::pow(ratio, tc::TmMlpGamma / 100.0), tc::TmMlpMin / 100.0, tc::TmMlpMax / 100.0);
+                }
                 if (tc::NodeSlope != 0 && nodes_total > 0)
                 {
                     const double frac = static_cast<double>(root_move_nodes[current_best.get_from_sq()][current_best.get_to_sq()]) / nodes_total;

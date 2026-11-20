@@ -36,7 +36,16 @@ def load(path):
     a = np.array(rows, dtype=object)
     d = {c: a[:, i] for i, c in enumerate(COLS)}
     num = {c: d[c].astype(np.float64) for c in COLS if c not in ("move", "final")}
-    y = (d["move"] != d["final"]).astype(np.int64)
+    target = os.environ.get("TM_TARGET", "next")
+    key0 = num["game"] * 1000 + num["ply"]
+    same_next = np.r_[key0[1:] == key0[:-1], False]
+    nxt = np.r_[d["move"][1:], d["move"][-1:]]
+    if target == "final":
+        y = (d["move"] != d["final"]).astype(np.int64)
+    else:
+        # Le coup change-t-il a l'iteration SUIVANTE (decision reelle :
+        # lancer ou non une iteration de plus) ?
+        y = (same_next & (nxt != d["move"])).astype(np.int64)
     score = np.clip(num["score"], -2000, 2000)
     prev = np.clip(num["prev_score"], -2000, 2000)
     X = np.column_stack([
