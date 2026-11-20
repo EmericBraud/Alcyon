@@ -9,6 +9,7 @@
 #include "worker.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <limits>
 #include <cstdlib>
 
@@ -324,6 +325,27 @@ void SearchWorker::iterative_deepening()
             else if (prev_best_root.get_value() != 0)
                 ++stable_iterations;
             prev_best_root = current_best;
+            // Journal par iteration pour apprendre la gestion du temps
+            // (ALCYON_TM_LOG) : signaux disponibles a la fin de l'iteration.
+            static const bool tm_log = std::getenv("ALCYON_TM_LOG") != nullptr;
+            if (tm_log && nodes_total > 0)
+            {
+                long long best_n = root_move_nodes[current_best.get_from_sq()][current_best.get_to_sq()];
+                long long second_n = 0;
+                int root_moves = 0;
+                for (int f = 0; f < 64; ++f)
+                    for (int t = 0; t < 64; ++t)
+                        if (root_move_nodes[f][t] > 0)
+                        {
+                            ++root_moves;
+                            if (!(f == current_best.get_from_sq() && t == current_best.get_to_sq()))
+                                second_n = std::max(second_n, root_move_nodes[f][t]);
+                        }
+                std::fprintf(stderr, "TM %d %lld %d %lld %d %.4f %.4f %d %d %d %d %d %d\n", depth, manager.elapsed_ms(), soft,
+                             nodes_total, stable_iterations, double(best_n) / nodes_total, double(second_n) / nodes_total,
+                             last_score, prev_iter_score, root_moves, max_extended_depth,
+                             std::popcount(board.get_occupancy<NO_COLOR>()), int(current_best.get_value()));
+            }
             if (soft > 0)
             {
                 // Plus le coup racine est stable depuis longtemps, moins une
