@@ -325,6 +325,7 @@ void SearchWorker::iterative_deepening()
     Move prev_best_root = 0;
     int stable_iterations = 0; // iterations consecutives sans changement du coup racine
     int prev_iter_score = 0;
+    long long prev_iter_nodes = 0;
     for (int depth = 1; depth < engine_constants::search::MaxDepth; ++depth)
     {
         prev_iter_score = last_score;
@@ -384,19 +385,25 @@ void SearchWorker::iterative_deepening()
                                  nodes_total, stable_iterations, frac_best, frac_second,
                                  last_score, prev_iter_score, root_moves, max_extended_depth,
                                  pieces, int(current_best.get_value()));
-                if (engine_constants::search::time::TmMlp && depth >= 4)
+                if (engine_constants::search::time::TmMlp && depth >= 4 && soft > 0)
                 {
                     const float sc = float(std::clamp(last_score, -2000, 2000));
                     const float pv = float(std::clamp(prev_iter_score, -2000, 2000));
-                    const float x[tm_mlp::kIn] = {float(depth), float(std::min(stable_iterations, 20)), float(frac_best),
+                    // Entrees invariantes a la cadence (ordre de train_tm.py, jeu
+                    // "norm") : iterations que le budget permet encore, en log
+                    // base EBF 2.2, et EBF observe a cette iteration.
+                    const double iters_left = std::log((soft + 1.0) / (manager.elapsed_ms() + 1.0)) / std::log(2.2);
+                    const double log_ebf = prev_iter_nodes > 0 ? std::log((nodes_total + 1.0) / (prev_iter_nodes + 1.0)) : 0.0;
+                    const float x[tm_mlp::kIn] = {float(std::min(stable_iterations, 20)), float(frac_best),
                                                   float(frac_second), std::abs(sc), pv - sc, std::abs(pv - sc),
                                                   float(root_moves), float(max_extended_depth - depth), float(pieces),
-                                                  float(std::log1p(double(nodes_total)))};
+                                                  float(iters_left), float(log_ebf)};
                     tm_p_change = tm_mlp_change_prob(x);
                     if (tm_log)
                         std::fprintf(stderr, "TMP %.6f\n", tm_p_change);
                 }
             }
+            prev_iter_nodes = nodes_total;
             if (soft > 0)
             {
                 // Plus le coup racine est stable depuis longtemps, moins une

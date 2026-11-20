@@ -18,6 +18,8 @@ import argparse
 import multiprocessing as mp
 import os
 import subprocess
+import math
+import random
 import time
 import sys
 
@@ -75,8 +77,14 @@ class Engine:
         self.wait("readyok")
 
 
+def soft_budget(clock, inc, overhead=100, divisor=28, inc_frac=50):
+    # Meme formule que uci.hpp (sans movestogo).
+    return max(1, clock - overhead) // divisor + inc * inc_frac // 100
+
+
 def worker(args):
-    engine_path, movetime, jobs, out_path = args
+    engine_path, movetime, jobs, out_path, mixed = args
+    rng = random.Random(hash(out_path) & 0xffffffff)
     eng = Engine(engine_path)
     # stderr lu par un thread pour ne pas bloquer le moteur.
     import queue
@@ -95,7 +103,18 @@ def worker(args):
             eng.send("isready")
             eng.wait("readyok")
             for ply in range(min_ply, len(moves) - 1, every):
-                eng.search(fen, moves[:ply], movetime)
+                soft = 0
+                mt = movetime
+                if mixed:
+                    # Cadence tiree log-uniforme entre 5+0.05 et 60+0.6, horloge
+                    # restante entre 15 % et 100 % de la base : budget souple
+                    # reel, et recherche 3x plus longue pour connaitre la suite.
+                    base = math.exp(rng.uniform(math.log(5000), math.log(60000)))
+                    inc = base / 100
+                    clock = base * rng.uniform(0.15, 1.0)
+                    soft = soft_budget(int(clock), int(inc))
+                    mt = min(8000, 3 * soft + 100)
+                eng.search(fen, moves[:ply], mt)
                 time.sleep(0.02)
                 rows = []
                 while not q.empty():
@@ -104,6 +123,8 @@ def worker(args):
                     continue
                 final = rows[-1][-1]
                 for r in rows:
+                    if mixed:
+                        r[2] = str(soft)
                     out.write("\t".join([str(gid), str(ply)] + r + [final]) + "\n")
             out.flush()
     eng.send("quit")
@@ -119,6 +140,7 @@ def main():
     ap.add_argument("--min-ply", type=int, default=8)
     ap.add_argument("--every", type=int, default=3)
     ap.add_argument("--max-games", type=int, default=0)
+    ap.add_argument("--mixed", action="store_true", help="cadences melangees, budget souple journalise")
     a = ap.parse_args()
 
     jobs = load_games(a.pgn, a.min_ply, a.every)
@@ -128,7 +150,7 @@ def main():
     shards = [jobs[i::a.workers] for i in range(a.workers)]
     parts = [f"{a.out}.part{i}" for i in range(a.workers)]
     with mp.Pool(a.workers) as pool:
-        pool.map(worker, [(a.engine, a.movetime, s, p) for s, p in zip(shards, parts)])
+        pool.map(worker, [(a.engine, a.movetime, s, p, a.mixed) for s, p in zip(shards, parts)])
     with open(a.out, "w") as out:
         for p in parts:
             with open(p) as f:

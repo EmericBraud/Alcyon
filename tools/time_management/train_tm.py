@@ -21,8 +21,16 @@ from sklearn.preprocessing import StandardScaler
 
 COLS = ["game", "ply", "depth", "elapsed", "soft", "nodes", "stable", "frac_best", "frac_second",
         "score", "prev_score", "root_moves", "seldepth", "pieces", "move", "final"]
-FEATURES = ["depth", "stable", "frac_best", "frac_second", "abs_score", "drop", "abs_drop",
-            "root_moves", "sel_minus_depth", "pieces", "log_nodes"]
+FEATURE_SET = os.environ.get("TM_FEATURES", "norm")
+if FEATURE_SET == "norm":
+    # Invariantes a la cadence : profondeur et noeuds remplaces par le nombre
+    # d'iterations que le budget permet encore (log, EBF 2.2) et l'EBF observe.
+    FEATURES = ["stable", "frac_best", "frac_second", "abs_score", "drop", "abs_drop",
+                "root_moves", "sel_minus_depth", "pieces", "iters_left", "log_ebf"]
+else:
+    FEATURES = ["depth", "stable", "frac_best", "frac_second", "abs_score", "drop", "abs_drop",
+                "root_moves", "sel_minus_depth", "pieces", "log_nodes"]
+LOG_EBF = math.log(2.2)
 
 
 def load(path):
@@ -48,15 +56,25 @@ def load(path):
         y = (same_next & (nxt != d["move"])).astype(np.int64)
     score = np.clip(num["score"], -2000, 2000)
     prev = np.clip(num["prev_score"], -2000, 2000)
-    X = np.column_stack([
-        num["depth"], np.minimum(num["stable"], 20), num["frac_best"], num["frac_second"],
-        np.abs(score), prev - score, np.abs(prev - score), num["root_moves"],
-        num["seldepth"] - num["depth"], num["pieces"], np.log1p(num["nodes"]),
-    ])
+    common = [np.minimum(num["stable"], 20), num["frac_best"], num["frac_second"],
+              np.abs(score), prev - score, np.abs(prev - score), num["root_moves"],
+              num["seldepth"] - num["depth"], num["pieces"]]
+    if FEATURE_SET == "norm":
+        k = num["game"] * 1000 + num["ply"]
+        same_prev = np.r_[False, k[1:] == k[:-1]]
+        prev_nodes = np.r_[num["nodes"][:1], num["nodes"][:-1]]
+        log_ebf = np.where(same_prev, np.log((num["nodes"] + 1) / (prev_nodes + 1)), 0.0)
+        iters_left = np.log((num["soft"] + 1) / (num["elapsed"] + 1)) / LOG_EBF
+        X = np.column_stack(common + [iters_left, log_ebf])
+    else:
+        X = np.column_stack([num["depth"]] + common + [np.log1p(num["nodes"])])
     # La derniere iteration de chaque recherche est le coup final par definition.
     key = num["game"] * 1000 + num["ply"]
     last = np.r_[key[1:] != key[:-1], True]
     keep = ~last & (num["depth"] >= 4)
+    if FEATURE_SET == "norm":
+        # Au-dela de 2x le budget souple, le moteur ne decide plus rien.
+        keep &= num["elapsed"] <= 2 * num["soft"]
     return X[keep], y[keep], num["game"][keep].astype(np.int64), np.minimum(num["stable"], 4)[keep].astype(int)
 
 

@@ -243,7 +243,7 @@ namespace engine_constants
             // TmMlpRef pour mille)^(TmMlpGamma %), borne [TmMlpMin, TmMlpMax] %,
             // a la place de la table de stabilite. 0 = table.
             PARAM_SPECIFIER int TmMlp = 0;
-            PARAM_SPECIFIER int TmMlpRef = 69;
+            PARAM_SPECIFIER int TmMlpRef = 68;
             PARAM_SPECIFIER int TmMlpGamma = 50;
             PARAM_SPECIFIER int TmMlpMin = 50;
             PARAM_SPECIFIER int TmMlpMax = 200;
@@ -450,7 +450,7 @@ namespace engine_constants
             // TmMlpRef pour mille)^(TmMlpGamma %), borne [TmMlpMin, TmMlpMax] %,
             // a la place de la table de stabilite. 0 = table.
             PARAM_SPECIFIER int TmMlp = 0;
-            PARAM_SPECIFIER int TmMlpRef = 69;
+            PARAM_SPECIFIER int TmMlpRef = 68;
             PARAM_SPECIFIER int TmMlpGamma = 50;
             PARAM_SPECIFIER int TmMlpMin = 50;
             PARAM_SPECIFIER int TmMlpMax = 200;
