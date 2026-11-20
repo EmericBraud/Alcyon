@@ -15,6 +15,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 | v5.3 | 60s+0.2s | 126 | 52.0 / 126 (41.3%) — 24W / 46L / 56D | **-61 ± 34** ‡ |
 | v5.4 | 60s+0.2s | 982 | 452.5 / 982 (46.1%) — 265W / 342L / 375D | **-27.3 ± 15.8** ‡§ |
 | v5.5 | 60s+0.2s | 1224 | 607.5 / 1224 (49.6%) — 394W / 403L / 427D | **-2.6 ± 13.9** ‡§ |
+| v6 | 60s+0.2s | 788 | 424.5 / 788 (53.9%) — 278W / 217L / 293D | **+27.0 ± 16.3** ¶ |
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
@@ -49,6 +50,36 @@ which makes it weaker than a properly built one by an unmeasured amount.
 OpenBench also scales the time control by machine speed, so the nominal
 60s+0.2s ran as 51.6s+0.17s — identical for both engines, so no bias between
 them, but not strictly the same control as the rows above.
+
+¶ v6 was measured on an AWS `c8g.16xlarge` (Graviton4, 64 vCPU) at
+concurrency 32, the same concurrency as the v5.4 and v5.5 rows, so it carries
+the same memory-bandwidth bias against Alcyon and compares directly with them.
+Unlike those rows, it runs the nominal 60s+0.2s (no OpenBench scaling).
+Measurement in progress: 788 of 1200 games, LOS 97.4% from decisive games (99.94% as fastchess computes it, over game pairs). A parallel run on an
+Apple Silicon laptop at concurrency 4 stood at 51W / 34L / 54D (+43 Elo, 139
+games), consistent with a smaller bias there.
+
+v6 keeps the v5 network and changes two things in the search, both built on
+one observation: a transposition-table entry carries strong bound
+information even when it was searched too shallow to cut the node (on
+recorded nodes, an upper bound below beta is followed by a fail-high only 14%
+of the time, a lower bound above beta 92% of the time).
+
+- **Razoring on a TT-refined evaluation**: when the entry's bound is
+  compatible with it, its score replaces the static evaluation in the razoring
+  test. Self-play at 5s+0.05s: **+10.2 ± 10.6** over 1500 games. The same
+  refinement on reverse futility (-9) and futility (-1) did not help and stays
+  off.
+- **No null move under a TT upper bound**: when the table holds an upper bound
+  below beta, at any depth, the null-move search is skipped, since it almost
+  never cuts there. Self-play at 5s+0.05s: **+24.4 ± 17.1** over 500 games;
+  requiring the entry to be within 3 plies of the node gave the same
+  (+24.2 ± 24.4, 216 games).
+
+Neither was validated by a formal SPRT, and both self-play figures come from a
+very short time control. Adjusting late-move reductions by the same bounds was
+neutral to negative on top of them and stays off (`tt_lmr_bound`), as does a
+learned reverse-futility margin (-22 to -37 Elo across four attempts).
 
 v5.2 has no row here: it was only measured at 10s+0.1s (-52.5 ± 22.8 over
 520 games), a different time control. v5.3 beat it by **+18.0 ± 7.7** over
@@ -123,10 +154,10 @@ analytical calibration that preceded it: both margin constants were driven to
 or below zero and the depth slopes picked the work up instead, leaving both
 margins purely proportional to depth.
 
-Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3356 Elo** for Alcyon (v5.5) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
+Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3386 Elo** for Alcyon (v6) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
 
 - CCRL's list runs at a longer time control (40 moves/15 min) and typically multi-core, vs. our single-threaded 60+0.2 test
 - The reference Stockfish 8 is built from source at tag `sf_8` with `ARCH=general-64`, so it has neither `popcnt` nor prefetch — likely *understating* its actual strength, so the true gap is probably larger
-- 1224 games still leaves a wide confidence interval (±13.9 Elo from sampling alone)
+- 788 games still leaves a wide confidence interval (±16.3 Elo from sampling alone)
 
 An actual CCRL-comparable number would require running on CCRL's reference hardware/time control (or submitting the engine to CCRL directly, which accepts community submissions) and a fully optimized reference build for every opponent.

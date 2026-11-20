@@ -8,7 +8,7 @@ High-Performance Chess Engine in C++
 
 <sub>Formerly known as Chess26.</sub>
 
-![Version](https://img.shields.io/badge/version-v5.5-blue)
+![Version](https://img.shields.io/badge/version-v6-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Language](https://img.shields.io/badge/language-C%2B%2B23-blue)
 
@@ -43,9 +43,14 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 | v5.1 | 60s+0.2s | 178 | <0.01% | **-124 ± 41** | ~3235 |
 | v5.3 | 60s+0.2s | 126 | 3.2% | **-61 ± 34** | ~3298 |
 | v5.4 | 60s+0.2s | 982 | 1.4% | **-27.3 ± 15.8** | ~3332 |
-| v5.5 | 60s+0.2s | 1224 | **41.1%** | **-2.6 ± 13.9** | **~3356** |
+| v5.5 | 60s+0.2s | 1224 | 41.1% | -2.6 ± 13.9 | ~3356 |
+| v6 ‡ | 60s+0.2s | 788 | **97.4%** | **+27.0 ± 16.3** | **~3386** |
 
-v5.5 plays **on par with Stockfish 8** at this time control.
+v6 is the first version **ahead of Stockfish 8** at this time control.
+
+‡ Measurement in progress (788 of 1200 games; fastchess, which counts LOS over game pairs, reports 99.94%). A second run on a laptop at
+concurrency 4, which costs Alcyon far less memory bandwidth, stands at
++43 Elo after 139 games, consistent with the bias described below.
 
 † LOS — likelihood of superiority — is the probability that Alcyon is the
 stronger engine, from the decisive games only: `Φ((W−L)/√(2(W+L)))`. It answers
