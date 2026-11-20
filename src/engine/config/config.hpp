@@ -39,8 +39,10 @@ namespace engine_constants
         PARAM_SPECIFIER int TtEvalDepthGap = 99;
         // 1 = pas de NMP quand la TT (profondeur >= depth - 3) donne une borne
         // haute < beta : le null move ne peut pas passer.
-        PARAM_SPECIFIER int TtNmpSkip = 0;
-        PARAM_SPECIFIER int TtNmpGap = 3;
+        // Valide avec gap 99 (toute profondeur) : +24.4 +- 17.1 sur 500 parties
+        // (5+0.05, UHO). Gap 3 : +24.2 +- 24.4 sur 216.
+        PARAM_SPECIFIER int TtNmpSkip = 1;
+        PARAM_SPECIFIER int TtNmpGap = 99;
         // Ajustement LMR par borne TT (masque) : 1 +1 si borne haute <= alpha,
         // 2 +1 si borne basse >= beta, 4 -1 si borne basse >= beta.
         PARAM_SPECIFIER int TtLmrBound = 0;
