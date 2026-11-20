@@ -15,7 +15,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 | v5.3 | 60s+0.2s | 126 | 52.0 / 126 (41.3%) — 24W / 46L / 56D | **-61 ± 34** ‡ |
 | v5.4 | 60s+0.2s | 982 | 452.5 / 982 (46.1%) — 265W / 342L / 375D | **-27.3 ± 15.8** ‡§ |
 | v5.5 | 60s+0.2s | 1224 | 607.5 / 1224 (49.6%) — 394W / 403L / 427D | **-2.6 ± 13.9** ‡§ |
-| v6 | 60s+0.2s | 820 | 442.0 / 820 (53.9%) — 288W / 224L / 308D | **+27.2 ± 15.9** ¶ |
+| v6.0 | 60s+0.2s | 820 | 442.0 / 820 (53.9%) — 288W / 224L / 308D | **+27.2 ± 15.9** ¶ |
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
@@ -51,7 +51,7 @@ OpenBench also scales the time control by machine speed, so the nominal
 60s+0.2s ran as 51.6s+0.17s — identical for both engines, so no bias between
 them, but not strictly the same control as the rows above.
 
-¶ v6 was measured on an AWS `c8g.16xlarge` (Graviton4, 64 vCPU) at
+¶ v6.0 was measured on an AWS `c8g.16xlarge` (Graviton4, 64 vCPU) at
 concurrency 32, the same concurrency as the v5.4 and v5.5 rows, so it carries
 the same memory-bandwidth bias against Alcyon and compares directly with them.
 Unlike those rows, it runs the nominal 60s+0.2s (no OpenBench scaling).
@@ -60,7 +60,7 @@ games (99.96% as fastchess computes it, over game pairs). A parallel run on an
 Apple Silicon laptop at concurrency 4 stopped at 58W / 37L / 56D (about +49
 Elo, 151 games), consistent with a smaller bias there.
 
-v6 keeps the v5 network and changes two things in the search, both built on
+v6.0 keeps the v5 network and changes two things in the search, both built on
 one observation: a transposition-table entry carries strong bound
 information even when it was searched too shallow to cut the node (on
 recorded nodes, an upper bound below beta is followed by a fail-high only 14%
@@ -155,7 +155,7 @@ analytical calibration that preceded it: both margin constants were driven to
 or below zero and the depth slopes picked the work up instead, leaving both
 margins purely proportional to depth.
 
-Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3386 Elo** for Alcyon (v6) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
+Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3386 Elo** for Alcyon (v6.0) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
 
 - CCRL's list runs at a longer time control (40 moves/15 min) and typically multi-core, vs. our single-threaded 60+0.2 test
 - The reference Stockfish 8 is built from source at tag `sf_8` with `ARCH=general-64`, so it has neither `popcnt` nor prefetch — likely *understating* its actual strength, so the true gap is probably larger
