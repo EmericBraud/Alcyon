@@ -145,14 +145,22 @@ Reglage de gamma (modele normalise, reference fixe 6,8 %) :
 | 0.8 | +29.3 +- 16.4 (500) | +4.3 +- 18.3 (400) |
 | 1.1 | +15.3 +- 18.7 (500) | +19.1 puis -7.0, ~+6 (800) |
 | **1.4** | **+37.7 +- 17.8** (500) | **+19.1 +- 17.2** (400) |
+| 1.8 | +12.5 +- 17.4 (500) | -10.2 +- 17.2 (~400) |
+
+Optimum autour de 1.4 aux deux cadences ; **active par defaut** (`TmMlp = 1`,
+`TmMlpGamma = 140`, reference fixe 6,8 %).
 
 Temps consomme (`time_usage.py`) : en 10+0.1 le modele depense ~+11 % sur
 les 30 premiers coups pour une depense totale quasi egale ; en 40+0.4 il
 depense un peu MOINS au total (-2 a -3 %). Biais suspecte : la reference fixe
 (6,8 %) est plus haute que le taux reel dans la zone de decision aux cadences
 longues (~5,8 % contre ~7,2 %), donc le facteur moyen y est < 1. Correction
-testee : reference = moyenne glissante des p predits par le moteur
-(`tm_mlp_ref=0`), facteur ~1 en moyenne a toute cadence.
+prevue : reference = moyenne glissante des p predits par le moteur
+(`tm_mlp_ref=0`), facteur ~1 en moyenne a toute cadence. **Non testee** :
+serveur arrete avant ce match (option presente, eteinte).
+
+Resultats, modeles, donnees et PGN du serveur : `alcyon-work/server-backup/`
+(hors du repo).
 
 
 ## Pourquoi ca marche alors que l'elagage appris a echoue
