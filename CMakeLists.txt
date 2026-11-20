@@ -1,4 +1,27 @@
 cmake_minimum_required(VERSION 3.14)
+
+# Sur macOS, AppleClang/libc++ ne fournit pas <experimental/simd> (libstdc++
+# uniquement) : on prend le GCC de Homebrew le plus recent, sauf si un
+# compilateur est impose (-DCMAKE_CXX_COMPILER ou variable d'env CXX).
+if(APPLE AND NOT CMAKE_CXX_COMPILER AND NOT DEFINED ENV{CXX})
+    file(GLOB _brew_gxx /opt/homebrew/bin/g++-[0-9]* /usr/local/bin/g++-[0-9]*)
+    set(_best_ver 0)
+    foreach(_gxx IN LISTS _brew_gxx)
+        if(_gxx MATCHES "g\\+\\+-([0-9]+)$" AND CMAKE_MATCH_1 GREATER _best_ver)
+            set(_best_ver ${CMAKE_MATCH_1})
+            set(_best_gxx ${_gxx})
+        endif()
+    endforeach()
+    if(_best_gxx)
+        get_filename_component(_brew_bin ${_best_gxx} DIRECTORY)
+        set(CMAKE_CXX_COMPILER ${_best_gxx})
+        set(CMAKE_C_COMPILER ${_brew_bin}/gcc-${_best_ver})
+        message(STATUS "macOS : utilisation de ${CMAKE_CXX_COMPILER}")
+    else()
+        message(FATAL_ERROR "macOS : GCC introuvable (requis pour <experimental/simd>). Installez-le : brew install gcc")
+    endif()
+endif()
+
 project(Alcyon VERSION 1.0 LANGUAGES C CXX)
 
 # --- 1. GESTION DU MODE DE COMPILATION PAR DÉFAUT ---

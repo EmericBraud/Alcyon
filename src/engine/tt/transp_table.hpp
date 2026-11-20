@@ -178,6 +178,30 @@ public:
             bucket.entries[replace_idx].save(key, move, (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age);
     }
 
+    // Lecture seule de l'entree la plus profonde pour cette cle, sans les
+    // regles de coupure de probe(). Sert au dump de docs/learned-pruning.md :
+    // au point de decision probe() a deja echoue, mais une entree trop
+    // courte ou dont la borne ne coupait pas reste une information.
+    bool peek(uint64_t key, int ply, int &score, int &depth, TTFlag &flag)
+    {
+        TTBucket &bucket = table[key & index_mask];
+        bool found = false;
+        for (int i = 0; i < 4; ++i)
+        {
+            Move m;
+            int16_t s;
+            std::uint8_t d;
+            std::uint8_t f;
+            if (!bucket.entries[i].load(key, m, s, d, f) || (found && d <= depth))
+                continue;
+            score = score_from_tt(s, ply);
+            depth = d;
+            flag = static_cast<TTFlag>(f & 0x03);
+            found = true;
+        }
+        return found;
+    }
+
     bool probe(uint64_t key, int depth, int ply, int alpha, int beta, int &return_score, Move &best_move, TTFlag &flag)
     {
         TTBucket &bucket = table[key & index_mask];

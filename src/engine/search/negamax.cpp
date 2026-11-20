@@ -35,6 +35,25 @@ namespace search
         return slot;
     }
 
+    // Eval utilisee par les decisions d'elagage : l'eval statique, ou le score
+    // d'une entree TT de borne compatible (TtEvalRefine). static_eval_stack
+    // (improving, correction history) reste l'eval statique.
+    template <Color Us>
+    inline int node_prune_eval(SearchWorker &worker, int ply, int depth, int bit)
+    {
+        const int se = node_static_eval<Us>(worker, ply);
+        if (!(engine_constants::search::TtEvalRefine & bit))
+            return se;
+        TTFlag flag = TT_EXACT;
+        int s = 0, d = 0;
+        if (worker.get_tt().peek(worker.get_board().get_hash(), ply, s, d, flag) &&
+            std::abs(s) < engine_constants::eval::MateScore - engine_constants::search::MaxDepth &&
+            d >= depth - engine_constants::search::TtEvalDepthGap &&
+            (flag == TT_EXACT || (flag == TT_BETA && s > se) || (flag == TT_ALPHA && s < se)))
+            return s;
+        return se;
+    }
+
     // "Notre position s'ameliore-t-elle ?" -- l'eval de ce noeud comparee a
     // celle de l'ancetre ply-2, qui est le dernier noeud ou c'etait deja
     // notre trait.
@@ -68,7 +87,7 @@ namespace search
         if (in_check || is_pv || depth > engine_constants::search::razoring::MaxDepth || ply == 0)
             return false;
 
-        const int static_eval = node_static_eval<Us>(worker, ply);
+        const int static_eval = node_prune_eval<Us>(worker, ply, depth, 1);
         int margin = engine_constants::search::razoring::MarginDepthFactor * depth + engine_constants::search::razoring::MarginConst;
         return static_eval + margin <= alpha;
     }
@@ -95,7 +114,7 @@ namespace search
             // Eval::prune_eval_relative). La seconde passe qui existait ici
             // n'avait d'objet que pour rattraper la tete PSQT ; elle
             // disparait avec elle.
-            const int static_eval = node_static_eval<Us>(worker, ply);
+            const int static_eval = node_prune_eval<Us>(worker, ply, depth, 2);
 
             // improving RETIRE de la marge ici. Le RFP echoue haut : il
             // parie que la position est deja si bonne qu'aucun coup ne la
@@ -202,7 +221,7 @@ namespace search
             // donc on exige une marge plus grande et on jette moins.
             const int improving = is_improving(worker, ply) ? engine_constants::search::futility_pruning::ImprovingDepthBonus : 0;
             const int futil_margin = engine_constants::search::futility_pruning::MarginConst + engine_constants::search::futility_pruning::MarginDepthFactor * (depth + improving);
-            const int static_eval = node_static_eval<Us>(worker, ply);
+            const int static_eval = node_prune_eval<Us>(worker, ply, depth, 4);
 
             if (static_eval + futil_margin <= alpha)
             {
@@ -425,7 +444,14 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     {
         int return_score;
-        if (search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score))
+        bool nmp_skip = false;
+        if (engine_constants::search::TtNmpSkip && allow_null && depth >= engine_constants::search::null_move_pruning::MinDepth && !in_check)
+        {
+            TTFlag f = TT_EXACT;
+            int s = 0, d = 0;
+            nmp_skip = shared_tt.peek(board.get_hash(), ply, s, d, f) && f == TT_ALPHA && s < beta && d >= depth - 3;
+        }
+        if (!nmp_skip && search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score))
             return return_score;
     }
 

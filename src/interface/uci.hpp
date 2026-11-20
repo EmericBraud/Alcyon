@@ -524,6 +524,9 @@ public:
             UCIOption<int>(&engine_constants::search::late_move_reduction::CutNodeBonus, "lmr_cut_node_bonus", 0, 6),
             UCIOption<int>(&engine_constants::search::late_move_reduction::NotImprovingBonus, "lmr_not_improving_bonus", 0, 3),
 
+            UCIOption<int>(&engine_constants::search::TtEvalRefine, "tt_eval_refine", 0, 7),
+            UCIOption<int>(&engine_constants::search::TtEvalDepthGap, "tt_eval_gap", 0, 99),
+            UCIOption<int>(&engine_constants::search::TtNmpSkip, "tt_nmp_skip", 0, 1),
             UCIOption<int>(&engine_constants::search::reverse_futility_pruning::ImprovingDepthBonus, "rfp_improving_d_bonus", 0, 3),
             UCIOption<int>(&engine_constants::search::futility_pruning::ImprovingDepthBonus, "fp_improving_d_bonus", 0, 3),
             UCIOption<int>(&engine_constants::search::null_move_reduction::NotImprovingDiv, "nmr_not_improving_div", 1, 4),

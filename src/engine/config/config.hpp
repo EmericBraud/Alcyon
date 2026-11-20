@@ -26,6 +26,18 @@ namespace engine_constants
         // passe et s'appuie sur l'extension singuliere). Plafonnee a
         // ply < 2 * root_depth dans tous les cas (negamax.cpp).
         PARAM_SPECIFIER int CheckExtension = 0;
+        // Affinage de l'eval d'elagage par la TT (docs/signal-entier.md) : 1 =
+        // le score d'une entree TT (meme trop peu profonde) remplace l'eval
+        // statique dans razoring / RFP / futility quand sa borne est
+        // compatible (borne basse et score > eval, borne haute et score <
+        // eval, exacte). 0 = comportement d'origine.
+        // Masque : 1 razoring, 2 RFP, 4 futility.
+        PARAM_SPECIFIER int TtEvalRefine = 0;
+        // N'utiliser l'entree TT que si sa profondeur >= depth - gap.
+        PARAM_SPECIFIER int TtEvalDepthGap = 99;
+        // 1 = pas de NMP quand la TT (profondeur >= depth - 3) donne une borne
+        // haute < beta : le null move ne peut pas passer.
+        PARAM_SPECIFIER int TtNmpSkip = 0;
         // Historiques conserves d'un coup a l'autre : chaque "go" recree ses
         // workers, dont le constructeur vide les historiques. Recharges divises
         // par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
