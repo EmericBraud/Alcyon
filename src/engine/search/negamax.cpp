@@ -524,6 +524,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
             continue;
 
         ++moves_searched;
+        const long long root_nodes_before = nodes_total;
 
         board.play<Us>(m);
 
@@ -563,6 +564,8 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         }
 
         board.unplay<Us>(m);
+        if (ply == 0)
+            root_move_nodes[m.get_from_sq()][m.get_to_sq()] += nodes_total - root_nodes_before;
 
         // --- MISE À JOUR DES SCORES ET DES TABLES ---
         if (score >= beta)

@@ -228,6 +228,17 @@ namespace engine_constants
             // Mesure sans ce garde-fou : 0,8-1,1 s consommees pour une
             // limite souple de 403 ms.
             PARAM_SPECIFIER int SoftStartPercent = 50;
+            // Part des noeuds (cumulee sur les iterations) passee sous le
+            // meilleur coup racine : facteur = (NodeBase - NodeSlope * part) / 100.
+            // NodeSlope = 0 desactive le signal.
+            PARAM_SPECIFIER int NodeBase = 150;
+            PARAM_SPECIFIER int NodeSlope = 0;
+            // Chute du score depuis l'iteration precedente (cp, > 0 = baisse) :
+            // facteur = 1 + ScoreSlope * chute / 10000, borne [ScoreMin, ScoreMax] %.
+            // ScoreSlope = 0 desactive le signal.
+            PARAM_SPECIFIER int ScoreSlope = 0;
+            PARAM_SPECIFIER int ScoreMin = 85;
+            PARAM_SPECIFIER int ScoreMax = 150;
         }
         namespace see_pruning
         {
@@ -416,6 +427,17 @@ namespace engine_constants
             // Mesure sans ce garde-fou : 0,8-1,1 s consommees pour une
             // limite souple de 403 ms.
             PARAM_SPECIFIER int SoftStartPercent = 50;
+            // Part des noeuds (cumulee sur les iterations) passee sous le
+            // meilleur coup racine : facteur = (NodeBase - NodeSlope * part) / 100.
+            // NodeSlope = 0 desactive le signal.
+            PARAM_SPECIFIER int NodeBase = 150;
+            PARAM_SPECIFIER int NodeSlope = 0;
+            // Chute du score depuis l'iteration precedente (cp, > 0 = baisse) :
+            // facteur = 1 + ScoreSlope * chute / 10000, borne [ScoreMin, ScoreMax] %.
+            // ScoreSlope = 0 desactive le signal.
+            PARAM_SPECIFIER int ScoreSlope = 0;
+            PARAM_SPECIFIER int ScoreMin = 85;
+            PARAM_SPECIFIER int ScoreMax = 150;
         }
         namespace see_pruning
         {

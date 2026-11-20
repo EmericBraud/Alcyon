@@ -290,8 +290,10 @@ void SearchWorker::iterative_deepening()
     int last_score = 0;
     Move prev_best_root = 0;
     int stable_iterations = 0; // iterations consecutives sans changement du coup racine
+    int prev_iter_score = 0;
     for (int depth = 1; depth < engine_constants::search::MaxDepth; ++depth)
     {
+        prev_iter_score = last_score;
         last_score = negamax_with_aspiration(depth, last_score);
 
         // "go depth N" : cette profondeur vient d'etre terminee, on s'arrete.
@@ -331,7 +333,17 @@ void SearchWorker::iterative_deepening()
                 static const double kStability[5] = {tc::StabilityFactor0, tc::StabilityFactor1,
                                                      tc::StabilityFactor2, tc::StabilityFactor3,
                                                      tc::StabilityFactor4};
-                const double factor = kStability[std::min(stable_iterations, 4)];
+                double factor = kStability[std::min(stable_iterations, 4)];
+                if (tc::NodeSlope != 0 && nodes_total > 0)
+                {
+                    const double frac = static_cast<double>(root_move_nodes[current_best.get_from_sq()][current_best.get_to_sq()]) / nodes_total;
+                    factor *= std::max(0.1, (tc::NodeBase - tc::NodeSlope * frac) / 100.0);
+                }
+                if (tc::ScoreSlope != 0 && depth > 1)
+                {
+                    const int drop = prev_iter_score - last_score;
+                    factor *= std::clamp(1.0 + tc::ScoreSlope * drop / 10000.0, tc::ScoreMin / 100.0, tc::ScoreMax / 100.0);
+                }
                 const double budget = soft * factor * (engine_constants::search::time::SoftStartPercent / 100.0);
                 if (manager.elapsed_ms() >= static_cast<long long>(budget))
                     shared_stop.store(true, std::memory_order_relaxed);
@@ -443,6 +455,7 @@ bool SearchWorker::check_stop()
             return true;
     }
     ++local_nodes;
+    ++nodes_total;
     return false;
 }
 

@@ -161,6 +161,10 @@ struct SearchWorker
 
     // Métriques locales
     long long local_nodes = 0;
+    // Compteur monotone (jamais remis a zero pendant la recherche) et effort
+    // cumule par coup racine [from][to], pour la gestion du temps.
+    long long nodes_total = 0;
+    long long root_move_nodes[64][64] = {};
     int thread_id;
 
     Move best_root_move = 0;
