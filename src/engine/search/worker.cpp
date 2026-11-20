@@ -438,7 +438,18 @@ void SearchWorker::iterative_deepening()
                 {
                     // Facteur = (p / reference)^gamma : la table de stabilite
                     // suivait deja le rapport du risque de changement au taux de base.
-                    const double ratio = std::max(tm_p_change, 1e-4) / (tc::TmMlpRef / 1000.0);
+                    // Reference : fixe (TmMlpRef pour mille), ou moyenne glissante des
+                    // p predits par le moteur lui-meme (TmMlpRef = 0) pour que le facteur
+                    // vaille ~1 en moyenne a toute cadence : le modele redistribue alors
+                    // le temps entre coups sans decaler la depense totale.
+                    static double p_ema = 0.068;
+                    double ref = tc::TmMlpRef / 1000.0;
+                    if (tc::TmMlpRef == 0)
+                    {
+                        ref = p_ema;
+                        p_ema += 0.01 * (tm_p_change - p_ema);
+                    }
+                    const double ratio = std::max(tm_p_change, 1e-4) / ref;
                     factor = std::clamp(std::pow(ratio, tc::TmMlpGamma / 100.0), tc::TmMlpMin / 100.0, tc::TmMlpMax / 100.0);
                 }
                 if (tc::NodeSlope != 0 && nodes_total > 0)

@@ -535,7 +535,7 @@ public:
             UCIOption<int>(&engine_constants::search::time::ScoreMin, "tm_score_min", 10, 100),
             UCIOption<int>(&engine_constants::search::time::ScoreMax, "tm_score_max", 100, 400),
             UCIOption<int>(&engine_constants::search::time::TmMlp, "tm_mlp", 0, 1),
-            UCIOption<int>(&engine_constants::search::time::TmMlpRef, "tm_mlp_ref", 1, 500),
+            UCIOption<int>(&engine_constants::search::time::TmMlpRef, "tm_mlp_ref", 0, 500),
             UCIOption<int>(&engine_constants::search::time::TmMlpGamma, "tm_mlp_gamma", 0, 200),
             UCIOption<int>(&engine_constants::search::time::TmMlpMin, "tm_mlp_min", 10, 100),
             UCIOption<int>(&engine_constants::search::time::TmMlpMax, "tm_mlp_max", 100, 500),
