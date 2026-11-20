@@ -15,7 +15,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 | v5.3 | 60s+0.2s | 126 | 52.0 / 126 (41.3%) — 24W / 46L / 56D | **-61 ± 34** ‡ |
 | v5.4 | 60s+0.2s | 982 | 452.5 / 982 (46.1%) — 265W / 342L / 375D | **-27.3 ± 15.8** ‡§ |
 | v5.5 | 60s+0.2s | 1224 | 607.5 / 1224 (49.6%) — 394W / 403L / 427D | **-2.6 ± 13.9** ‡§ |
-| v6 | 60s+0.2s | 788 | 424.5 / 788 (53.9%) — 278W / 217L / 293D | **+27.0 ± 16.3** ¶ |
+| v6 | 60s+0.2s | 820 | 442.0 / 820 (53.9%) — 288W / 224L / 308D | **+27.2 ± 15.9** ¶ |
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
@@ -55,9 +55,10 @@ them, but not strictly the same control as the rows above.
 concurrency 32, the same concurrency as the v5.4 and v5.5 rows, so it carries
 the same memory-bandwidth bias against Alcyon and compares directly with them.
 Unlike those rows, it runs the nominal 60s+0.2s (no OpenBench scaling).
-Measurement in progress: 788 of 1200 games, LOS 97.4% from decisive games (99.94% as fastchess computes it, over game pairs). A parallel run on an
-Apple Silicon laptop at concurrency 4 stood at 51W / 34L / 54D (+43 Elo, 139
-games), consistent with a smaller bias there.
+The run was stopped at 820 of 1200 planned games: LOS 97.7% from decisive
+games (99.96% as fastchess computes it, over game pairs). A parallel run on an
+Apple Silicon laptop at concurrency 4 stopped at 58W / 37L / 56D (about +49
+Elo, 151 games), consistent with a smaller bias there.
 
 v6 keeps the v5 network and changes two things in the search, both built on
 one observation: a transposition-table entry carries strong bound
@@ -158,6 +159,6 @@ Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdo
 
 - CCRL's list runs at a longer time control (40 moves/15 min) and typically multi-core, vs. our single-threaded 60+0.2 test
 - The reference Stockfish 8 is built from source at tag `sf_8` with `ARCH=general-64`, so it has neither `popcnt` nor prefetch — likely *understating* its actual strength, so the true gap is probably larger
-- 788 games still leaves a wide confidence interval (±16.3 Elo from sampling alone)
+- 820 games still leaves a wide confidence interval (±15.9 Elo from sampling alone)
 
 An actual CCRL-comparable number would require running on CCRL's reference hardware/time control (or submitting the engine to CCRL directly, which accepts community submissions) and a fully optimized reference build for every opponent.
