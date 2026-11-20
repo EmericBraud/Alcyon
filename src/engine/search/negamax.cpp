@@ -304,7 +304,7 @@ namespace search
     }
 
     template <Color Us>
-    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, bool improving, Move tt_move, int alpha, int &score)
+    inline bool late_move_reduction_search(SearchWorker &worker, int depth, int ply, bool in_check, bool is_tactical, int moves_searched, int extension, bool cut_node, bool improving, Move tt_move, int alpha, int &score, int r_adj = 0)
     {
         if (depth >= engine_constants::search::late_move_reduction::MinDepth && moves_searched >= engine_constants::search::late_move_reduction::MinMovesSearched && !is_tactical && !in_check && extension == 0)
         {
@@ -315,6 +315,7 @@ namespace search
             // Position qui ne s'ameliore pas : rien n'indique que ces coups
             // tardifs meritent leur profondeur, on reduit plus fort.
             r += engine_constants::search::late_move_reduction::NotImprovingBonus * !improving;
+            r += r_adj;
             r = std::clamp(r, 0, depth - engine_constants::search::late_move_reduction::MaxDepthReduction);
 
             // Sonde speculative : on ATTEND son echec, donc on declare
@@ -442,14 +443,28 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
 
     // =============================== Search ===============================
 
+    int lmr_adj = 0;
     {
         int return_score;
         bool nmp_skip = false;
-        if (engine_constants::search::TtNmpSkip && allow_null && depth >= engine_constants::search::null_move_pruning::MinDepth && !in_check)
+        if ((engine_constants::search::TtNmpSkip || engine_constants::search::TtLmrBound) && !in_check && !is_pv)
         {
             TTFlag f = TT_EXACT;
             int s = 0, d = 0;
-            nmp_skip = shared_tt.peek(board.get_hash(), ply, s, d, f) && f == TT_ALPHA && s < beta && d >= depth - 3;
+            if (shared_tt.peek(board.get_hash(), ply, s, d, f))
+            {
+                // Entree meme trop peu profonde : sa borne predit fortement
+                // l'issue (borne haute < beta : P(FH) ~ 0.14 ; basse >= beta : ~0.92).
+                if (engine_constants::search::TtNmpSkip && f == TT_ALPHA && s < beta &&
+                    d >= depth - engine_constants::search::TtNmpGap)
+                    nmp_skip = true;
+                if ((engine_constants::search::TtLmrBound & 1) && f == TT_ALPHA && s <= alpha)
+                    lmr_adj = 1;
+                if ((engine_constants::search::TtLmrBound & 2) && f == TT_BETA && s >= beta)
+                    lmr_adj = 1;
+                if ((engine_constants::search::TtLmrBound & 4) && f == TT_BETA && s >= beta)
+                    lmr_adj = -1;
+            }
         }
         if (!nmp_skip && search::nmp<Us>(*this, depth, ply, allow_null, in_check, is_mate_node, alpha, beta, return_score))
             return return_score;
@@ -529,7 +544,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         if (ply + new_depth >= engine_constants::search::MaxDepth)
             new_depth = engine_constants::search::MaxDepth - ply;
 
-        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, improving, tt_move, alpha, score))
+        if (!search::late_move_reduction_search<Us>(*this, depth, ply, in_check, is_tactical, moves_searched, extension, cut_node, improving, tt_move, alpha, score, lmr_adj))
         {
             if (moves_searched > 1) // Null Window Search pour PVS
             {

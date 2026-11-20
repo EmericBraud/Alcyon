@@ -40,6 +40,10 @@ namespace engine_constants
         // 1 = pas de NMP quand la TT (profondeur >= depth - 3) donne une borne
         // haute < beta : le null move ne peut pas passer.
         PARAM_SPECIFIER int TtNmpSkip = 0;
+        PARAM_SPECIFIER int TtNmpGap = 3;
+        // Ajustement LMR par borne TT (masque) : 1 +1 si borne haute <= alpha,
+        // 2 +1 si borne basse >= beta, 4 -1 si borne basse >= beta.
+        PARAM_SPECIFIER int TtLmrBound = 0;
         // Historiques conserves d'un coup a l'autre : chaque "go" recree ses
         // workers, dont le constructeur vide les historiques. Recharges divises
         // par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.
