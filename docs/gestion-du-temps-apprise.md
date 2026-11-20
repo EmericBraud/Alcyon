@@ -134,8 +134,12 @@ coup (-0.3). Parite C++ / Python verifiee. Reference du facteur : 6,8 %.
 
 | Cadence | Elo | Parties |
 |---|---|---|
-| 10+0.1 | (en cours) | 500 |
-| 40+0.4 | (en cours) | 400 |
+| 10+0.1 | **+29.3 +- 16.4** | 500 |
+| 40+0.4 | +4.3 +- 18.3 | 400 |
+
+La normalisation supprime la regression a cadence longue (-52 -> +4) et
+garde le gain en 10+0.1, mais le gain fond en 40+0.4. Reglage de gamma en
+40+0.4 en cours.
 
 
 ## Pourquoi ca marche alors que l'elagage appris a echoue
