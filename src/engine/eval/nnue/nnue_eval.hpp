@@ -339,6 +339,17 @@ namespace nnue
             initialize_perspective<BLACK>(board);
         }
 
+        // l0 du camp au trait (voir NnueModel::get_l0).
+        template <class L0>
+        void get_l0(const Board &board, L0 &out) const
+        {
+            materialize();
+            if (board.get_side_to_move() == WHITE)
+                model.template get_l0<WHITE>(out);
+            else
+                model.template get_l0<BLACK>(out);
+        }
+
         // `board` must be the position at the current ply (lazy_depth).
         std::int32_t evaluate_abs(const Board &board) const
         {

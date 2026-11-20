@@ -10,6 +10,8 @@
 #include "engine/search/tm_mlp_weights.hpp"
 
 #include <algorithm>
+#include <array>
+#include <string>
 #include <cmath>
 #include <bit>
 #include <limits>
@@ -321,6 +323,24 @@ namespace
 
 void SearchWorker::iterative_deepening()
 {
+    // Accumulateur de la racine (l0 du camp au trait), pour apprendre les
+    // fenetres d'aspiration avec la "texture" de la position (ALCYON_TM_L0).
+    static const bool l0_log = std::getenv("ALCYON_TM_L0") != nullptr;
+    if (l0_log && thread_id == 0)
+    {
+        std::array<std::uint8_t, 1024> l0;
+        board.nnue_l0(l0);
+        static const char *hex = "0123456789abcdef";
+        std::string line = "L0 ";
+        line.reserve(3 + 2048 + 1);
+        for (auto v : l0)
+        {
+            line += hex[v >> 4];
+            line += hex[v & 15];
+        }
+        line += '\n';
+        std::fputs(line.c_str(), stderr);
+    }
     int last_score = 0;
     Move prev_best_root = 0;
     int stable_iterations = 0; // iterations consecutives sans changement du coup racine

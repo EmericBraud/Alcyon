@@ -24,6 +24,7 @@ import time
 import sys
 
 import chess
+import numpy as np
 import chess.pgn
 
 
@@ -95,8 +96,11 @@ def worker(args):
         for line in eng.p.stderr:
             if line.startswith("TM "):
                 q.put(line.split()[1:])
+            elif line.startswith("L0 "):
+                q.put(("L0", line[3:].strip()))
     threading.Thread(target=pump, daemon=True).start()
 
+    l0_out = open(out_path + ".l0", "wb") if os.environ.get("ALCYON_TM_L0") else None
     with open(out_path, "w") as out:
         for gid, fen, moves, min_ply, every in jobs:
             eng.send("ucinewgame")
@@ -116,17 +120,25 @@ def worker(args):
                     mt = min(8000, 3 * soft + 100)
                 eng.search(fen, moves[:ply], mt)
                 time.sleep(0.02)
-                rows = []
+                rows, l0 = [], None
                 while not q.empty():
-                    rows.append(q.get())
+                    item = q.get()
+                    if isinstance(item, tuple):
+                        l0 = item[1]
+                    else:
+                        rows.append(item)
                 if not rows:
                     continue
+                if l0 is not None and l0_out is not None:
+                    l0_out.write(np.array([gid, ply], dtype=np.int32).tobytes() + bytes.fromhex(l0))
                 final = rows[-1][-1]
                 for r in rows:
                     if mixed:
                         r[2] = str(soft)
                     out.write("\t".join([str(gid), str(ply)] + r + [final]) + "\n")
             out.flush()
+    if l0_out is not None:
+        l0_out.close()
     eng.send("quit")
 
 
@@ -156,6 +168,13 @@ def main():
             with open(p) as f:
                 out.write(f.read())
             os.remove(p)
+    if os.environ.get("ALCYON_TM_L0"):
+        # Un enregistrement par position : int32 partie, int32 ply, 1024 octets.
+        with open(a.out + ".l0", "wb") as out:
+            for p in parts:
+                with open(p + ".l0", "rb") as f:
+                    out.write(f.read())
+                os.remove(p + ".l0")
 
 
 if __name__ == "__main__":
