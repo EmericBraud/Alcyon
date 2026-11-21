@@ -81,3 +81,22 @@ rapporte peu : les entrees profondes ont deja ete reutilisees avant d'etre
 evincees. Restent a explorer, hors SPRT d'abord (nps, taux de coupure a
 noeuds fixes) : entrees compactes (capacite), hierarchie adaptee au cache
 (vitesse d'acces).
+
+## Test hors SPRT : capacite
+
+Noeuds (compteur de recherche, hors qsearch) pour atteindre une profondeur
+fixe, 60 positions UHO, une recherche par position (TT vide au depart) :
+
+| Hash | prof. 13, moyenne geo. | prof. 17, moyenne geo. |
+|---|---|---|
+| 2 Mo | 14 250 | 69 827 |
+| 4 Mo | 12 941 | 78 060 |
+| 8 Mo | 13 747 | 72 796 |
+| 16 Mo | 12 969 | 75 152 |
+| 64 Mo | 12 639 | 79 869 |
+
+Aucun effet de la taille, meme a 2 Mo et profondeur 17 : les ecarts sont du
+bruit (non monotones). La capacite n'est pas un goulot aux profondeurs
+atteintes en partie ; les entrees compactes (capacite x2) ont donc peu de
+chances de rapporter, sauf a cadence tres longue. Reste la vitesse d'acces
+(hierarchie adaptee au cache), a mesurer en noeuds par seconde.
