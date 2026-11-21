@@ -16,6 +16,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 | v5.4 | 60s+0.2s | 982 | 452.5 / 982 (46.1%) — 265W / 342L / 375D | **-27.3 ± 15.8** ‡§ |
 | v5.5 | 60s+0.2s | 1224 | 607.5 / 1224 (49.6%) — 394W / 403L / 427D | **-2.6 ± 13.9** ‡§ |
 | v6.0 | 60s+0.2s | 820 | 442.0 / 820 (53.9%) — 288W / 224L / 308D | **+27.2 ± 15.9** ¶ |
+| v6.1 | 60s+0.2s | 428 | 241.0 / 428 (56.3%) — 155W / 101L / 172D | **+44.1 ± 19.6** ¶ |
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
@@ -59,6 +60,21 @@ The run was stopped at 820 of 1200 planned games: LOS 97.7% from decisive
 games (99.96% as fastchess computes it, over game pairs). A parallel run on an
 Apple Silicon laptop at concurrency 4 stopped at 58W / 37L / 56D (about +49
 Elo, 151 games), consistent with a smaller bias there.
+
+v6.1 was measured in the same conditions as v6.0 (AWS `c8g.16xlarge`,
+concurrency 32), stopped at 428 games: LOS 99.1% from decisive games (100.00%
+as fastchess computes it). It is v6.0 plus a learned time manager: a small
+MLP (11 inputs -> 64 -> 32 -> 1), evaluated once per iteration, predicts the
+probability that the best move changes at the next iteration and replaces the
+fixed stability table in the soft time limit. Its inputs are normalised to be
+independent of the time control (iterations the budget still allows, in log
+base EBF, and the observed EBF, instead of absolute depth and node count) and
+it was trained on searches run under randomly drawn time controls from 5+0.05
+to 60+0.6. In self-play against v6.0 it scored **+37.7 ± 17.8** at 10s+0.1s and
+**+19.1 ± 17.2** at 40s+0.4s; a first version trained on fixed 1-second
+searches had gained +28 at 10s+0.1s but lost 52 Elo at 40s+0.4s, because its
+strongest inputs only meant something at the time control it was trained on.
+Full account in [gestion-du-temps-apprise.md](gestion-du-temps-apprise.md).
 
 v6.0 keeps the v5 network and changes two things in the search, both built on
 one observation: a transposition-table entry carries strong bound
@@ -155,10 +171,10 @@ analytical calibration that preceded it: both margin constants were driven to
 or below zero and the depth slopes picked the work up instead, leaving both
 margins purely proportional to depth.
 
-Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3386 Elo** for Alcyon (v6.0) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
+Stockfish 8 is rated **~3359 Elo** on the [CCRL 40/15 list](https://ccrl.chessdom.com/ccrl/4040/rating_list_all.html). Naively offsetting that by the measured match gap gives a **very rough, unofficial estimate of ~3403 Elo** for Alcyon (v6.1) in this configuration — **this is not a CCRL rating** and shouldn't be read as one. It ignores several confounders:
 
 - CCRL's list runs at a longer time control (40 moves/15 min) and typically multi-core, vs. our single-threaded 60+0.2 test
 - The reference Stockfish 8 is built from source at tag `sf_8` with `ARCH=general-64`, so it has neither `popcnt` nor prefetch — likely *understating* its actual strength, so the true gap is probably larger
-- 820 games still leaves a wide confidence interval (±15.9 Elo from sampling alone)
+- 428 games still leaves a wide confidence interval (±19.6 Elo from sampling alone)
 
 An actual CCRL-comparable number would require running on CCRL's reference hardware/time control (or submitting the engine to CCRL directly, which accepts community submissions) and a fully optimized reference build for every opponent.

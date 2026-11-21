@@ -175,3 +175,8 @@ modele n'est appele qu'une fois par iteration, donc son cout est nul.
 - Arreter en cours d'iteration (aujourd'hui seulement en fin d'iteration).
 - Reentrainer sur des donnees generees par la version qui utilise le MLP.
 - Ajouter l'ecart de score avec le 2e coup (demande une recherche MultiPV).
+
+## Validation : v6.1 contre Stockfish 8
+
+60+0.2, concurrence 32, memes conditions que v6.0 : **+44.1 +- 19.6** sur 428
+parties (155 V / 101 D / 172 N), contre +27.2 +- 15.9 pour v6.0. Valide en v6.1.

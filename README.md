@@ -8,7 +8,7 @@ High-Performance Chess Engine in C++
 
 <sub>Formerly known as Chess26.</sub>
 
-![Version](https://img.shields.io/badge/version-v6.0-blue)
+![Version](https://img.shields.io/badge/version-v6.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Language](https://img.shields.io/badge/language-C%2B%2B23-blue)
 
@@ -44,9 +44,11 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 | v5.3 | 60s+0.2s | 126 | 3.2% | **-61 ± 34** | ~3298 |
 | v5.4 | 60s+0.2s | 982 | 1.4% | **-27.3 ± 15.8** | ~3332 |
 | v5.5 | 60s+0.2s | 1224 | 41.1% | -2.6 ± 13.9 | ~3356 |
-| v6.0 | 60s+0.2s | 820 | **97.7%** | **+27.2 ± 15.9** | **~3386** |
+| v6.0 | 60s+0.2s | 820 | 97.7% | +27.2 ± 15.9 | ~3386 |
+| v6.1 | 60s+0.2s | 428 | **99.1%** | **+44.1 ± 19.6** | **~3403** |
 
-v6.0 is the first version **ahead of Stockfish 8** at this time control.
+v6.0 was the first version **ahead of Stockfish 8** at this time control; v6.1
+adds a learned time manager.
 
 † LOS — likelihood of superiority — is the probability that Alcyon is the
 stronger engine, from the decisive games only: `Φ((W−L)/√(2(W+L)))`. It answers
