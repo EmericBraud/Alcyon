@@ -33,7 +33,8 @@ def load(path):
     X = np.column_stack([d, np.minimum(st, 20), fb, fs, np.abs(scc), np.abs(pvc - scc), rm, sel - d, pc])[m]
     y = np.log1p(np.abs(nxt - sc))[m]
 
-    raw = np.fromfile(path + ".l0", dtype=np.uint8).reshape(-1, 8 + 1024)
+    raw = np.fromfile(path + ".l0", dtype=np.uint8)
+    raw = raw[: len(raw) // 1032 * 1032].reshape(-1, 8 + 1024)
     ids = raw[:, :8].copy().view(np.int32).reshape(-1, 2)
     key_l0 = ids[:, 0].astype(np.int64) * 1000 + ids[:, 1]
     order = np.argsort(key_l0)
@@ -57,10 +58,11 @@ class Net(nn.Module):
         return self.o(torch.relu(self.h(torch.cat([z, s], 1)))).squeeze(1)
 
 
-def fit(use_l0, Xs, L0, idx, y, tr, te, epochs=4):
+def fit(use_l0, Xs, L0, idx, y, tr, te, epochs=int(os.environ.get("ASP_EPOCHS", "12"))):
     torch.manual_seed(0)
     net = Net(Xs.shape[1], use_l0)
     opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
     Xt = torch.tensor(Xs, dtype=torch.float32)
     yt = torch.tensor(y, dtype=torch.float32)
     L0t = torch.tensor(L0, dtype=torch.uint8)
@@ -75,6 +77,7 @@ def fit(use_l0, Xs, L0, idx, y, tr, te, epochs=4):
             opt.zero_grad()
             loss.backward()
             opt.step()
+        sched.step()
     with torch.no_grad():
         tei = torch.tensor(np.where(te)[0])
         pred = np.concatenate([net(L0t[idxt[tei[b:b + 65536]]].float() / 127.0, Xt[tei[b:b + 65536]]).numpy()
