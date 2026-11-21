@@ -44,5 +44,19 @@ en moins par rapport aux seuls signaux de recherche.
 |---|---|
 | c = 3 | +12.5 +- 18.1 |
 | c = 2 | +16.0 +- 18.7 |
-| c = 2 (2e serie) | (en cours) |
-| c = 2, 40+0.4 | (en cours) |
+| c = 2 (2e serie) | -16.7 +- 17.7 |
+| **c = 2, cumul** | **~0 +- 13** (1000) |
+| c = 2, 40+0.4 | -12.7 +- 25.8 (192, arrete) |
+
+**Neutre : piste fermee** (option `asp_mlp` laissee eteinte sur la branche,
+non fusionnee).
+
+## Pourquoi ca n'a pas marche alors que la gestion du temps a marche
+
+La cible etait propre et le modele predit nettement mieux que la regle fixe
+(17 % d'echecs au lieu de 22 % a largeur egale). Mais l'enjeu sous-jacent est
+faible : une fenetre ratee coute une re-recherche qui reutilise presque tout
+via la TT. Gagner 5 points d'echec ne change presque rien au temps total. La
+gestion du temps, elle, engage une iteration entiere (~la moitie du temps du
+coup) a chaque decision. Lecon : avant d'apprendre une decision, mesurer ce
+qu'une mauvaise decision coute vraiment.
