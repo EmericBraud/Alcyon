@@ -26,9 +26,15 @@ namespace search
         int &slot = worker.static_eval_stack[ply];
         if (slot == SearchWorker::kEvalNone)
         {
-            slot = Eval::prune_eval_relative<Us>(worker.get_board(),
-                                                 -engine_constants::eval::Inf,
-                                                 engine_constants::eval::Inf);
+            // Eval brute relue en TT si la position y est (TtEvalCache) :
+            // evite de recalculer le reseau sur un noeud deja vu.
+            int raw;
+            if (!(engine_constants::search::TtEvalCache && worker.get_tt().probe_eval(worker.get_board().get_hash(), raw)))
+                raw = Eval::prune_eval_relative<Us>(worker.get_board(),
+                                                    -engine_constants::eval::Inf,
+                                                    engine_constants::eval::Inf);
+            worker.raw_eval_stack[ply] = raw;
+            slot = raw;
             if (std::abs(slot) < engine_constants::eval::SyzygyScore - 1000)
                 slot += worker.correction<Us>();
         }
@@ -572,7 +578,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         {
             if (search::order_stats_enabled())
                 search::record_cutoff(moves_searched, is_tactical);
-            shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m);
+            shared_tt.store(board.get_hash(), depth, ply, score, TT_BETA, m, (engine_constants::search::TtEvalCache && static_eval_stack[ply] != kEvalNone ? int16_t(raw_eval_stack[ply]) : TTEntry::kNoEval));
             // Correction history : borne basse informative si elle depasse l'eval.
             if (engine_constants::search::CorrHist && !in_check && !is_tactical && excluded_move == 0 &&
                 static_eval_stack[ply] != kEvalNone && score > static_eval_stack[ply] &&
@@ -663,7 +669,7 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
         (flag == TT_EXACT || best_score < static_eval_stack[ply]) &&
         std::abs(best_score) < engine_constants::eval::SyzygyScore - 1000)
         update_correction<Us>(best_score - static_eval_stack[ply], depth);
-    shared_tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node);
+    shared_tt.store(board.get_hash(), depth, ply, best_score, flag, best_move_this_node, (engine_constants::search::TtEvalCache && static_eval_stack[ply] != kEvalNone ? int16_t(raw_eval_stack[ply]) : TTEntry::kNoEval));
 
     return best_score;
 }

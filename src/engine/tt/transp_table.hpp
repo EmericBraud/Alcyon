@@ -22,27 +22,36 @@ enum TTFlag : std::uint8_t
 
 struct TTEntry
 {
+    // key : 48 bits de cle (verification) | 16 bits hauts = eval statique
+    // brute du camp au trait (kNoEval si inconnue). L'index du paquet vient
+    // des bits bas, donc 48 bits suffisent largement a la verification.
+    static constexpr uint64_t kKeyMask = 0x0000FFFFFFFFFFFFULL;
+    static constexpr int16_t kNoEval = INT16_MIN;
     uint64_t key;
     uint64_t data;
-    void save(uint64_t k, Move m, int16_t s, std::uint8_t d, std::uint8_t f)
+    void save(uint64_t k, Move m, int16_t s, std::uint8_t d, std::uint8_t f, int16_t e = kNoEval)
     {
         uint64_t d_pack = (uint64_t)m.get_value() |
                           ((uint64_t)(uint16_t)s << 32) |
                           ((uint64_t)d << 48) |
                           ((uint64_t)f << 56);
 
-        data = d_pack ^ k; // XOR Trick
-        key = k;
+        data = d_pack ^ (k & kKeyMask); // XOR Trick
+        key = (k & kKeyMask) | ((uint64_t)(uint16_t)e << 48);
     }
+
+    bool matches(uint64_t k_target) const { return key != 0 && ((key ^ k_target) & kKeyMask) == 0; }
+    int16_t eval() const { return (int16_t)(uint16_t)(key >> 48); }
+    void set_eval(int16_t e) { key = (key & kKeyMask) | ((uint64_t)(uint16_t)e << 48); }
 
     bool load(uint64_t k_target, Move &m, int16_t &s, std::uint8_t &d, std::uint8_t &f) const
     {
         const uint64_t k = key;
 
-        if (k == k_target)
+        if (k != 0 && ((k ^ k_target) & kKeyMask) == 0)
         {
             const uint64_t d_xor = data;
-            const uint64_t d_pack = d_xor ^ k;
+            const uint64_t d_pack = d_xor ^ (k & kKeyMask);
             m = Move(static_cast<uint32_t>(d_pack & 0xFFFFFFFF));
             s = static_cast<int16_t>((d_pack >> 32) & 0xFFFF);
             d = static_cast<std::uint8_t>((d_pack >> 48) & 0xFF);
@@ -118,7 +127,7 @@ public:
 
     void next_generation() { current_age = (current_age + 4) & 0xFC; }
 
-    void store(uint64_t key, int depth, int ply, int score, std::uint8_t flag, Move move)
+    void store(uint64_t key, int depth, int ply, int score, std::uint8_t flag, Move move, int16_t eval = TTEntry::kNoEval)
     {
         TTBucket &bucket = table[key & index_mask];
         int replace_idx = -1;
@@ -129,7 +138,7 @@ public:
             // Lecture directe non-atomique
             uint64_t k_old = bucket.entries[i].key;
 
-            if (k_old == key)
+            if (bucket.entries[i].matches(key))
             {
                 Move m_prev;
                 int16_t s_prev;
@@ -147,11 +156,14 @@ public:
                         replace = abs(score) < abs(s_prev); // PLUS COURT = MEILLEUR
                     else
                         replace = depth >= d_prev || old_gen;
+                    const int16_t e_keep = (eval != TTEntry::kNoEval) ? eval : bucket.entries[i].eval();
                     if (replace)
                     {
                         bucket.entries[i].save(key, (move != 0) ? move : m_prev,
-                                               (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age);
+                                               (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age, e_keep);
                     }
+                    else if (eval != TTEntry::kNoEval)
+                        bucket.entries[i].set_eval(eval);
                 }
                 return;
             }
@@ -162,7 +174,7 @@ public:
                 break;
             }
 
-            uint64_t d_pack = bucket.entries[i].data ^ k_old;
+            uint64_t d_pack = bucket.entries[i].data ^ (k_old & TTEntry::kKeyMask);
             std::uint8_t d_old = (std::uint8_t)((d_pack >> 48) & 0xFF);
             std::uint8_t f_old = (std::uint8_t)((d_pack >> 56) & 0xFF);
 
@@ -175,7 +187,7 @@ public:
         }
 
         if (replace_idx != -1)
-            bucket.entries[replace_idx].save(key, move, (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age);
+            bucket.entries[replace_idx].save(key, move, (int16_t)score_to_tt(score, ply), (std::uint8_t)depth, flag | current_age, eval);
     }
 
     // Lecture seule de l'entree la plus profonde pour cette cle, sans les
@@ -267,6 +279,19 @@ public:
         // only place where the absence of any search result makes a
         // static GPU score the best available answer. See
         // docs/gpu-async-eval/consultative-eval-measurements.md.
+        return false;
+    }
+
+    // Eval statique brute memorisee pour cette cle (camp au trait).
+    bool probe_eval(uint64_t key, int &eval) const
+    {
+        const TTBucket &bucket = table[key & index_mask];
+        for (int i = 0; i < 4; ++i)
+            if (bucket.entries[i].matches(key) && bucket.entries[i].eval() != TTEntry::kNoEval)
+            {
+                eval = bucket.entries[i].eval();
+                return true;
+            }
         return false;
     }
 
