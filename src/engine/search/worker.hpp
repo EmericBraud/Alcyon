@@ -158,6 +158,8 @@ struct SearchWorker
     // reel, tous bornes par eval::Inf.
     static constexpr int kEvalNone = 1 << 30;
     int static_eval_stack[engine_constants::search::MaxDepth + 8];
+    // Eval brute (avant correction) du meme noeud, pour la memoriser en TT.
+    int raw_eval_stack[engine_constants::search::MaxDepth + 8];
 
     // Métriques locales
     long long local_nodes = 0;

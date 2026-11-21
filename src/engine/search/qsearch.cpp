@@ -23,7 +23,11 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
 
     if (!in_check)
     {
-        stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
+        int raw;
+        if (!(engine_constants::search::TtEvalCache && shared_tt.probe_eval(board.get_hash(), raw)))
+            raw = Eval::eval_relative<Us>(board, alpha, beta);
+        raw_eval_stack[ply] = raw;
+        stand_pat = raw;
         if (std::abs(stand_pat) < engine_constants::eval::SyzygyScore - 1000)
             stand_pat += correction<Us>();
         if (stand_pat >= beta)
@@ -97,7 +101,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
         if (score >= beta)
         {
             // Stockage avec normalisation du score de mat (via ply interne à store)
-            shared_tt.store(board.get_hash(), 0, ply, beta, TT_BETA, m);
+            shared_tt.store(board.get_hash(), 0, ply, beta, TT_BETA, m, (engine_constants::search::TtEvalCache && !in_check ? int16_t(raw_eval_stack[ply]) : TTEntry::kNoEval));
             return beta;
         }
 
@@ -124,7 +128,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
 
     // 8. Sauvegarde TT finale
     flag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-    shared_tt.store(board.get_hash(), 0, ply, best_score, flag, best_move);
+    shared_tt.store(board.get_hash(), 0, ply, best_score, flag, best_move, (engine_constants::search::TtEvalCache && !in_check ? int16_t(raw_eval_stack[ply]) : TTEntry::kNoEval));
 
     return best_score;
 }

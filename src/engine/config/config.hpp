@@ -42,6 +42,9 @@ namespace engine_constants
         // Valide avec gap 99 (toute profondeur) : +24.4 +- 17.1 sur 500 parties
         // (5+0.05, UHO). Gap 3 : +24.2 +- 24.4 sur 216.
         PARAM_SPECIFIER int TtNmpSkip = 1;
+        // 1 = eval statique brute memorisee en TT et relue au lieu de
+        // recalculer le reseau.
+        PARAM_SPECIFIER int TtEvalCache = 0;
         PARAM_SPECIFIER int TtNmpGap = 99;
         // Ajustement LMR par borne TT (masque) : 1 +1 si borne haute <= alpha,
         // 2 +1 si borne basse >= beta, 4 -1 si borne basse >= beta.
