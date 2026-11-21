@@ -71,6 +71,12 @@ namespace engine_constants
             PARAM_SPECIFIER int WidenMaxDelta = 2000;
             PARAM_SPECIFIER int MaxIterations = 4;
             PARAM_SPECIFIER int MateWindowMargin = 256;
+            // Delta appris (tools/time_management/train_asp_l0.py) :
+            // delta = AspC / 10 * exp(prediction), borne [AspMin, AspMax].
+            PARAM_SPECIFIER int AspMlp = 0;
+            PARAM_SPECIFIER int AspC = 30;
+            PARAM_SPECIFIER int AspMin = 8;
+            PARAM_SPECIFIER int AspMax = 400;
         }
 
         namespace razoring
@@ -289,6 +295,12 @@ namespace engine_constants
             PARAM_SPECIFIER int WidenMaxDelta = 2000;
             PARAM_SPECIFIER int MaxIterations = 5;
             PARAM_SPECIFIER int MateWindowMargin = 256;
+            // Delta appris (tools/time_management/train_asp_l0.py) :
+            // delta = AspC / 10 * exp(prediction), borne [AspMin, AspMax].
+            PARAM_SPECIFIER int AspMlp = 0;
+            PARAM_SPECIFIER int AspC = 30;
+            PARAM_SPECIFIER int AspMin = 8;
+            PARAM_SPECIFIER int AspMax = 400;
         }
 
         namespace razoring

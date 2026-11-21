@@ -165,6 +165,12 @@ struct SearchWorker
     // cumule par coup racine [from][to], pour la gestion du temps.
     long long nodes_total = 0;
     long long root_move_nodes[64][64] = {};
+    // Fenetre d'aspiration apprise : projection de l0 de la racine (calculee
+    // une fois par coup) et signaux de fin d'iteration (thread 0).
+    float asp_z[16] = {};
+    bool asp_z_valid = false;
+    float asp_feat[9] = {};
+    int asp_feat_depth = -1;
     int thread_id;
 
     Move best_root_move = 0;

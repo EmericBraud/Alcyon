@@ -8,6 +8,7 @@
 #include "engine/engine_manager.hpp"
 #include "worker.hpp"
 #include "engine/search/tm_mlp_weights.hpp"
+#include "engine/search/asp_mlp_weights.hpp"
 
 #include <algorithm>
 #include <array>
@@ -191,6 +192,30 @@ int SearchWorker::negamax_with_aspiration(int depth, int last_score)
         delta = engine_constants::search::aspiration::HighDelta;
     else if (depth >= engine_constants::search::aspiration::MidDepth)
         delta = engine_constants::search::aspiration::MidDelta;
+    // Delta appris : ampleur prevue de la variation du score a cette
+    // iteration, a partir des signaux de l'iteration precedente et de l'etat
+    // de la racine (l0, projete une fois par coup).
+    namespace asp = engine_constants::search::aspiration;
+    if (asp::AspMlp && asp_z_valid && asp_feat_depth == depth - 1)
+    {
+        float x[16 + asp_mlp::kScal];
+        for (int i = 0; i < 16; ++i)
+            x[i] = asp_z[i];
+        for (int i = 0; i < asp_mlp::kScal; ++i)
+            x[16 + i] = (asp_feat[i] - asp_mlp::kMean[i]) / asp_mlp::kScale[i];
+        float h[32];
+        for (int j = 0; j < 32; ++j)
+        {
+            float acc = asp_mlp::kHb[j];
+            for (int i = 0; i < 16 + asp_mlp::kScal; ++i)
+                acc += asp_mlp::kHw[j * (16 + asp_mlp::kScal) + i] * x[i];
+            h[j] = std::max(acc, 0.0f);
+        }
+        float out = asp_mlp::kOb[0];
+        for (int j = 0; j < 32; ++j)
+            out += asp_mlp::kOw[j] * h[j];
+        delta = std::clamp(int(asp::AspC / 10.0 * std::exp(double(out))), asp::AspMin, asp::AspMax);
+    }
     int alpha = -engine_constants::eval::Inf;
     int beta = engine_constants::eval::Inf;
 
@@ -323,6 +348,24 @@ namespace
 
 void SearchWorker::iterative_deepening()
 {
+    asp_z_valid = false;
+    asp_feat_depth = -1;
+    if (engine_constants::search::aspiration::AspMlp && thread_id == 0)
+    {
+        // Une seule fois par coup : l0 de la racine (accumulateur deja tenu a
+        // jour de facon incrementale) et sa projection 1024 -> 16.
+        std::array<std::uint8_t, 1024> l0;
+        board.nnue_l0(l0);
+        for (int j = 0; j < 16; ++j)
+        {
+            float acc = asp_mlp::kL0b[j];
+            const float *w = asp_mlp::kL0w + j * 1024;
+            for (int i = 0; i < 1024; ++i)
+                acc += w[i] * (l0[i] * (1.0f / 127.0f));
+            asp_z[j] = std::max(acc, 0.0f);
+        }
+        asp_z_valid = true;
+    }
     // Accumulateur de la racine (l0 du camp au trait), pour apprendre les
     // fenetres d'aspiration avec la "texture" de la position (ALCYON_TM_L0).
     static const bool l0_log = std::getenv("ALCYON_TM_L0") != nullptr;
@@ -384,7 +427,7 @@ void SearchWorker::iterative_deepening()
             // Signaux de fin d'iteration : journal (ALCYON_TM_LOG) et MLP.
             static const bool tm_log = std::getenv("ALCYON_TM_LOG") != nullptr;
             double tm_p_change = -1.0;
-            if ((tm_log || engine_constants::search::time::TmMlp) && nodes_total > 0)
+            if ((tm_log || engine_constants::search::time::TmMlp || engine_constants::search::aspiration::AspMlp) && nodes_total > 0)
             {
                 long long best_n = root_move_nodes[current_best.get_from_sq()][current_best.get_to_sq()];
                 long long second_n = 0;
@@ -400,6 +443,16 @@ void SearchWorker::iterative_deepening()
                 const double frac_best = double(best_n) / nodes_total;
                 const double frac_second = double(second_n) / nodes_total;
                 const int pieces = std::popcount(board.get_occupancy<NO_COLOR>());
+                {
+                    // Signaux pour la fenetre de l'iteration suivante (ordre de train_asp_l0.py).
+                    const float sc = float(std::clamp(last_score, -2000, 2000));
+                    const float pv = float(std::clamp(prev_iter_score, -2000, 2000));
+                    const float f[9] = {float(depth), float(std::min(stable_iterations, 20)), float(frac_best),
+                                        float(frac_second), std::abs(sc), std::abs(pv - sc), float(root_moves),
+                                        float(max_extended_depth - depth), float(pieces)};
+                    std::copy(f, f + 9, asp_feat);
+                    asp_feat_depth = depth;
+                }
                 if (tm_log)
                     std::fprintf(stderr, "TM %d %lld %d %lld %d %.4f %.4f %d %d %d %d %d %d\n", depth, manager.elapsed_ms(), soft,
                                  nodes_total, stable_iterations, frac_best, frac_second,

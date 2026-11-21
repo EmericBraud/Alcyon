@@ -9,7 +9,7 @@ import numpy as np
 
 
 def arr(name, a):
-    vals = ",".join(f"{x:.7g}f" for x in np.asarray(a).ravel())
+    vals = ",".join(f"{x:.8e}f" for x in np.asarray(a).ravel())
     return f"inline constexpr float {name}[{np.asarray(a).size}] = {{{vals}}};"
 
 
