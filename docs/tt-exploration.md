@@ -73,5 +73,11 @@ cadence longue avec 16 Mo, mais rapide).
 
 | Variante | Elo | Parties |
 |---|---|---|
-| age relatif, k = 4 | (en cours) | 500 |
-| garde des entrees peu profondes | (en cours) | 500 |
+| age relatif, k = 4 | +1.1 +- 20.4 | 328 (arrete) |
+| garde des entrees peu profondes | +2.2 +- 19.2 | 330 (arrete) |
+
+Neutres. L'inegalite d'usage est reelle, mais mieux choisir la victime
+rapporte peu : les entrees profondes ont deja ete reutilisees avant d'etre
+evincees. Restent a explorer, hors SPRT d'abord (nps, taux de coupure a
+noeuds fixes) : entrees compactes (capacite), hierarchie adaptee au cache
+(vitesse d'acces).
