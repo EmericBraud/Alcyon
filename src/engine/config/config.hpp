@@ -46,6 +46,13 @@ namespace engine_constants
         // Ajustement LMR par borne TT (masque) : 1 +1 si borne haute <= alpha,
         // 2 +1 si borne basse >= beta, 4 -1 si borne basse >= beta.
         PARAM_SPECIFIER int TtLmrBound = 0;
+        // Remplacement TT : 0 = profondeur + 100 si generation courante ;
+        // 1 = profondeur - TtAgeWeight x (coups depuis l'ecriture).
+        PARAM_SPECIFIER int TtReplace = 0;
+        PARAM_SPECIFIER int TtAgeWeight = 4;
+        // 1 = une entree de profondeur <= 0 n'evince qu'une place vide ou
+        // une entree d'un coup precedent.
+        PARAM_SPECIFIER int TtShallowGuard = 0;
         // Historiques conserves d'un coup a l'autre : chaque "go" recree ses
         // workers, dont le constructeur vide les historiques. Recharges divises
         // par 2^PersistHistoryShift (vieillissement) ; effaces par ucinewgame.

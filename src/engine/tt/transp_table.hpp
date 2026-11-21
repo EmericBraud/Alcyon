@@ -204,7 +204,16 @@ public:
             std::uint8_t d_old = (std::uint8_t)((d_pack >> 48) & 0xFF);
             std::uint8_t f_old = (std::uint8_t)((d_pack >> 56) & 0xFF);
 
-            int priority = d_old + (((f_old ^ current_age) & 0xFC) ? 0 : 100);
+            int priority;
+            if (engine_constants::search::TtReplace == 0)
+                priority = d_old + (((f_old ^ current_age) & 0xFC) ? 0 : 100);
+            else
+            {
+                // Age relatif (en coups) : une entree profonde d'un coup recent
+                // survit a une entree peu profonde du coup en cours.
+                const int age_diff = ((current_age - (f_old & 0xFC)) & 0xFC) >> 2;
+                priority = d_old - engine_constants::search::TtAgeWeight * age_diff;
+            }
             if (priority < min_priority)
             {
                 min_priority = priority;
@@ -212,6 +221,14 @@ public:
             }
         }
 
+        // Les entrees de profondeur <= 0 (80 % jamais relues) n'evincent qu'une
+        // place vide ou une entree d'un coup precedent.
+        if (replace_idx != -1 && engine_constants::search::TtShallowGuard && depth <= 0)
+        {
+            const TTEntry &v = bucket.entries[replace_idx];
+            if (v.key != 0 && !((((v.data ^ v.key) >> 56) ^ current_age) & 0xFC))
+                replace_idx = -1;
+        }
 #ifdef ALCYON_TT_STATS
         if (replace_idx != -1)
         {
