@@ -268,8 +268,21 @@ public:
     // et ecrit qu'une fois par coup. Meme arithmetique (sommes int16 dans le
     // meme ordre par lane), donc resultat identique bit a bit.
     // `reset` : on part des biais (rafraichissement apres un coup de roi).
+    void swap_table(std::unique_ptr<AccTable> &other)
+    {
+        accumulators.swap(other);
+    }
+
     template <Color perspective>
     void update_features_fused(const int *rem, int nrem, const int *add, int nadd, bool reset)
+    {
+        update_features_fused_from<perspective>(*accumulators, rem, nrem, add, nadd, reset);
+    }
+
+    // Variante lue depuis un autre tableau (l'ancien etat, reste dans la pile
+    // de tampons) et ecrite dans le tampon courant.
+    template <Color perspective>
+    void update_features_fused_from(const AccTable &src_table, const int *rem, int nrem, const int *add, int nadd, bool reset)
     {
         constexpr std::size_t W = simd::SimdSize16;
         constexpr std::size_t U = 8; // vecteurs par bloc
@@ -278,7 +291,7 @@ public:
         using int8_n = stdx::fixed_size_simd<std::int8_t, W>;
 
         auto &acc = (*accumulators)[perspective];
-        const std::int16_t *src = reset ? biases->data() : acc.data();
+        const std::int16_t *src = reset ? biases->data() : src_table[perspective].data();
         for (std::size_t base = 0; base < static_cast<std::size_t>(NNeurons); base += Block)
         {
             simd::int16_v a[U];

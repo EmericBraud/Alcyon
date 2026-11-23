@@ -542,10 +542,21 @@ namespace nnue
         {
             while (applied_depth < lazy_depth)
             {
-                model.push_acc_state();
                 const PendingDiff &pd = pending[applied_depth];
-                apply_pending_acc<WHITE>(pd);
-                apply_pending_acc<BLACK>(pd);
+                if (engine_constants::search::FusedAccUpdate)
+                {
+                    // Sans copie : l'ancien etat reste dans la pile, le nouveau
+                    // est ecrit directement dans le tampon courant.
+                    const auto &old = model.push_acc_swap();
+                    apply_pending_acc_fused<WHITE>(pd, old);
+                    apply_pending_acc_fused<BLACK>(pd, old);
+                }
+                else
+                {
+                    model.push_acc_state();
+                    apply_pending_acc<WHITE>(pd);
+                    apply_pending_acc<BLACK>(pd);
+                }
                 ++applied_depth;
             }
         }
@@ -628,13 +639,22 @@ namespace nnue
                 apply_acc_list<true, perspective>(add);
                 return;
             }
-            // Mise a jour fusionnee (voir AccumulatorLayer::update_features_fused) :
-            // on precharge les lignes, puis un seul passage sur l'accumulateur.
+            model.template update_acc_features_fused<perspective>(rem.begin(), nrem, add.begin(), nadd, refresh);
+        }
+
+        template <Color perspective, class Snap>
+        void apply_pending_acc_fused(const PendingDiff &pd, const Snap &old) const
+        {
+            const bool refresh = pd.refresh[perspective];
+            const auto &rem = pd.remove[perspective];
+            const auto &add = pd.add[perspective];
+            const int nrem = refresh ? 0 : rem.size();
+            const int nadd = add.size();
             for (int i = 0; i < nrem; ++i)
                 model.prefetch_acc_feature(rem[i]);
             for (int i = 0; i < nadd; ++i)
                 model.prefetch_acc_feature(add[i]);
-            model.template update_acc_features_fused<perspective>(rem.begin(), nrem, add.begin(), nadd, refresh);
+            model.template update_acc_features_fused_from<perspective>(old, rem.begin(), nrem, add.begin(), nadd, refresh);
         }
 
         template <Color perspective>

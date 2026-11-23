@@ -88,7 +88,11 @@ private:
     // different ply.
     using AccSnapshot = typename AccumulatorLayer<NFeatures, NAccumulator, NThreatFeatures>::AccTable;
     using PsqtSnapshot = typename PsqtAccumulatorLayer<NFeatures, NumPsqtBuckets>::AccTable;
-    std::unique_ptr<AccSnapshot[]> acc_snapshots = std::make_unique<AccSnapshot[]>(constants::MaxHistorySize);
+    // Pile de tampons (et non de copies) : empiler echange le tampon courant
+    // avec un tampon de la pile, depiler les echange a nouveau -- aucune copie
+    // de 4 Ko sur le chemin chaud (la mise a jour fusionnee lit l'ancien etat
+    // dans la pile et ecrit le nouveau dans le tampon courant).
+    std::unique_ptr<std::unique_ptr<AccSnapshot>[]> acc_bufs = std::make_unique<std::unique_ptr<AccSnapshot>[]>(constants::MaxHistorySize);
     std::unique_ptr<PsqtSnapshot[]> psqt_snapshots = std::make_unique<PsqtSnapshot[]>(constants::MaxHistorySize);
     int acc_snapshot_depth = 0;
     int psqt_snapshot_depth = 0;
@@ -99,7 +103,8 @@ private:
     {
         acc_snapshot_depth = other.acc_snapshot_depth;
         psqt_snapshot_depth = other.psqt_snapshot_depth;
-        std::copy_n(other.acc_snapshots.get(), acc_snapshot_depth, acc_snapshots.get());
+        for (int d = 0; d < acc_snapshot_depth; ++d)
+            acc_bufs[d] = std::make_unique<AccSnapshot>(*other.acc_bufs[d]);
         std::copy_n(other.psqt_snapshots.get(), psqt_snapshot_depth, psqt_snapshots.get());
     }
 
@@ -305,14 +310,35 @@ public:
     // nesting) -- see NnueEval::materialize/materialize_psqt/unplay_pop.
     void push_acc_state()
     {
-        acc_snapshots[acc_snapshot_depth] = accumulator.raw_state();
+        // Echange puis recopie : le tampon courant garde l'ancien etat pour
+        // une mise a jour en place (chemin non fusionne).
+        const AccSnapshot &old = push_acc_swap();
+        accumulator.restore_raw_state(old);
+    }
+
+    // Empile sans copier : l'ancien etat part dans la pile (retourne), le
+    // tampon courant devient libre et doit etre entierement reecrit
+    // (update_acc_features_fused_from pour chaque perspective).
+    const AccSnapshot &push_acc_swap()
+    {
+        auto &slot = acc_bufs[acc_snapshot_depth];
+        if (!slot)
+            slot = std::make_unique<AccSnapshot>();
+        accumulator.swap_table(slot);
         ++acc_snapshot_depth;
+        return *slot;
     }
 
     void pop_acc_state()
     {
         --acc_snapshot_depth;
-        accumulator.restore_raw_state(acc_snapshots[acc_snapshot_depth]);
+        accumulator.swap_table(acc_bufs[acc_snapshot_depth]);
+    }
+
+    template <Color perspective>
+    void update_acc_features_fused_from(const AccSnapshot &src, const int *rem, int nrem, const int *add, int nadd, bool reset)
+    {
+        accumulator.template update_features_fused_from<perspective>(src, rem, nrem, add, nadd, reset);
     }
 
     void push_psqt_state()
