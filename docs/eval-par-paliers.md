@@ -202,3 +202,22 @@ tout le reseau est reentraine depuis v5 (Adam, lr 3e-5 reseau / 3e-4 tete,
 cosinus), perte = perte complete (cible des donnees, lambda 0,6 comme v5) +
 perte de la petite tete (meme cible) + 20 x distillation vers la complete ;
 suivi de la perte complete (ne doit pas se degrader) et de l'ecart en cp.
+
+## Fine-tuning Matryoshka (10 000 pas, 11 min, RTX 5090)
+
+| | depart (v5 fige) | apres |
+|---|---|---|
+| petite tete vs complete, RMS (|eval| < 600) | 145 cp | 107 cp |
+| idem, MAE | 97 cp | 69 cp |
+| perte de la tete complete vs v5 | - | +3,7 % (degradee) |
+
+Le fine-tuning aide mais reste tres loin du compte : ~100 cp d'erreur au fond
+de l'arbre est redhibitoire (le -200 Elo venait de la), et la tete complete se
+degrade. Avec 256 entrees sur 1024, l'information ne se comprime pas assez par
+un simple fine-tuning ; il faudrait un reentrainement long depuis zero avec la
+perte Matryoshka, ou un palier plus large (moins de gain de vitesse).
+
+**Piste mise en pause.** Acquis reutilisables : pipeline d'entrainement
+retrouve et verifie, export quantifie de tetes, mise a jour partielle et
+repli dans le moteur, commande `evaltier`. Lecon : juger un palier en cp sur
+les positions disputees, avant tout match.
