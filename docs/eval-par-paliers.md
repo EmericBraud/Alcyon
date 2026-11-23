@@ -124,3 +124,51 @@ Plan propose :
    d'une borne.
 
 Chaque etape : d'abord en noeuds par seconde, puis en parties.
+
+## Integration moteur (branche `eval-tiers`)
+
+### Reseau
+
+- `tools/gpu/tiers_export.py` : ordre d'importance des 512 neurones
+  (activation moyenne x poids sortants), petite tete (k = 128 neurones, soit
+  256 entrees d'accumulateur sur 1024 par perspective) entrainee 8000 pas par
+  distillation de v5 fige : **MSE proba 0,0064 contre v5** ; permutation
+  enregistree (`ft.perm`) et `serialize.py --ft-perm` donne **v5 permute
+  (`v5p.nnue`), de sortie identique** (bench 16763). Le mode paliers n'a de
+  sens qu'avec ce reseau permute.
+- Deux exports de la tete : flottante (`tier_head_weights.hpp`) et
+  **quantifiee comme la grande** (`tier_head_q.hpp`, `quantize_fc_layer` de
+  nnue-pytorch, int8 / int32 ; 3 a 5 poids par bucket rognes dans la plage
+  int8, la tete n'ayant pas ete rognee pendant l'entrainement).
+- Garde-fous ajoutes apres deux pertes de temps : poids de la tete sauves
+  juste apres l'entrainement, `--load-head` + `--perm` pour refaire l'export
+  seul (une tete rechargee DOIT reprendre sa permutation : l'ordre recalcule
+  depend des lots tires et differe), essai de bout en bout a 20 pas avant un
+  long entrainement.
+
+### Moteur
+
+- `AccumulatorLayer::update_feature_narrow` : mise a jour des seules tranches
+  [0, K) et [512, 512 + K) (le produit par paires lit i et i + 512).
+- `NnueEval::materialize_narrow` : rattrapage partiel ; `narrow_from` retient
+  la premiere profondeur appliquee en partiel. Une eval complete demandee sous
+  un etat partiel revient avant lui (les instantanes restaurent l'etat
+  complet) et rejoue en complet. Mesure : 2 419 replis pour 686 000 evals
+  reduites, negligeable.
+- Choix du palier : hors PV (beta - alpha == 1) et
+  `ply * 100 >= tier_ply_pct * profondeur de l'iteration` (negamax et
+  quiescence). `tier_mode` 0 / 1 (tete flottante) / 2 (tete quantifiee).
+
+### Vitesse (Mac, 1 thread, 8 positions UHO x 2 s, v5 permute)
+
+| mode | noeuds/s | gain |
+|---|---|---|
+| sans paliers | 692 000 | - |
+| tete flottante, 1re version | 728 000 | +2 % |
+| tete flottante, couches en axpy | 794 000 | +15 % |
+| **tete quantifiee (int8, SIMD)** | **1 124 000** | **+62 %** |
+
+Profil de la 1re version flottante : la petite tete prenait 43 % du temps
+(produits scalaires flottants non vectorises sans reassociation), alors que
+la mise a jour partielle de l'accumulateur etait tombee a 13 % (contre 44 %
+pour la mise a jour complete). La quantification a regle le probleme.
