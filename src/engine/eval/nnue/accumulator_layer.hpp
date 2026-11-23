@@ -164,6 +164,29 @@ private:
         }
     }
 
+    // Palier reduit (eval par paliers) : meme mise a jour que apply_row,
+    // restreinte a une tranche [Begin, End) de l'accumulateur. Le palier ne
+    // lit que les neurones [0, K) et [Half, Half + K) (produit par paires).
+    template <bool activate, std::size_t Begin, std::size_t End, typename WT>
+    static void apply_span(std::array<std::int16_t, NNeurons> &acc, const std::array<WT, NNeurons> &w_row)
+    {
+        static_assert(Begin % simd::SimdSize16 == 0 && End % simd::SimdSize16 == 0, "tranche alignee");
+        using wt_n = stdx::fixed_size_simd<WT, simd::SimdSize16>;
+        for (std::size_t j = Begin; j < End; j += simd::SimdSize16)
+        {
+            wt_n raw;
+            raw.copy_from(w_row.data() + j, stdx::element_aligned);
+            const simd::int16_v w = stdx::simd_cast<simd::int16_v>(raw);
+            simd::int16_v a;
+            a.copy_from(acc.data() + j, stdx::element_aligned);
+            if constexpr (activate)
+                a += w;
+            else
+                a -= w;
+            a.copy_to(acc.data() + j, stdx::element_aligned);
+        }
+    }
+
 public:
     // Chaque table arrive soit comme un tableau a copier dans le tas (chemin
     // historique), soit comme un shared_ptr deja pret -- typiquement une vue
@@ -259,6 +282,23 @@ public:
             apply_row<activate>(acc, (*threat_weights)[feature]);
         else
             apply_row<activate>(acc, (*halfka_weights)[feature - NThreatFeatures]);
+    }
+
+    template <bool activate, Color perspective, int K>
+    void update_feature_narrow(int feature)
+    {
+        constexpr std::size_t Half = NNeurons / 2;
+        auto &acc = (*accumulators)[perspective];
+        if (feature < NThreatFeatures)
+        {
+            apply_span<activate, 0, K>(acc, (*threat_weights)[feature]);
+            apply_span<activate, Half, Half + K>(acc, (*threat_weights)[feature]);
+        }
+        else
+        {
+            apply_span<activate, 0, K>(acc, (*halfka_weights)[feature - NThreatFeatures]);
+            apply_span<activate, Half, Half + K>(acc, (*halfka_weights)[feature - NThreatFeatures]);
+        }
     }
 
     const auto &get_accumulator(int perspective) const

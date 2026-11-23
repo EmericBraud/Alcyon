@@ -80,6 +80,23 @@ namespace Eval
 
     void evaluate_pawns(Color color, const VBoard &board, int &mg, int &eg);
     int eval(const VBoard &board, int alpha, int beta);
+#ifdef NNUE_EVAL
+    // Palier reduit de l'eval par paliers (petite tete sur un prefixe de
+    // l'accumulateur), relatif au camp au trait.
+    int eval_narrow_abs_stm(const VBoard &board);
+    template <Color Us>
+    inline int narrow_eval_relative(const VBoard &board)
+    {
+        (void)Us;
+        return eval_narrow_abs_stm(board);
+    }
+#else
+    template <Color Us>
+    inline int narrow_eval_relative(const VBoard &board)
+    {
+        return eval_relative<Us>(board, -1000000, 1000000);
+    }
+#endif
 
     template <Color Us>
     inline int eval_relative(const VBoard &board, int alpha, int beta)

@@ -274,6 +274,12 @@ public:
         accumulator.template update_feature<activate, perspective>(feature);
     }
 
+    template <bool activate, Color perspective, int K>
+    void update_acc_feature_narrow(int feature)
+    {
+        accumulator.template update_feature_narrow<activate, perspective, K>(feature);
+    }
+
     template <bool activate, Color perspective>
     void update_psqt_feature(int feature)
     {
@@ -377,6 +383,103 @@ public:
 
         const std::int64_t combined = 2 * layerstack_final + psqt_diff;
         return static_cast<std::int32_t>(combined / FinalScale);
+    }
+
+    // Palier reduit (eval par paliers) : petite tete flottante distillee de
+    // la tete complete (tools/gpu/tiers_export.py), qui ne lit que les
+    // neurones [0, K) des deux perspectives d'un reseau permute par
+    // importance. Les accumulateurs n'ont besoin d'etre a jour que sur
+    // [0, K) et [Half, Half + K). Meme unite que get_result (centipions).
+    template <Color perspective, class Head>
+    std::int32_t get_narrow_result(int piece_count) const
+    {
+        constexpr int K = Head::kK;
+        constexpr int Half = NAccumulator / 2;
+        constexpr int In = 2 * K;
+        const int bucket = bucket_for_piece_count(piece_count);
+        const auto &acc_us = accumulator.template get_accumulator<perspective>();
+        const auto &acc_them = accumulator.template get_accumulator<!perspective>();
+
+        // Premiere couche en accumulation par colonnes (axpy) : vectorisable
+        // sans reassocier de somme, et les entrees nulles de l0 (nombreuses :
+        // ReLU puis produit) sont sautees. Poids transposes une fois [In][L2].
+        static const auto l1t = []
+        {
+            auto t = std::make_unique<float[]>(std::size_t(Head::kBuckets) * In * Head::kL2);
+            for (int b = 0; b < Head::kBuckets; ++b)
+                for (int o = 0; o < Head::kL2; ++o)
+                    for (int i = 0; i < In; ++i)
+                        t[(std::size_t(b) * In + i) * Head::kL2 + o] = Head::kL1W[(b * Head::kL2 + o) * In + i];
+            return t;
+        }();
+        float l1c[Head::kL2];
+        std::copy_n(Head::kL1B + bucket * Head::kL2, Head::kL2, l1c);
+        auto add_input = [&](int i, int v)
+        {
+            if (v == 0)
+                return;
+            const float xi = float(v) * (1.0f / 128.0f);
+            const float *col = l1t.get() + (std::size_t(bucket) * In + i) * Head::kL2;
+            for (int o = 0; o < Head::kL2; ++o)
+                l1c[o] += col[o] * xi;
+        };
+        for (int j = 0; j < K; ++j)
+        {
+            const int a = std::clamp<int>(acc_us[j], 0, 255), b = std::clamp<int>(acc_us[j + Half], 0, 255);
+            const int c = std::clamp<int>(acc_them[j], 0, 255), d = std::clamp<int>(acc_them[j + Half], 0, 255);
+            add_input(j, (a * b) >> 9);
+            add_input(K + j, (c * d) >> 9);
+        }
+        const float skip = l1c[Head::kL2 - 2] - l1c[Head::kL2 - 1];
+        float l1x[2 * Head::kL2];
+        for (int o = 0; o < Head::kL2; ++o)
+        {
+            l1x[o] = std::clamp(l1c[o] * l1c[o], 0.0f, Head::kMaxAct);
+            l1x[Head::kL2 + o] = std::clamp(l1c[o], 0.0f, Head::kMaxAct);
+        }
+        // Deuxieme couche et sortie aussi en accumulation par colonnes (poids
+        // transposes une fois) : pas de reduction flottante a reassocier.
+        static const auto l2t = []
+        {
+            auto t = std::make_unique<float[]>(std::size_t(Head::kBuckets) * 2 * Head::kL2 * Head::kL3);
+            for (int b = 0; b < Head::kBuckets; ++b)
+                for (int o = 0; o < Head::kL3; ++o)
+                    for (int i = 0; i < 2 * Head::kL2; ++i)
+                        t[(std::size_t(b) * 2 * Head::kL2 + i) * Head::kL3 + o] = Head::kL2W[(b * Head::kL3 + o) * 2 * Head::kL2 + i];
+            return t;
+        }();
+        float l2c[Head::kL3];
+        std::copy_n(Head::kL2B + bucket * Head::kL3, Head::kL3, l2c);
+        for (int i = 0; i < 2 * Head::kL2; ++i)
+        {
+            const float xi = l1x[i];
+            if (xi == 0.0f)
+                continue;
+            const float *col = l2t.get() + (std::size_t(bucket) * 2 * Head::kL2 + i) * Head::kL3;
+            for (int o = 0; o < Head::kL3; ++o)
+                l2c[o] += col[o] * xi;
+        }
+        float l2x[2 * Head::kL3];
+        for (int o = 0; o < Head::kL3; ++o)
+        {
+            l2x[o] = std::clamp(l2c[o] * l2c[o], 0.0f, Head::kMaxAct);
+            l2x[Head::kL3 + o] = std::clamp(l2c[o], 0.0f, Head::kMaxAct);
+        }
+        // Sortie : produit scalaire en 8 sommes partielles independantes.
+        const float *ow = Head::kOW + bucket * (2 * Head::kL2 + 2 * Head::kL3);
+        float part[8] = {};
+        for (int i = 0; i < 2 * Head::kL2; ++i)
+            part[i & 7] += ow[i] * l1x[i];
+        for (int i = 0; i < 2 * Head::kL3; ++i)
+            part[i & 7] += ow[2 * Head::kL2 + i] * l2x[i];
+        float out = Head::kOB[bucket] + skip;
+        for (float p : part)
+            out += p;
+
+        const auto &psqt_us = psqt_accumulator.template get_accumulator<perspective>();
+        const auto &psqt_them = psqt_accumulator.template get_accumulator<!perspective>();
+        const std::int64_t psqt_diff = static_cast<std::int64_t>(psqt_us[bucket]) - static_cast<std::int64_t>(psqt_them[bucket]);
+        return static_cast<std::int32_t>(psqt_diff / FinalScale) + static_cast<std::int32_t>(out * Head::kNnue2Score);
     }
 
     // PSQT-only output: the material/PSQT head of the network, skipping the

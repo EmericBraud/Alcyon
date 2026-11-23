@@ -527,6 +527,8 @@ public:
             UCIOption<int>(&engine_constants::search::TtEvalRefine, "tt_eval_refine", 0, 7),
             UCIOption<int>(&engine_constants::search::TtEvalDepthGap, "tt_eval_gap", 0, 99),
             UCIOption<int>(&engine_constants::search::TtNmpSkip, "tt_nmp_skip", 0, 1),
+            UCIOption<int>(&engine_constants::search::TierMode, "tier_mode", 0, 1),
+            UCIOption<int>(&engine_constants::search::TierPlyPct, "tier_ply_pct", 0, 200),
             UCIOption<int>(&engine_constants::search::TtNmpGap, "tt_nmp_gap", 0, 99),
             UCIOption<int>(&engine_constants::search::TtLmrBound, "tt_lmr_bound", 0, 7),
             UCIOption<int>(&engine_constants::search::time::NodeBase, "tm_node_base", 0, 400),

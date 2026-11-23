@@ -42,6 +42,10 @@ namespace engine_constants
         // Valide avec gap 99 (toute profondeur) : +24.4 +- 17.1 sur 500 parties
         // (5+0.05, UHO). Gap 3 : +24.2 +- 24.4 sur 216.
         PARAM_SPECIFIER int TtNmpSkip = 1;
+        // Eval par paliers (docs/eval-par-paliers.md) : 1 = palier reduit hors
+        // PV a partir de TierPlyPct % de la profondeur de l'iteration.
+        PARAM_SPECIFIER int TierMode = 0;
+        PARAM_SPECIFIER int TierPlyPct = 50;
         PARAM_SPECIFIER int TtNmpGap = 99;
         // Ajustement LMR par borne TT (masque) : 1 +1 si borne haute <= alpha,
         // 2 +1 si borne basse >= beta, 4 -1 si borne basse >= beta.

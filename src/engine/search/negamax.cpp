@@ -27,9 +27,11 @@ namespace search
         if (slot == SearchWorker::kEvalNone)
         {
             EVAL_STAT(worker, ply);
-            slot = Eval::prune_eval_relative<Us>(worker.get_board(),
-                                                 -engine_constants::eval::Inf,
-                                                 engine_constants::eval::Inf);
+            slot = worker.tier_narrow[ply]
+                       ? Eval::narrow_eval_relative<Us>(worker.get_board())
+                       : Eval::prune_eval_relative<Us>(worker.get_board(),
+                                                       -engine_constants::eval::Inf,
+                                                       engine_constants::eval::Inf);
             if (std::abs(slot) < engine_constants::eval::SyzygyScore - 1000)
                 slot += worker.correction<Us>();
         }
@@ -408,6 +410,10 @@ int SearchWorker::negamax(int depth, int alpha, int beta, int ply, bool allow_nu
     static_eval_stack[ply] = kEvalNone;
 
     const bool is_pv = (beta - alpha > 1);
+    // Eval par paliers : palier reduit hors PV, au-dela d'une fraction de la
+    // profondeur de l'iteration (les evals se concentrent loin de la racine).
+    tier_narrow[ply] = engine_constants::search::TierMode && !is_pv &&
+                       ply * 100 >= engine_constants::search::TierPlyPct * root_depth;
     // Classification de Knuth-Moore. Un noeud all doit epuiser tous ses coups
     // pour PROUVER qu'aucun ne passe : lui retirer de la profondeur affaiblit
     // une preuve qu'on devra croire. Et les noeuds all sont le gros de l'arbre,

@@ -32,6 +32,8 @@
 // on NnueEval::model and virtual_board.hpp.
 
 #include <algorithm>
+#include <cstdio>
+#include "engine/search/tier_head_weights.hpp"
 #include <array>
 #include <bit>
 #include <cstdint>
@@ -57,6 +59,35 @@
 
 namespace nnue
 {
+    // Poids de la petite tete du palier reduit (tier_head_weights.hpp), sous
+    // une forme passable en parametre de template.
+    struct TierStats
+    {
+        unsigned long long narrow = 0, full = 0, fallbacks = 0, fallback_plies = 0;
+        ~TierStats()
+        {
+            if (narrow + full)
+                std::fprintf(stderr, "TIERSTATS narrow %llu full %llu fallbacks %llu plies_rejouees %llu\n", narrow, full, fallbacks, fallback_plies);
+        }
+    };
+    inline TierStats tier_stats;
+
+    struct TierHead
+    {
+        static constexpr int kK = tier_head::kK;
+        static constexpr int kL2 = tier_head::kL2;
+        static constexpr int kL3 = tier_head::kL3;
+        static constexpr int kBuckets = tier_head::kBuckets;
+        static constexpr float kMaxAct = tier_head::kMaxAct;
+        static constexpr float kNnue2Score = tier_head::kNnue2Score;
+        static constexpr const float *kL1W = tier_head::kL1W;
+        static constexpr const float *kL1B = tier_head::kL1B;
+        static constexpr const float *kL2W = tier_head::kL2W;
+        static constexpr const float *kL2B = tier_head::kL2B;
+        static constexpr const float *kOW = tier_head::kOW;
+        static constexpr const float *kOB = tier_head::kOB;
+    };
+
     constexpr int L1 = 1024;
     constexpr int L2 = 32;
     constexpr int L3 = 32;
@@ -153,6 +184,10 @@ namespace nnue
         mutable int lazy_depth = 0;
         mutable int applied_depth = 0;
         mutable int psqt_applied_depth = 0;
+        // Eval par paliers : premiere profondeur appliquee en mise a jour
+        // partielle (seules les tranches du palier reduit sont a jour a partir
+        // de la). INT_MAX = tout l'accumulateur applique est complet.
+        mutable int narrow_from = 1 << 30;
 
         // Reusable, allocated-once membership-stamp buffer for
         // filter_threats_diff()'s dedup/diff (see below): sized to
@@ -234,6 +269,7 @@ namespace nnue
                 lazy_depth = other.lazy_depth;
                 applied_depth = other.lazy_depth;
                 psqt_applied_depth = other.lazy_depth;
+                narrow_from = 1 << 30;
             }
             return *this;
         }
@@ -334,6 +370,7 @@ namespace nnue
             lazy_depth = 0;
             applied_depth = 0;
             psqt_applied_depth = 0;
+            narrow_from = 1 << 30;
             model.reset_snapshot_stack();
             initialize_perspective<WHITE>(board);
             initialize_perspective<BLACK>(board);
@@ -356,11 +393,24 @@ namespace nnue
             const int piece_count = std::popcount(board.get_occupancy<NO_COLOR>());
             // get_result() reads both the L1 accumulator and the PSQT
             // buckets, so both halves must be caught up.
+            ++tier_stats.full;
             materialize();
             materialize_psqt();
             return board.get_side_to_move() == WHITE
                        ? model.template get_result<WHITE>(piece_count)
                        : model.template get_result<BLACK>(piece_count);
+        }
+
+        // Eval du palier reduit (centipions, camp au trait).
+        std::int32_t evaluate_narrow_abs(const Board &board) const
+        {
+            const int piece_count = std::popcount(board.get_occupancy<NO_COLOR>());
+            ++tier_stats.narrow;
+            materialize_narrow();
+            materialize_psqt();
+            return board.get_side_to_move() == WHITE
+                       ? model.template get_narrow_result<WHITE, TierHead>(piece_count)
+                       : model.template get_narrow_result<BLACK, TierHead>(piece_count);
         }
 
         // PSQT-only fast eval (see NnueModel::get_psqt_result): the trained
@@ -524,6 +574,8 @@ namespace nnue
             {
                 model.pop_acc_state();
                 --applied_depth;
+                if (applied_depth < narrow_from)
+                    narrow_from = 1 << 30;
             }
             if (psqt_applied_depth == lazy_depth)
             {
@@ -539,6 +591,19 @@ namespace nnue
         // half is NOT touched here -- it has its own pass below.
         void materialize() const
         {
+            // Un ancetre a ete applique en partiel : on revient avant lui (ses
+            // instantanes restaurent l'etat complet) et on rejoue en complet.
+            if (narrow_from <= applied_depth)
+            {
+                ++tier_stats.fallbacks;
+                tier_stats.fallback_plies += applied_depth - narrow_from + 1;
+                while (applied_depth >= narrow_from)
+                {
+                    model.pop_acc_state();
+                    --applied_depth;
+                }
+                narrow_from = 1 << 30;
+            }
             while (applied_depth < lazy_depth)
             {
                 model.push_acc_state();
@@ -546,6 +611,21 @@ namespace nnue
                 apply_pending_acc<WHITE>(pd);
                 apply_pending_acc<BLACK>(pd);
                 ++applied_depth;
+            }
+        }
+
+        // Rattrapage partiel : ne met a jour que les tranches du palier reduit.
+        void materialize_narrow() const
+        {
+            while (applied_depth < lazy_depth)
+            {
+                model.push_acc_state();
+                const PendingDiff &pd = pending[applied_depth];
+                apply_pending_acc_narrow<WHITE>(pd);
+                apply_pending_acc_narrow<BLACK>(pd);
+                ++applied_depth;
+                if (narrow_from > applied_depth)
+                    narrow_from = applied_depth;
             }
         }
 
@@ -618,6 +698,28 @@ namespace nnue
             else
                 apply_acc_list<false, perspective>(pd.remove[perspective]);
             apply_acc_list<true, perspective>(pd.add[perspective]);
+        }
+
+        template <bool activate, Color perspective>
+        void apply_acc_list_narrow(const threats::FixedIntList<MAX_PENDING_FEATURES> &list) const
+        {
+            const int n = list.size();
+            for (int i = 0; i < n; ++i)
+            {
+                if (i + PrefetchDistance < n)
+                    model.prefetch_acc_feature(list[i + PrefetchDistance]);
+                model.template update_acc_feature_narrow<activate, perspective, TierHead::kK>(list[i]);
+            }
+        }
+
+        template <Color perspective>
+        void apply_pending_acc_narrow(const PendingDiff &pd) const
+        {
+            if (pd.refresh[perspective])
+                model.template reset_acc_perspective<perspective>();
+            else
+                apply_acc_list_narrow<false, perspective>(pd.remove[perspective]);
+            apply_acc_list_narrow<true, perspective>(pd.add[perspective]);
         }
 
         template <Color perspective>

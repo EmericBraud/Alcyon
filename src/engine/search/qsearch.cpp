@@ -24,7 +24,9 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
     if (!in_check)
     {
         EVAL_STAT(*this, ply);
-        stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
+        const bool narrow = engine_constants::search::TierMode && beta - alpha == 1 &&
+                            ply * 100 >= engine_constants::search::TierPlyPct * root_depth;
+        stand_pat = narrow ? Eval::narrow_eval_relative<Us>(board) : Eval::eval_relative<Us>(board, alpha, beta);
         if (std::abs(stand_pat) < engine_constants::eval::SyzygyScore - 1000)
             stand_pat += correction<Us>();
         if (stand_pat >= beta)

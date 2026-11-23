@@ -18,6 +18,11 @@ namespace Eval
         const int score = board.get_nnue_eval().evaluate_abs(board);
         return board.get_side_to_move() == WHITE ? score : -score; // @TODO create a templated version of it OR delete this statement (sign is flipped twice)
     }
+
+    int eval_narrow_abs_stm(const VBoard &board)
+    {
+        return board.get_nnue_eval().evaluate_narrow_abs(board);
+    }
 }
 
 #endif

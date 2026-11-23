@@ -177,6 +177,8 @@ struct SearchWorker
     // reel, tous bornes par eval::Inf.
     static constexpr int kEvalNone = 1 << 30;
     int static_eval_stack[engine_constants::search::MaxDepth + 8];
+    // Eval par paliers : le noeud a ce ply peut utiliser le palier reduit.
+    bool tier_narrow[engine_constants::search::MaxDepth + 8] = {};
 
     // Métriques locales
     long long local_nodes = 0;
