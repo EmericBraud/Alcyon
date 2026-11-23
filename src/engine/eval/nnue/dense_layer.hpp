@@ -4,6 +4,8 @@
 #include <array>
 #if defined(__aarch64__)
 #include <arm_neon.h>
+#elif defined(__AVX2__)
+#include <immintrin.h>
 #endif
 #include <bit>
 #include <cstring>
@@ -118,6 +120,45 @@ public:
             std::array<std::int32_t, NNeurons_> out;
             for (int g = 0; g < G; ++g)
                 vst1q_s32(out.data() + 4 * g, acc[g]);
+            return out;
+        }
+#elif defined(__AVX2__)
+        if constexpr (NNeurons_ % 8 == 0 && NInputs_ % 4 == 0)
+        {
+            // Meme principe en AVX2 : un groupe non nul de 4 entrees, diffuse
+            // dans un registre, multiplie (maddubs : u8 x i8 -> paires int16,
+            // sans saturation car entrees <= 127) puis somme par 4 (madd avec
+            // des 1) donne 8 sorties int32 par registre.
+            constexpr int G = NNeurons_ / 8;
+            __m256i acc[G];
+            for (int g = 0; g < G; ++g)
+                acc[g] = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(biases->data() + 8 * g));
+            const std::int8_t *w4 = weights_g->data();
+            const __m256i ones = _mm256_set1_epi16(1);
+            constexpr int NG = NInputs_ / 4;
+            std::uint32_t grp[NG];
+            std::memcpy(grp, inputs.data(), NInputs_);
+            std::uint16_t nz[NG];
+            int n = 0;
+            for (int j = 0; j < NG; ++j)
+            {
+                nz[n] = static_cast<std::uint16_t>(j);
+                n += grp[j] != 0;
+            }
+            for (int t = 0; t < n; ++t)
+            {
+                const int j = nz[t];
+                const __m256i x = _mm256_set1_epi32(static_cast<int>(grp[j]));
+                const std::int8_t *row = w4 + std::size_t(j) * NNeurons_ * 4;
+                for (int g = 0; g < G; ++g)
+                {
+                    const __m256i w = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(row + 32 * g));
+                    acc[g] = _mm256_add_epi32(acc[g], _mm256_madd_epi16(_mm256_maddubs_epi16(x, w), ones));
+                }
+            }
+            std::array<std::int32_t, NNeurons_> out;
+            for (int g = 0; g < G; ++g)
+                _mm256_storeu_si256(reinterpret_cast<__m256i *>(out.data() + 8 * g), acc[g]);
             return out;
         }
 #endif
