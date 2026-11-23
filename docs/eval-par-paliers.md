@@ -82,3 +82,45 @@ meme bench (16763) avec le reseau reexporte. On peut donc fine-tuner v5.
 Serveur : `tools/gpu/setup_gpu.sh` (RTX 5090, PyTorch cu128, g++-14 pour le
 moteur en C++23, binpacks `linrock/test80-2024` janvier et fevrier 2024,
 `.min-v2.v6`).
+
+## Mesure 3 : precision d'un palier reduit (`tools/gpu/tiers_probe.py`)
+
+v5 fige ; petite tete (memes L2/L3 et 8 buckets) entrainee 3000 pas
+(batch 16 384) par distillation de la sortie de v5, sur k neurones par
+perspective (2k entrees d'accumulateur par perspective sur 1024).
+Validation : 655 k positions de fevrier 2024. Ecart a la sortie de v5 en MSE
+sur la probabilite de gain (sigmoide de cp / 400). Etalon : ecart de v5 lui-meme
+aux donnees, 0,0085.
+
+| entrees / perspective | neurones par importance | prefixe brut |
+|---|---|---|
+| 128 / 1024 | 0,0097 | 0,0130 |
+| **256 / 1024** | **0,0068** | 0,0093 |
+| **512 / 1024** | **0,0036** | 0,0050 |
+
+- A 256 entrees, le palier reduit est plus proche de v5 que v5 ne l'est des
+  donnees : l'erreur ajoutee est inferieure a l'erreur deja presente.
+- Choisir les neurones par importance (activation moyenne x poids sortants)
+  enleve ~30 % d'erreur : il faudra permuter le FT avant de prendre un prefixe.
+- Borne superieure de l'erreur : le FT est fige. Un fine-tuning "Matryoshka"
+  (le FT apprend a concentrer l'information en tete) devrait faire mieux.
+- L'ecart moyen en cp (110 a 235) est domine par les positions deja decidees
+  (evals de milliers de cp) et ne doit pas etre lu tel quel.
+
+## Integration : quels noeuds en precision complete ?
+
+Contrainte : l'accumulateur est incremental. Passer de complet a reduit en
+descendant est gratuit ; remonter a complet sous un noeud reduit demande de
+rattraper les entrees manquantes (remonter au dernier ancetre complet, ou
+recalcul depuis les features). La regle doit donc etre surtout monotone.
+
+Plan propose :
+1. complet sur la PV, le coup TT et les extensions, et a faible ply relatif ;
+   reduit dans les sous-arbres reduits par LMR et en quiescence ;
+2. evaluation en deux temps : palier reduit d'abord, rattrapage et eval
+   complete seulement si le resultat tombe pres de alpha / beta ;
+3. la petite tete predit aussi sa propre erreur (une sortie de plus, apprise
+   sur l'ecart de distillation) : rattrapage si erreur prevue forte ET proche
+   d'une borne.
+
+Chaque etape : d'abord en noeuds par seconde, puis en parties.
