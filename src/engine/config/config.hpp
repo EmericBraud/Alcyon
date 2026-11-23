@@ -43,7 +43,8 @@ namespace engine_constants
         // (5+0.05, UHO). Gap 3 : +24.2 +- 24.4 sur 216.
         PARAM_SPECIFIER int TtNmpSkip = 1;
         // Eval par paliers (docs/eval-par-paliers.md) : 1 = palier reduit hors
-        // PV a partir de TierPlyPct % de la profondeur de l'iteration.
+        // PV a partir de TierPlyPct % de la profondeur de l'iteration ; 1 = tete
+        // flottante, 2 = tete quantifiee (int8, couches vectorisees).
         PARAM_SPECIFIER int TierMode = 0;
         PARAM_SPECIFIER int TierPlyPct = 50;
         PARAM_SPECIFIER int TtNmpGap = 99;

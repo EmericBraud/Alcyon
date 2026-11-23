@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cstdio>
 #include "engine/search/tier_head_weights.hpp"
+#include "engine/search/tier_head_q.hpp"
 #include <array>
 #include <bit>
 #include <cstdint>
@@ -71,6 +72,17 @@ namespace nnue
         }
     };
     inline TierStats tier_stats;
+
+    struct TierHeadQ
+    {
+        static constexpr int kK = tier_head_q::kK;
+        static constexpr const std::int8_t *kL1W = tier_head_q::kL1W;
+        static constexpr const std::int32_t *kL1B = tier_head_q::kL1B;
+        static constexpr const std::int8_t *kL2W = tier_head_q::kL2W;
+        static constexpr const std::int32_t *kL2B = tier_head_q::kL2B;
+        static constexpr const std::int8_t *kOW = tier_head_q::kOW;
+        static constexpr const std::int32_t *kOB = tier_head_q::kOB;
+    };
 
     struct TierHead
     {
@@ -409,8 +421,10 @@ namespace nnue
             materialize_narrow();
             materialize_psqt();
             return board.get_side_to_move() == WHITE
-                       ? model.template get_narrow_result<WHITE, TierHead>(piece_count)
-                       : model.template get_narrow_result<BLACK, TierHead>(piece_count);
+                       ? (engine_constants::search::TierMode == 2 ? model.template get_narrow_result_q<WHITE, TierHeadQ>(piece_count)
+                                                                   : model.template get_narrow_result<WHITE, TierHead>(piece_count))
+                       : (engine_constants::search::TierMode == 2 ? model.template get_narrow_result_q<BLACK, TierHeadQ>(piece_count)
+                                                                   : model.template get_narrow_result<BLACK, TierHead>(piece_count));
         }
 
         // PSQT-only fast eval (see NnueModel::get_psqt_result): the trained

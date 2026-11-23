@@ -52,6 +52,7 @@ def main():
     ap.add_argument("--bs", type=int, default=16384)
     ap.add_argument("--workers", type=int, default=16)
     ap.add_argument("--load-head", default=None, help="reprend une tete deja entrainee (tier_head.pt) sans la reentrainer")
+    ap.add_argument("--perm", default=None, help="reutilise une permutation existante (obligatoire avec --load-head)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
@@ -68,9 +69,15 @@ def main():
         act += l0.abs().mean(0)
     w = model.layer_stacks.l1.linear.weight.detach().abs().sum(0)
     imp = act * w
-    order = torch.argsort(imp[:half] + imp[half:], descending=True)
-    np.save(os.path.join(a.out, "ft.perm"), order.cpu().numpy().astype(np.int64))
-    os.replace(os.path.join(a.out, "ft.perm.npy"), os.path.join(a.out, "ft.perm"))
+    if a.perm:
+        with open(a.perm, "rb") as f:
+            order = torch.from_numpy(np.load(f)).cuda()
+    else:
+        order = torch.argsort(imp[:half] + imp[half:], descending=True)
+    if a.load_head and not a.perm:
+        raise SystemExit("--load-head exige --perm : la tete depend de la permutation avec laquelle elle a ete entrainee")
+    with open(os.path.join(a.out, "ft.perm"), "wb") as f:
+        np.save(f, order.cpu().numpy().astype(np.int64))
 
     k = a.k
     sel = order[:k]
@@ -149,6 +156,42 @@ def main():
     ]
     with open(os.path.join(a.out, "tier_head_weights.hpp"), "w") as f:
         f.write("\n".join(hdr) + "\n")
+
+    # Version quantifiee (memes regles que serialize.py pour la grande tete :
+    # quantize_fc_layer, poids int8, biais int32) pour reutiliser les couches
+    # denses vectorisees du moteur.
+    def iarr(name, t, ctype):
+        v = np.asarray(t).ravel()
+        return f"inline constexpr {ctype} {name}[{v.size}] = {{{','.join(str(int(x)) for x in v)}}};"
+    Q = {"l1": ([], []), "l2": ([], []), "out": ([], [])}
+    keys = {"l1": "ls_l1", "l2": "ls_l2", "out": "ls_output"}
+    for l1, l2, o in head.get_coalesced_layer_stacks():
+        for name, layer in (("l1", l1), ("l2", l2), ("out", o)):
+            # La tete n'a pas ete rognee pendant l'entrainement : on ramene les
+            # poids dans la plage int8 de leur echelle (quelques valeurs).
+            wmax = 127.0 / q.weight_scales_dict[keys[name] + "_weight"]
+            nclip = int((layer.weight.data.abs() > wmax).sum())
+            if nclip:
+                print(f"{name} : {nclip} poids rognes a +-{wmax:.4f}", flush=True)
+            b, w = q.quantize_fc_layer(layer.bias.data.clone(), layer.weight.data.clamp(-wmax, wmax), keys[name], lambda *x, **y: None)
+            Q[name][0].append(w.to(torch.int8).numpy())
+            Q[name][1].append(b.to(torch.int32).numpy())
+    hq = [
+        "// Genere par tools/gpu/tiers_export.py : petite tete quantifiee comme la",
+        "// grande (quantize_fc_layer). Ne pas editer a la main.",
+        "#pragma once",
+        "#include <cstdint>",
+        "namespace tier_head_q",
+        "{",
+        f"inline constexpr int kK = {k};",
+        iarr("kL1W", np.stack(Q["l1"][0]), "std::int8_t"), iarr("kL1B", np.stack(Q["l1"][1]), "std::int32_t"),
+        iarr("kL2W", np.stack(Q["l2"][0]), "std::int8_t"), iarr("kL2B", np.stack(Q["l2"][1]), "std::int32_t"),
+        iarr("kOW", np.stack(Q["out"][0]), "std::int8_t"), iarr("kOB", np.stack(Q["out"][1]), "std::int32_t"),
+        "}",
+    ]
+    with open(os.path.join(a.out, "tier_head_q.hpp"), "w") as f:
+        f.write("\n".join(hq) + "\n")
+    print("export quantifie : " + ", ".join(f"{n} {Q[n][0][0].shape}" for n in Q), flush=True)
     print("export termine", flush=True)
 
 

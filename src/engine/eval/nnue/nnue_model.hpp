@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 
 // NNUE v2 model: implements the "Full_Threats + HalfKAv2_hm^" combined feature
 // set and the layer-stack architecture produced by nnue-pytorch commit
@@ -480,6 +481,83 @@ public:
         const auto &psqt_them = psqt_accumulator.template get_accumulator<!perspective>();
         const std::int64_t psqt_diff = static_cast<std::int64_t>(psqt_us[bucket]) - static_cast<std::int64_t>(psqt_them[bucket]);
         return static_cast<std::int32_t>(psqt_diff / FinalScale) + static_cast<std::int32_t>(out * Head::kNnue2Score);
+    }
+
+    // Palier reduit quantifie : petite tete au format de la grande (int8 /
+    // int32, memes echelles, quantize_fc_layer de nnue-pytorch), sur les K
+    // premiers neurones des deux perspectives. Reutilise les couches denses
+    // vectorisees et la meme chaine de sortie que get_result.
+    template <Color perspective, class Q>
+    std::int32_t get_narrow_result_q(int piece_count) const
+    {
+        constexpr int K = Q::kK;
+        constexpr int Half = NAccumulator / 2;
+        using SL1 = DenseLayer<2 * K, L2, WeightScaleBitsL1>;
+        struct SmallStack
+        {
+            SL1 l1;
+            L2Layer l2;
+            OutputLayer output;
+        };
+        static const auto stacks = []
+        {
+            std::vector<SmallStack> v;
+            v.reserve(NumLsBuckets);
+            for (int b = 0; b < NumLsBuckets; ++b)
+            {
+                AlignedArray<std::array<std::int8_t, 2 * K>, L2> w1;
+                AlignedArray<std::int32_t, L2> b1;
+                for (int o = 0; o < L2; ++o)
+                {
+                    b1[o] = Q::kL1B[b * L2 + o];
+                    for (int i = 0; i < 2 * K; ++i)
+                        w1[o][i] = Q::kL1W[(b * L2 + o) * 2 * K + i];
+                }
+                AlignedArray<std::array<std::int8_t, 2 * L2>, L3> w2;
+                AlignedArray<std::int32_t, L3> b2;
+                for (int o = 0; o < L3; ++o)
+                {
+                    b2[o] = Q::kL2B[b * L3 + o];
+                    for (int i = 0; i < 2 * L2; ++i)
+                        w2[o][i] = Q::kL2W[(b * L3 + o) * 2 * L2 + i];
+                }
+                AlignedArray<std::array<std::int8_t, 2 * L2 + 2 * L3>, 1> wo;
+                AlignedArray<std::int32_t, 1> bo;
+                bo[0] = Q::kOB[b];
+                for (int i = 0; i < 2 * L2 + 2 * L3; ++i)
+                    wo[0][i] = Q::kOW[b * (2 * L2 + 2 * L3) + i];
+                v.push_back(SmallStack{SL1(std::move(w1), std::move(b1)), L2Layer(std::move(w2), std::move(b2)),
+                                       OutputLayer(std::move(wo), std::move(bo))});
+            }
+            return v;
+        }();
+
+        const int bucket = bucket_for_piece_count(piece_count);
+        const auto &acc_us = accumulator.template get_accumulator<perspective>();
+        const auto &acc_them = accumulator.template get_accumulator<!perspective>();
+        std::array<std::uint8_t, 2 * K> l0;
+        for (int j = 0; j < K; ++j)
+        {
+            const int a = std::clamp<int>(acc_us[j], 0, 255), b = std::clamp<int>(acc_us[j + Half], 0, 255);
+            const int c = std::clamp<int>(acc_them[j], 0, 255), d = std::clamp<int>(acc_them[j + Half], 0, 255);
+            l0[j] = std::uint8_t((a * b) >> 9);
+            l0[K + j] = std::uint8_t((c * d) >> 9);
+        }
+        const auto &ls = stacks[bucket];
+        const auto raw_l1 = ls.l1.get_raw(l0);
+        const std::int32_t skip_raw = raw_l1[L2 - 2] - raw_l1[L2 - 1];
+        std::array<std::uint8_t, 2 * L2> l1_out;
+        squared_crelu<L2, WeightScaleBitsL1>(raw_l1, l1_out);
+        const auto raw_l2 = ls.l2.get_raw(l1_out);
+        std::array<std::uint8_t, 2 * L3> l2_out;
+        squared_crelu<L3, WeightScaleBitsL2>(raw_l2, l2_out);
+        const std::int32_t output_raw = ls.output.get_result_split(l1_out, l2_out);
+        const std::int64_t combined_raw = static_cast<std::int64_t>(output_raw) + static_cast<std::int64_t>(skip_raw);
+        const std::int64_t layerstack_final = (combined_raw * OutputRescaleNum) / OutputRescaleDen;
+        const auto &psqt_us = psqt_accumulator.template get_accumulator<perspective>();
+        const auto &psqt_them = psqt_accumulator.template get_accumulator<!perspective>();
+        const std::int64_t psqt_diff = static_cast<std::int64_t>(psqt_us[bucket]) - static_cast<std::int64_t>(psqt_them[bucket]);
+        return static_cast<std::int32_t>((2 * layerstack_final + psqt_diff) / FinalScale);
     }
 
     // PSQT-only output: the material/PSQT head of the network, skipping the
