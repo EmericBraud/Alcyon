@@ -26,6 +26,7 @@ namespace search
         int &slot = worker.static_eval_stack[ply];
         if (slot == SearchWorker::kEvalNone)
         {
+            EVAL_STAT(worker, ply);
             slot = Eval::prune_eval_relative<Us>(worker.get_board(),
                                                  -engine_constants::eval::Inf,
                                                  engine_constants::eval::Inf);

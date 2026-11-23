@@ -23,6 +23,7 @@ int SearchWorker::qsearch(int alpha, int beta, int ply)
 
     if (!in_check)
     {
+        EVAL_STAT(*this, ply);
         stand_pat = Eval::eval_relative<Us>(board, alpha, beta);
         if (std::abs(stand_pat) < engine_constants::eval::SyzygyScore - 1000)
             stand_pat += correction<Us>();

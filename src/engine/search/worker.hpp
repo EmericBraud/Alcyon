@@ -1,4 +1,23 @@
 #pragma once
+#ifdef ALCYON_EVAL_STATS
+#include <cstdio>
+// Comptage des evaluations NNUE par distance a la racine (build separe).
+struct EvalPlyStats
+{
+    unsigned long long n[128] = {};
+    ~EvalPlyStats()
+    {
+        std::fprintf(stderr, "EVALPLY");
+        for (int i = 0; i < 128; ++i)
+            std::fprintf(stderr, " %llu", n[i]);
+        std::fprintf(stderr, "\n");
+    }
+};
+inline EvalPlyStats eval_ply_stats;
+#define EVAL_STAT(w, ply) (++eval_ply_stats.n[(ply) < 127 ? (ply) : 127])
+#else
+#define EVAL_STAT(w, ply) ((void)0)
+#endif
 
 #include <algorithm>
 #include <cstdlib>
