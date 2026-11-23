@@ -74,3 +74,10 @@ Duree de chaque match : ~10 min.
   tables") gagnerait ~3 % du temps total.
 - Les menaces sont deja recalculees seulement autour des cases touchees ;
   aller plus loin demanderait de les maintenir de facon incrementale.
+
+## Essai non retenu : pages geantes pour les poids
+
+Copie des poids dans une zone anonyme alignee 2 Mo avec
+`madvise(MADV_HUGEPAGE)` (Linux, THP en mode `madvise`) : 486 k noeuds/s sans,
+480 k avec, sur le serveur EPYC (8 positions x 2 s, deux passes) -- aucun
+gain, et la copie fait perdre le partage des 111 Mo entre processus. Annule.
