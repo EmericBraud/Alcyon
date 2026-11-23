@@ -46,3 +46,31 @@ Faux departs documentes :
 Sur le serveur x86 (AMD EPYC 7543, AVX2), version sans l'etape 4 : 371 k ->
 469 k noeuds/s (+26 %), et en parties (10+0.1, 491 parties, meme binaire,
 optimisations desactivees pour la base) : **+35,6 +- 20,7 Elo**.
+
+## Validation finale en parties
+
+Serveur x86 (AMD EPYC 7543), 10+0.1, Hash 16, 1 thread, livre UHO,
+concurrence 50, deux binaires distincts compiles depuis leurs branches
+(bench 16763 pour les deux) :
+
+| match | Elo | parties |
+|---|---|---|
+| nnue-speed (etapes 1-3) vs meme binaire sans les optimisations | +34,9 +- 20,3 | 500 |
+| **nnue-speed (etapes 1-4) vs v6.1 (`main`)** | **+46,8 +- 19,2** | 500 (169 V / 102 D / 229 N, 0 perte au temps) |
+
+Duree de chaque match : ~10 min.
+
+## Ce qui reste (profil apres les 4 etapes)
+
+| poste | part |
+|---|---|
+| mise a jour de l'accumulateur (une passe par coup, ~10 lignes de poids) | 37 % |
+| couches denses (l0 + couche creuse + 2 petites couches) | 22 % |
+| features de menaces (collecte avant/apres, difference, index) | ~20 % |
+| copies d'accumulateurs | < 1 % |
+
+- Rafraichissements apres un coup de roi : 2 % des mises a jour mais 10 % des
+  lignes lues (54 lignes contre 10) ; un cache par case de roi ("Finny
+  tables") gagnerait ~3 % du temps total.
+- Les menaces sont deja recalculees seulement autour des cases touchees ;
+  aller plus loin demanderait de les maintenir de facon incrementale.
