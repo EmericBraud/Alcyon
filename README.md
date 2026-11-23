@@ -46,6 +46,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 | v5.5 | 60s+0.2s | 1224 | 41.1% | -2.6 ± 13.9 | ~3356 |
 | v6.0 | 60s+0.2s | 820 | 97.7% | +27.2 ± 15.9 | ~3386 |
 | v6.1 | 60s+0.2s | 428 | **99.1%** | **+44.1 ± 19.6** | **~3403** |
+| v6.2 | 60s+0.2s | 434 (partial) | **99.8%** | **+52.4 ± 21.7** | **~3411** |
 
 v6.0 was the first version **ahead of Stockfish 8** at this time control; v6.1
 adds a learned time manager; v6.2 makes the network ~44% faster with an

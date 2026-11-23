@@ -17,6 +17,11 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering, `
 | v5.5 | 60s+0.2s | 1224 | 607.5 / 1224 (49.6%) — 394W / 403L / 427D | **-2.6 ± 13.9** ‡§ |
 | v6.0 | 60s+0.2s | 820 | 442.0 / 820 (53.9%) — 288W / 224L / 308D | **+27.2 ± 15.9** ¶ |
 | v6.1 | 60s+0.2s | 428 | 241.0 / 428 (56.3%) — 155W / 101L / 172D | **+44.1 ± 19.6** ¶ |
+| v6.2 | 60s+0.2s | 434 | 249.5 / 434 (57.5%) — 165W / 100L / 169D | **+52.4 ± 21.7** ¶ ◊ |
+
+◊ v6.2 match stopped at 434 of 500 games: the Graviton instance became
+unreachable mid-run. Same conditions as v6.1 (Graviton, concurrency 32, Hash 64).
+An earlier partial run on an AMD EPYC 7543 gave +72.1 ± 32.2 over 220 games.
 
 † v5.0 was measured against a Rosetta 2 (x86_64-emulated) Stockfish 8; later
 rows use a natively-compiled arm64 Stockfish 8, worth an estimated 25 Elo more.
