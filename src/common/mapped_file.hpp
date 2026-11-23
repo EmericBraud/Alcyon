@@ -1,9 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <memory>
 #include <string>
 
@@ -31,10 +28,6 @@ namespace mapped
     {
         const std::byte *base = nullptr;
         std::size_t size = 0;
-        // Zone reellement projetee (differente de base/size pour la copie
-        // alignee sur pages geantes).
-        void *raw = nullptr;
-        std::size_t raw_size = 0;
     };
 
     // Renvoie un shared_ptr<Mapping> dont le deleter fait le munmap, ou
@@ -59,39 +52,20 @@ namespace mapped
         if (addr == MAP_FAILED)
             return nullptr;
 
-#if defined(__linux__) && defined(MADV_HUGEPAGE)
-        // Pages geantes (2 Mo) pour les poids : la mise a jour de
-        // l'accumulateur lit ~10 lignes eparpillees dans ~110 Mo a chaque coup,
-        // et chaque ligne sur une page de 4 Ko distincte coute un defaut de TLB.
-        // Les pages geantes transparentes ne s'appliquent qu'a la memoire
-        // anonyme : on recopie le fichier dans une zone alignee sur 2 Mo.
-        // ALCYON_NO_HUGEPAGES=1 garde le partage du fichier entre processus.
-        if (!std::getenv("ALCYON_NO_HUGEPAGES"))
-        {
-            constexpr std::size_t Huge = std::size_t(2) << 20;
-            const std::size_t raw_size = size + Huge;
-            void *raw = ::mmap(nullptr, raw_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            if (raw != MAP_FAILED)
-            {
-                auto *aligned = reinterpret_cast<std::byte *>((reinterpret_cast<std::uintptr_t>(raw) + Huge - 1) & ~(Huge - 1));
-                ::madvise(aligned, size, MADV_HUGEPAGE);
-                std::memcpy(aligned, addr, size);
-                ::munmap(addr, size);
-                auto *m = new Mapping{aligned, size, raw, raw_size};
-                return std::shared_ptr<const Mapping>(m, [](const Mapping *p) {
-                    ::munmap(p->raw, p->raw_size);
-                    delete p;
-                });
-            }
-        }
-#endif
-        auto *m = new Mapping{static_cast<const std::byte *>(addr), size, addr, size};
+        auto *m = new Mapping{static_cast<const std::byte *>(addr), size};
         return std::shared_ptr<const Mapping>(m, [](const Mapping *p) {
-            ::munmap(p->raw, p->raw_size);
+            ::munmap(const_cast<void *>(static_cast<const void *>(p->base)), p->size);
             delete p;
         });
     }
 
+    // Vue typee sur une region du mapping, dont la duree de vie est portee
+    // par le mapping lui-meme (constructeur aliasing de shared_ptr).
+    //
+    // ponytail: reinterpret_cast sur des octets mappes -- formellement il
+    // faudrait std::start_lifetime_as (C++23). Aucun compilateur reel ne
+    // pose probleme ici (T est trivialement copiable et la disposition
+    // memoire est celle du fichier), mais si on passe a C++23, remplacer.
     template <typename T>
     std::shared_ptr<const T> view_at(const std::shared_ptr<const Mapping> &map, std::size_t offset)
     {
