@@ -15,12 +15,14 @@ git lfs install --skip-repo >/dev/null
 log "telechargement du binpack, decompresse a la volee (disque de 32 Go)"
 mkdir -p "$W/data"
 HF=https://huggingface.co/datasets/linrock/test80-2024/resolve/main
-F=${BINPACK:-test80-2024-01-jan-2tb7p.min-v2.v6.binpack.zst}
-if [ ! -f "$W/data/${F%.zst}.done" ]; then
-  (curl -sSL "$HF/$F" | zstd -d -q -o "$W/data/${F%.zst}" --force &&
-   touch "$W/data/${F%.zst}.done" &&
-   echo "$(date +%H:%M:%S) pret : ${F%.zst} ($(du -h "$W/data/${F%.zst}" | cut -f1))" >> ~/setup_gpu.status) &
-fi
+BINPACKS=${BINPACKS:-"test80-2024-01-jan-2tb7p.min-v2.v6.binpack.zst test80-2024-02-feb-2tb7p.min-v2.v6.binpack.zst"}
+for F in $BINPACKS; do
+  if [ ! -f "$W/data/${F%.zst}.done" ]; then
+    (curl -sSL "$HF/$F" | zstd -d -q -o "$W/data/${F%.zst}" --force &&
+     touch "$W/data/${F%.zst}.done" &&
+     echo "$(date +%H:%M:%S) pret : ${F%.zst} ($(du -h "$W/data/${F%.zst}" | cut -f1))" >> ~/setup_gpu.status) &
+  fi
+done
 
 log "Alcyon (branche eval-tiers) et nnue-pytorch"
 if [ ! -d "$W/alcyon" ]; then
