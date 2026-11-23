@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/config/config.hpp"
 
 // NNUE v2 model: implements the "Full_Threats + HalfKAv2_hm^" combined feature
 // set and the layer-stack architecture produced by nnue-pytorch commit
@@ -361,7 +362,7 @@ public:
         const int bucket = bucket_for_piece_count(piece_count);
         const auto &ls = layer_stacks[bucket];
 
-        const auto raw_l1 = ls.l1.get_raw(l0);
+        const auto raw_l1 = engine_constants::search::SparseL1 ? ls.l1.get_raw_sparse(l0) : ls.l1.get_raw(l0);
         const std::int32_t skip_raw = raw_l1[L2 - 2] - raw_l1[L2 - 1];
 
         std::array<std::uint8_t, 2 * L2> l1_out;
