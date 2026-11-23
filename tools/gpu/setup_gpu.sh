@@ -9,7 +9,7 @@ log() { echo "$(date +%H:%M:%S) $*" | tee -a ~/setup_gpu.status; }
 log "paquets systeme"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq git git-lfs zstd curl build-essential cmake python3-venv python3-dev tmux >/dev/null
+apt-get install -y -qq git git-lfs zstd curl build-essential g++-14 cmake python3-venv python3-dev tmux >/dev/null
 git lfs install --skip-repo >/dev/null
 
 log "telechargement du binpack, decompresse a la volee (disque de 32 Go)"
@@ -51,7 +51,7 @@ fi
 
 log "moteur Alcyon"
 cd "$W/alcyon"
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF >/dev/null && cmake --build build -j"$(nproc)" >/dev/null
+CXX=g++-14 CC=gcc-14 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF >/dev/null && cmake --build build -j"$(nproc)" >/dev/null
 (cd build && ALCYON_DATA_DIR=$PWD/data sh -c 'printf "bench\nquit\n" | ./alcyon | tail -1') | tee -a ~/setup_gpu.status
 
 log "installation terminee (telechargements eventuellement encore en cours)"
