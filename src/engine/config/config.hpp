@@ -44,7 +44,11 @@ namespace engine_constants
         PARAM_SPECIFIER int TtNmpSkip = 1;
         // 1 = eval statique brute memorisee en TT et relue au lieu de
         // recalculer le reseau.
-        PARAM_SPECIFIER int TtEvalCache = 0;
+        PARAM_SPECIFIER int TtEvalCache = 1;
+        // 1 = mise a jour de l'accumulateur fusionnee (un seul passage par coup).
+        PARAM_SPECIFIER int FusedAccUpdate = 1;
+        // 1 = premiere couche dense creuse (entrees nulles sautees).
+        PARAM_SPECIFIER int SparseL1 = 1;
         PARAM_SPECIFIER int TtNmpGap = 99;
         // Ajustement LMR par borne TT (masque) : 1 +1 si borne haute <= alpha,
         // 2 +1 si borne basse >= beta, 4 -1 si borne basse >= beta.
