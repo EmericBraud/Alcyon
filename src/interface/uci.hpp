@@ -642,6 +642,14 @@ public:
             {
                 run_eval(is);
             }
+            else if (token == "evaltier")
+            {
+                // Diagnostic de l'eval par paliers : eval complete puis eval
+                // reduite (tier_mode courant) de la position, camp au trait.
+                const int full = b.get_nnue_eval().evaluate_abs(b);
+                const int narrow = b.get_nnue_eval().evaluate_narrow_abs(b);
+                logs::uci << "full " << full << " narrow " << narrow << std::endl;
+            }
             else if (token == "orderstats")
             {
                 // Histogramme des rangs de coupure -- voir search::record_cutoff.

@@ -172,3 +172,33 @@ Profil de la 1re version flottante : la petite tete prenait 43 % du temps
 (produits scalaires flottants non vectorises sans reassociation), alors que
 la mise a jour partielle de l'accumulateur etait tombee a 13 % (contre 44 %
 pour la mise a jour complete). La quantification a regle le probleme.
+
+## Premier match : -200 Elo, et pourquoi
+
+Matchs rapides sur le serveur GPU (128 coeurs, 10+0.1, Hash 16, v5 permute
+des deux cotes, tete quantifiee k = 128) :
+
+| seuil (tier_ply_pct) | Elo | parties |
+|---|---|---|
+| 50 % | -196 +- 37 | 295 (arrete) |
+| 70 % | -175 +- 39 | 274 (arrete) |
+
+Diagnostic (commande UCI `evaltier` ajoutee : eval complete et reduite de la
+position) : les tetes flottante et quantifiee concordent a quelques cp pres,
+l'integration est donc juste ; mais la petite tete s'ecarte de la complete
+de 30 a 90 cp sur des positions ordinaires. Mesure propre ensuite
+(`tiers_matryoshka.py`, positions |eval| < 600 cp) : **RMS 145 cp, MAE 97 cp**.
+
+**Erreur d'interpretation de ma part** : j'avais compare l'ecart petite tete /
+v5 (MSE 0,0064 en probabilite) a l'ecart v5 / donnees (0,0085) et conclu que
+le palier ajoutait moins d'erreur que v5 n'en faisait deja. Mais l'ecart aux
+donnees est gonfle par le bruit de la cible : ce n'etait pas un etalon. Autour
+d'une eval nulle, 0,0064 en probabilite correspond a ~100 cp. Il faut juger
+un palier en centipions sur les positions disputees.
+
+Conclusion : une petite tete apprise sur un accumulateur fige est trop
+imprecise. D'ou le fine-tuning Matryoshka (`tools/gpu/tiers_matryoshka.py`) :
+tout le reseau est reentraine depuis v5 (Adam, lr 3e-5 reseau / 3e-4 tete,
+cosinus), perte = perte complete (cible des donnees, lambda 0,6 comme v5) +
+perte de la petite tete (meme cible) + 20 x distillation vers la complete ;
+suivi de la perte complete (ne doit pas se degrader) et de l'ecart en cp.
