@@ -59,3 +59,26 @@ entrainement "Matryoshka"), calibre sur la meme cible pour que les paliers
 restent coherents (TT, marges d'elagage, correction history). Prototype
 suggere : deux paliers (1024 et 256), palier choisi par ply / profondeur de
 la racine.
+
+## Pipeline d'entrainement (retrouve le 2026-11-23)
+
+Rien n'etait versionne a part le sous-module ; la procedure se deduit du
+moteur (`src/engine/eval/nnue/nnue_model.hpp`) :
+
+- **nnue-pytorch au commit `4289208fe20cc6ec8753e5ee14c2f210de783ff0`** (le
+  sous-module pointait sur `9f72946`, plus recent, dont les signatures
+  d'architecture ne correspondent plus a v5) ;
+- features **`Full_Threats+HalfKAv2_hm^`** (60 720 + 22 528 = 83 248),
+  hyperparametres par defaut : L1 = 1024, L2 = 32, L3 = 32, 8 buckets PSQT,
+  8 piles de couches ;
+- export sans compression : `--ft-compression none` (le moteur ne lit pas le
+  leb128).
+
+Verification sur le serveur GPU : `serialize.py v5.nnue v5.pt` puis
+`serialize.py v5.pt v5_rt.nnue --ft-compression none --description <meme
+texte>` redonne **un fichier identique octet pour octet**, et le moteur fait le
+meme bench (16763) avec le reseau reexporte. On peut donc fine-tuner v5.
+
+Serveur : `tools/gpu/setup_gpu.sh` (RTX 5090, PyTorch cu128, g++-14 pour le
+moteur en C++23, binpacks `linrock/test80-2024` janvier et fevrier 2024,
+`.min-v2.v6`).

@@ -30,6 +30,9 @@ if [ ! -d "$W/alcyon" ]; then
 fi
 cd "$W/alcyon"
 git submodule update --init -q training/nnue-pytorch
+# Version qui a produit v3/v5 (voir nnue_model.hpp) : les plus recentes changent
+# les signatures d'architecture et ne relisent plus v5.nnue.
+(cd training/nnue-pytorch && git fetch -q origin 4289208fe20cc6ec8753e5ee14c2f210de783ff0 && git checkout -q 4289208fe20cc6ec8753e5ee14c2f210de783ff0)
 cd "$W"
 
 log "environnement Python (PyTorch CUDA 12.8 pour Blackwell)"
@@ -39,6 +42,7 @@ pip install -q --no-cache-dir --upgrade pip
 pip install -q --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu128
 REQ="$W/alcyon/training/nnue-pytorch/requirements.txt"
 if [ -f "$REQ" ]; then pip install -q --no-cache-dir -r "$REQ" || true; fi
+pip install -q --no-cache-dir lightning tyro
 python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), torch.cuda.get_device_name(0), 'sm', torch.cuda.get_device_capability(0))" | tee -a ~/setup_gpu.status
 
 log "chargeur de donnees de nnue-pytorch"
