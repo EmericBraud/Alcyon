@@ -274,6 +274,12 @@ public:
         accumulator.template update_feature<activate, perspective>(feature);
     }
 
+    template <Color perspective>
+    void update_acc_features_fused(const int *rem, int nrem, const int *add, int nadd, bool reset)
+    {
+        accumulator.template update_features_fused<perspective>(rem, nrem, add, nadd, reset);
+    }
+
     template <bool activate, Color perspective>
     void update_psqt_feature(int feature)
     {

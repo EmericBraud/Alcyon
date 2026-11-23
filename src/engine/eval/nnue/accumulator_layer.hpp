@@ -261,6 +261,68 @@ public:
             apply_row<activate>(acc, (*halfka_weights)[feature - NThreatFeatures]);
     }
 
+    // Mise a jour fusionnee : toutes les lignes retirees puis ajoutees d'un
+    // coup sont appliquees bloc par bloc, l'accumulateur restant dans les
+    // registres le temps du bloc. Avec update_feature, chaque ligne relisait
+    // et reecrivait les NNeurons valeurs de l'accumulateur ; ici il n'est lu
+    // et ecrit qu'une fois par coup. Meme arithmetique (sommes int16 dans le
+    // meme ordre par lane), donc resultat identique bit a bit.
+    // `reset` : on part des biais (rafraichissement apres un coup de roi).
+    template <Color perspective>
+    void update_features_fused(const int *rem, int nrem, const int *add, int nadd, bool reset)
+    {
+        constexpr std::size_t W = simd::SimdSize16;
+        constexpr std::size_t U = 8; // vecteurs par bloc
+        constexpr std::size_t Block = W * U;
+        static_assert(NNeurons % Block == 0, "bloc doit diviser NNeurons");
+        using int8_n = stdx::fixed_size_simd<std::int8_t, W>;
+
+        auto &acc = (*accumulators)[perspective];
+        const std::int16_t *src = reset ? biases->data() : acc.data();
+        for (std::size_t base = 0; base < static_cast<std::size_t>(NNeurons); base += Block)
+        {
+            simd::int16_v a[U];
+            for (std::size_t u = 0; u < U; ++u)
+                a[u].copy_from(src + base + u * W, stdx::element_aligned);
+            auto apply = [&](int feature, bool activate)
+            {
+                if (feature < NThreatFeatures)
+                {
+                    const std::int8_t *row = (*threat_weights)[feature].data() + base;
+                    for (std::size_t u = 0; u < U; ++u)
+                    {
+                        int8_n r;
+                        r.copy_from(row + u * W, stdx::element_aligned);
+                        const simd::int16_v w = stdx::simd_cast<simd::int16_v>(r);
+                        if (activate)
+                            a[u] += w;
+                        else
+                            a[u] -= w;
+                    }
+                }
+                else
+                {
+                    const std::int16_t *row = (*halfka_weights)[feature - NThreatFeatures].data() + base;
+                    for (std::size_t u = 0; u < U; ++u)
+                    {
+                        simd::int16_v w;
+                        w.copy_from(row + u * W, stdx::element_aligned);
+                        if (activate)
+                            a[u] += w;
+                        else
+                            a[u] -= w;
+                    }
+                }
+            };
+            for (int i = 0; i < nrem; ++i)
+                apply(rem[i], false);
+            for (int i = 0; i < nadd; ++i)
+                apply(add[i], true);
+            for (std::size_t u = 0; u < U; ++u)
+                a[u].copy_to(acc.data() + base + u * W, stdx::element_aligned);
+        }
+    }
+
     const auto &get_accumulator(int perspective) const
     {
         return (*accumulators)[perspective];

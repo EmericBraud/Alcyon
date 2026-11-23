@@ -32,6 +32,7 @@
 // on NnueEval::model and virtual_board.hpp.
 
 #include <algorithm>
+#include "engine/config/config.hpp"
 #include <array>
 #include <bit>
 #include <cstdint>
@@ -613,11 +614,27 @@ namespace nnue
             // full post-move activation set over a reset accumulator, and
             // the remove list is unused by construction (VBoard pushes no
             // per-piece toggles for the refreshed perspective).
-            if (pd.refresh[perspective])
-                model.template reset_acc_perspective<perspective>();
-            else
-                apply_acc_list<false, perspective>(pd.remove[perspective]);
-            apply_acc_list<true, perspective>(pd.add[perspective]);
+            const bool refresh = pd.refresh[perspective];
+            const auto &rem = pd.remove[perspective];
+            const auto &add = pd.add[perspective];
+            const int nrem = refresh ? 0 : rem.size();
+            const int nadd = add.size();
+            if (!engine_constants::search::FusedAccUpdate)
+            {
+                if (refresh)
+                    model.template reset_acc_perspective<perspective>();
+                else
+                    apply_acc_list<false, perspective>(rem);
+                apply_acc_list<true, perspective>(add);
+                return;
+            }
+            // Mise a jour fusionnee (voir AccumulatorLayer::update_features_fused) :
+            // on precharge les lignes, puis un seul passage sur l'accumulateur.
+            for (int i = 0; i < nrem; ++i)
+                model.prefetch_acc_feature(rem[i]);
+            for (int i = 0; i < nadd; ++i)
+                model.prefetch_acc_feature(add[i]);
+            model.template update_acc_features_fused<perspective>(rem.begin(), nrem, add.begin(), nadd, refresh);
         }
 
         template <Color perspective>
