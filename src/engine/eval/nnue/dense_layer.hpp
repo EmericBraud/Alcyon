@@ -103,6 +103,43 @@ public:
         return get_raw_sparse_list(inputs, nz, n);
     }
 
+    // Meme resultat que get_raw pour une entree dense, avec les poids
+    // regroupes [entree/4][neurone][4] : 16 entrees chargees d'un coup, puis
+    // un sdot par lane et par paquet de 4 neurones -- plus de reduction
+    // horizontale (addv) par neurone comme dans get_raw.
+    std::array<std::int32_t, NNeurons_> get_raw_grouped(
+        const std::array<std::uint8_t, NInputs_> &inputs) const
+    {
+#if defined(__ARM_FEATURE_DOTPROD) && defined(__aarch64__)
+        if constexpr (NNeurons_ % 4 == 0 && NInputs_ % 16 == 0)
+        {
+            constexpr int G = NNeurons_ / 4;
+            int32x4_t acc[G];
+            for (int g = 0; g < G; ++g)
+                acc[g] = vld1q_s32(biases->data() + 4 * g);
+            const std::int8_t *w4 = weights_g->data();
+            for (int k = 0; k < NInputs_; k += 16)
+            {
+                const int8x16_t x = vreinterpretq_s8_u8(vld1q_u8(inputs.data() + k));
+                const std::int8_t *row = w4 + std::size_t(k) * NNeurons_;
+                for (int g = 0; g < G; ++g)
+                    acc[g] = vdotq_laneq_s32(acc[g], vld1q_s8(row + 16 * g), x, 0);
+                for (int g = 0; g < G; ++g)
+                    acc[g] = vdotq_laneq_s32(acc[g], vld1q_s8(row + 4 * NNeurons_ + 16 * g), x, 1);
+                for (int g = 0; g < G; ++g)
+                    acc[g] = vdotq_laneq_s32(acc[g], vld1q_s8(row + 8 * NNeurons_ + 16 * g), x, 2);
+                for (int g = 0; g < G; ++g)
+                    acc[g] = vdotq_laneq_s32(acc[g], vld1q_s8(row + 12 * NNeurons_ + 16 * g), x, 3);
+            }
+            std::array<std::int32_t, NNeurons_> out;
+            for (int g = 0; g < G; ++g)
+                vst1q_s32(out.data() + 4 * g, acc[g]);
+            return out;
+        }
+#endif
+        return get_raw(inputs);
+    }
+
     // Meme resultat que get_raw, a partir de la liste (croissante) des
     // groupes de 4 entrees non nuls : nz[0..n).
     std::array<std::int32_t, NNeurons_> get_raw_sparse_list(

@@ -517,7 +517,7 @@ public:
         std::array<std::uint8_t, 2 * L2> l1_out;
         squared_crelu<L2, WeightScaleBitsL1>(raw_l1, l1_out);
 
-        const auto raw_l2 = ls.l2.get_raw(l1_out);
+        const auto raw_l2 = ls.l2.get_raw_grouped(l1_out);
         std::array<std::uint8_t, 2 * L3> l2_out;
         squared_crelu<L3, WeightScaleBitsL2>(raw_l2, l2_out);
 
