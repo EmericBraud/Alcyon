@@ -355,20 +355,31 @@ public:
     template <Color perspective>
     void update_features_fused_from(const AccTable &src_table, const int *rem, int nrem, const int *add, int nadd, bool reset)
     {
+        const std::int16_t *src = reset ? biases->data() : src_table[perspective].data();
+        apply_rows(src, (*accumulators)[perspective].data(), rem, nrem, add, nadd);
+    }
+
+    // Biais, et accumulateur courant d'une perspective en ecriture (pour le
+    // cache de rafraichissement de NnueEval).
+    const std::int16_t *bias_data() const { return biases->data(); }
+    template <Color perspective>
+    std::int16_t *acc_data() { return (*accumulators)[perspective].data(); }
+
+    // dst = src - lignes rem + lignes add (dst peut etre src).
+    void apply_rows(const std::int16_t *src, std::int16_t *dst, const int *rem, int nrem, const int *add, int nadd) const
+    {
         constexpr std::size_t W = simd::SimdSize16;
         constexpr std::size_t U = 8; // vecteurs par bloc
         constexpr std::size_t Block = W * U;
         static_assert(NNeurons % Block == 0, "bloc doit diviser NNeurons");
         using int8_n = stdx::fixed_size_simd<std::int8_t, W>;
 
-        auto &acc = (*accumulators)[perspective];
-        const std::int16_t *src = reset ? biases->data() : src_table[perspective].data();
 #if defined(__aarch64__)
         if constexpr (NNeurons % 128 == 0)
         {
             if (nrem <= MaxSplitRows && nadd <= MaxSplitRows)
             {
-                fused_split(src, acc.data(), rem, nrem, add, nadd);
+                fused_split(src, dst, rem, nrem, add, nadd);
                 return;
             }
         }
@@ -413,7 +424,7 @@ public:
             for (int i = 0; i < nadd; ++i)
                 apply(add[i], true);
             for (std::size_t u = 0; u < U; ++u)
-                a[u].copy_to(acc.data() + base + u * W, stdx::element_aligned);
+                a[u].copy_to(dst + base + u * W, stdx::element_aligned);
         }
     }
 

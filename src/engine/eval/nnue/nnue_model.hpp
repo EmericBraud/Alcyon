@@ -458,6 +458,15 @@ public:
         accumulator.template update_features_fused_from<perspective>(src, rem, nrem, add, nadd, reset);
     }
 
+    // Acces bruts pour le cache de rafraichissement (NnueEval).
+    const std::int16_t *acc_bias_data() const { return accumulator.bias_data(); }
+    template <Color perspective>
+    std::int16_t *acc_data() { return accumulator.template acc_data<perspective>(); }
+    void acc_apply_rows(const std::int16_t *src, std::int16_t *dst, const int *rem, int nrem, const int *add, int nadd) const
+    {
+        accumulator.apply_rows(src, dst, rem, nrem, add, nadd);
+    }
+
     void push_psqt_state()
     {
         psqt_snapshots[psqt_snapshot_depth] = psqt_accumulator.raw_state();

@@ -97,6 +97,38 @@ specifique a l'architecture : le gain devrait se retrouver sur x86.
 
 **Cumul de la branche : environ +32 % sur Mac** (+16,5 % puis +13,4 %).
 
+## Cache de rafraichissement par bucket de roi (« Finny tables »)
+
+Mesure prealable (bench 13, deux perspectives) :
+
+| | mises a jour | lignes de menaces (1 Ko) | lignes HalfKA (2 Ko) |
+|---|---|---|---|
+| coups normaux | 2,24 M | 17,45 M | 4,95 M |
+| rafraichissements (coup de roi) | 0,06 M | 1,86 M | 1,52 M |
+
+Les lignes HalfKA des rafraichissements font ~9 % des octets lus par
+l'accumulateur, soit ~2,5 % du temps total.
+
+Implementation (`NnueEval::refresh_from_cache`) : une entree par
+(perspective, bucket de roi), 2 x 32 entrees, ~134 Ko par instance. Elle
+garde biais + lignes HalfKA d'une position deja vue, et ses pieces en 11
+bitboards (les index HalfKA sont orientes, donc comparables dans un meme
+bucket). Au rafraichissement : difference par XOR des bitboards, application
+des seules lignes changees a l'entree, puis accumulateur = entree + toutes les
+lignes de menaces (elles dependent des relations entre pieces et ne se
+cachent pas). Sommes int16 modulo 2^16 : resultat identique. Option UCI
+`refresh_cache` (1 par defaut) pour comparer.
+
+Verification : noeuds identiques aux profondeurs 13 et 16 (6,8 M noeuds),
+bench 16763, 124 tests passes.
+
+Gain : **+2,1 a +2,5 %** de noeuds/s sur Mac (20 paires, moyenne/mediane,
+ecart-type par paire 2 %). Rien de specifique a l'architecture. Le gain
+devrait etre un peu plus grand en finale (plus de coups de roi) que sur les
+positions du bench.
+
+**Cumul de la branche : environ +35 % sur Mac.**
+
 ## Effet attendu sur les serveurs x86
 
 - Le 1er commit s'applique aussi a AVX2 (verifie exact sous Rosetta) : meme
@@ -127,8 +159,8 @@ specifique a l'architecture : le gain devrait se retrouver sur x86.
 | collecte des menaces + `threat_index` + `filter_threats_diff` | ~20 % |
 
 - La mise a jour est maintenant limitee par le calcul (2 x ~10 lignes de 1 a
-  2 Ko par coup) ; le seul levier restant est d'en lire moins (cache par case
-  de roi pour les rafraichissements, voir `docs/vitesse-nnue.md`).
+  2 Ko par coup). Le cache de rafraichissement est en place ; les lignes de
+  menaces des rafraichissements (~6 % des octets lus) restent recalculees.
 - Les menaces sont maintenant produites par deltas directs (voir plus haut) ;
   `threat_index` avec des tables reste neutre.
 - Sur x86, le prechargement pourrait se comporter autrement (latence memoire
