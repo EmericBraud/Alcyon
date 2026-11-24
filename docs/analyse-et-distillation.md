@@ -209,6 +209,47 @@ binpack), en ~1 min sur le Mac.
 
 Dans `gpu-archive/train/` et `gdrive:Alcyon/gpu-archive/train`.
 
+## 6. Fine-tunings de v5 sur le dataset de distillation (RTX 5090, vast.ai)
+
+lr 3e-5, gamma 0,8, ranger21. Validations : `val_distill` (positions de distillation mises de cote)
+et `val_feb` (test80 fevrier). Matchs contre v5 : meme binaire v6.2, 10+0.1, 400 parties.
+
+| variante | val_distill | val_feb | Elo contre v5 (epoques testees) |
+|---|---|---|---|
+| v5 | 0,00753 | 0,00387 | - |
+| distillation seule (9,3 M), lambda 1 | 0,00295 | 0,00585 (+51 %) | -107,5 / -101,8 / -107,5 |
+| melange 31 M (30 % distillation), lambda 1 | 0,00367 | 0,00381 | +2,6 / -6,1 / -6,1 |
+| melange 31 M, lambda 0,6 | - | 0,00381 | -12,2 / +0,9 |
+| melange 31 M, lambda 0,6, resultats de la distillation re-tires selon le score SF | - | 0,00397* | -9,6 / -31,4 |
+
+\* validation a lambda 0,6, non comparable directement.
+
+- La distillation seule sur-corrige (derive forte sur les donnees generales).
+- Le melange corrige la moitie de l'erreur sur nos positions sans deriver, mais aucun gain en parties.
+- Re-tirage des resultats (`mix_server.py --resample`) : pour p >= 0,5, gain avec proba 2p-1 sinon
+  nulle (symetrique) -> avec lambda 0,6, cible moyenne = score SF sur ces positions. Pas de gain.
+- Incident : disque plein (89 Go) -> un entrainement planta et un melange fut tronque ; refaits.
+
+## 7. Mesure privee : reseau Stockfish v14 dans Alcyon
+
+Question : combien vaut une eval de niveau Stockfish **a architecture identique** ?
+Le feature transformer de SFNNv14 (`nn-7bf13f9655c8.nnue`, avril 2026) est identique a celui de v5
+(meme empreinte : Full_Threats 60720 + HalfKAv2_hm, L1 1024, 8 PSQT, 8 piles) ; seule la tete dense
+differe (SF : fc0 31+1 raccourci, carre/ReLU sur 31, fc1 62->32, fc2 32->1 ; v5 : sortie sur la
+concatenation l1+l2, 128 entrees). Conversion du fichier (LEB128, ordre des PSQT) et tete SF
+transcrite sous un drapeau de compilation, sur une branche **locale non publiee** (`sf14-test`) :
+les reseaux Stockfish sont sous GPLv3, Alcyon sous MIT -> mesure uniquement, rien d'integre.
+
+| | Elo contre v5 (meme recherche v6.2, 10+0.1, 400 parties) |
+|---|---|
+| reseau Stockfish v14 dans Alcyon | **+205,0 +- 27,6** (243 V / 31 D / 126 N, 0 perte au temps) |
+
+Conclusion : a recherche et architecture identiques, la qualite d'entrainement du reseau vaut
+~200 Elo. Le levier principal d'Alcyon est un entrainement de reseau serieux (donnees massives,
+recette Stockfish, entrainement long), pas le fine-tuning de v5 ni l'architecture.
+(Les evals SF sont ~2x plus petites que v5 dans les positions decidees : marges de recherche
+reglees pour v5, donc +205 est plutot une borne basse.)
+
 ## Suite
 
 1. Fine-tuning de v5 sur un melange dataset de distillation / donnees d'origine (GPU ~1 h).
