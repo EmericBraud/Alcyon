@@ -313,7 +313,6 @@ public:
         // que la version generique (ldr d + saddw par 8 octets).
         constexpr int U = 16;
         constexpr int Block = 8 * U;
-        static_assert(NNeurons % Block == 0);
         for (int base = 0; base < NNeurons; base += Block)
         {
             int16x8_t a[U];
@@ -365,10 +364,13 @@ public:
         auto &acc = (*accumulators)[perspective];
         const std::int16_t *src = reset ? biases->data() : src_table[perspective].data();
 #if defined(__aarch64__)
-        if (nrem <= MaxSplitRows && nadd <= MaxSplitRows)
+        if constexpr (NNeurons % 128 == 0)
         {
-            fused_split(src, acc.data(), rem, nrem, add, nadd);
-            return;
+            if (nrem <= MaxSplitRows && nadd <= MaxSplitRows)
+            {
+                fused_split(src, acc.data(), rem, nrem, add, nadd);
+                return;
+            }
         }
 #endif
         for (std::size_t base = 0; base < static_cast<std::size_t>(NNeurons); base += Block)
