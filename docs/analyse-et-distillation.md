@@ -194,6 +194,21 @@ en archives tar par serie et par heure (Drive limite le nombre de fichiers/s, pa
 rclone vers `gdrive:Alcyon/gpu-archive`. Le remote `gdrive` doit avoir le scope `drive`
 (il etait en `drive.readonly`). Etat final verifie : `rclone check` 0 difference.
 
+### Dataset final de fine-tuning (`make_mix.py`, `binpack_chunks.py`)
+
+Un binpack est une suite de chunks independants ("BINP" + taille) : on peut en extraire et en
+concatener sans decoder. Les chunks test80 contiennent ~400 k positions d'affilee (parties
+consecutives) ; le melange est donc fait au niveau des positions (binpack -> plain -> melange ->
+binpack), en ~1 min sur le Mac.
+
+| fichier | contenu | positions |
+|---|---|---|
+| `train_mix.binpack` (1,06 Go) | 30 % distillation + 70 % test80-2024-03-mar v6 (chunks au hasard) | 31 130 660 |
+| `val_distill.binpack` | 10 chunks de distillation mis de cote | 303 745 |
+| `val_feb.binpack` | 3 chunks de test80-2024-02-feb v6 (source de la perte de reference de v5) | 1 206 406 |
+
+Dans `gpu-archive/train/` et `gdrive:Alcyon/gpu-archive/train`.
+
 ## Suite
 
 1. Fine-tuning de v5 sur un melange dataset de distillation / donnees d'origine (GPU ~1 h).
