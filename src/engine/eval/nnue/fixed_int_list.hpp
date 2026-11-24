@@ -43,6 +43,7 @@ namespace nnue::threats
         }
 
         inline void clear() { count = 0; }
+        inline void pop_back() { --count; }
         inline int size() const { return count; }
         inline bool empty() const { return count == 0; }
 

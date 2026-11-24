@@ -67,6 +67,36 @@ est neutre (0,998) ; le gain du 2e commit vient donc entierement des blocs
 larges et des chargements de 16 octets, propres a NEON. Cette voie n'est
 compilee que sur aarch64 ; x86 garde le code generique d'avant.
 
+## Menaces : deltas directs au lieu de la difference avant/apres
+
+Avant : pour chaque coup, `collect_move_scoped_features_both` collectait
+toutes les menaces autour des cases touchees sur la position **avant** le
+coup, puis **apres**, et `filter_threats_diff` en faisait la difference
+(environ la moitie des features collectees s'annulaient).
+
+Maintenant (`full_threats_delta.hpp`) : le coup est decompose en changements
+elementaires (piece retiree de la case de depart, piece prise retiree,
+piece posee a l'arrivee ; tour du roque), appliques un par un a un petit etat
+local (occupation, bitboards, mailbox). Pour un changement sur la case s, les
+features qui changent sont exactement :
+(a) les menaces de la piece en s ; (b) les menaces sur la piece en s
+(poussee de pion comprise, dans les deux sens) ; (c) les rayons decouverts :
+chaque fou, tour ou dame qui voit s voit, s vide, la premiere piece au-dela.
+Une feature retiree puis rajoutee dans le meme coup est annulee a
+l'emission. Les coups de roi gardent le rafraichissement complet pour la
+perspective du roi qui bouge ; l'autre perspective passe par les deltas.
+
+Controle : compile avec `-DALCYON_THREAT_DELTA_CHECK`, chaque coup calcule
+aussi l'ancienne difference et verifie l'egalite des ensembles retires et
+ajoutes (arret `FATAL` sinon). Aucune divergence sur 6,8 M noeuds
+(`bench 16`). Bench 16763, 124 tests passes.
+
+Gain : **+13,4 %** de noeuds/s sur Mac (14 paires, bench 13, ecart-type par
+paire 0,8 %, 1 308 k -> 1 494 k noeuds/s CPU). Ce changement n'a rien de
+specifique a l'architecture : le gain devrait se retrouver sur x86.
+
+**Cumul de la branche : environ +32 % sur Mac** (+16,5 % puis +13,4 %).
+
 ## Effet attendu sur les serveurs x86
 
 - Le 1er commit s'applique aussi a AVX2 (verifie exact sous Rosetta) : meme
@@ -99,7 +129,7 @@ compilee que sur aarch64 ; x86 garde le code generique d'avant.
 - La mise a jour est maintenant limitee par le calcul (2 x ~10 lignes de 1 a
   2 Ko par coup) ; le seul levier restant est d'en lire moins (cache par case
   de roi pour les rafraichissements, voir `docs/vitesse-nnue.md`).
-- Les menaces relevent de l'algorithme (ce qui est collecte et filtre), pas
-  du code machine : l'index lui-meme ne coute rien de plus avec des tables.
+- Les menaces sont maintenant produites par deltas directs (voir plus haut) ;
+  `threat_index` avec des tables reste neutre.
 - Sur x86, le prechargement pourrait se comporter autrement (latence memoire
   plus grande sur EPYC) : a re-essayer la-bas avant de l'ecarter.

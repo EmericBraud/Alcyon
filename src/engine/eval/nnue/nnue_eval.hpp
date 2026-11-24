@@ -54,6 +54,7 @@
 #include "engine/eval/nnue/nnue_model.hpp"
 #include "engine/eval/nnue/full_threats_encoder.hpp"
 #include "engine/eval/nnue/full_threats_incremental.hpp"
+#include "engine/eval/nnue/full_threats_delta.hpp"
 #include "engine/eval/nnue/halfka_v2_hm_encoder.hpp"
 
 namespace nnue
@@ -972,4 +973,22 @@ namespace nnue
             return {std::move(buckets[Is])...};
         }
     };
+
+#ifdef ALCYON_THREAT_DELTA_CHECK
+    // Controle de developpement : les deltas directs (full_threats_delta.hpp)
+    // doivent donner le meme ensemble que l'ancienne difference avant/apres.
+    template <class L1, class L2>
+    inline void check_threat_delta(const L1 &ref_r, const L2 &got_r, int r0, const L1 &ref_a, const L2 &got_a, int a0)
+    {
+        auto same = [](const L1 &ref, const L2 &got, int g0)
+        {
+            std::vector<int> x(ref.begin(), ref.end()), y(got.begin() + g0, got.end());
+            std::sort(x.begin(), x.end());
+            std::sort(y.begin(), y.end());
+            return x == y;
+        };
+        if (!same(ref_r, got_r, r0) || !same(ref_a, got_a, a0))
+            FATAL("threat delta mismatch");
+    }
+#endif
 }
