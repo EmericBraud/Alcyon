@@ -97,6 +97,30 @@ public:
         }
     }
 
+    // Toutes les lignes retirees puis ajoutees d'un coup, l'accumulateur
+    // gardee dans une copie locale (registres) : update_feature relisait et
+    // reecrivait les 32 octets a chaque ligne, faute de pouvoir exclure que
+    // poids et accumulateur (tous deux int32) se chevauchent. Memes sommes,
+    // dans le meme ordre.
+    template <Color perspective>
+    void update_features_fused(const int *rem, int nrem, const int *add, int nadd, bool reset)
+    {
+        auto &acc = (*accumulators)[perspective];
+        std::array<std::int32_t, NBuckets> a;
+        if (reset)
+            a.fill(0);
+        else
+            a = acc;
+        const auto &w = *weights;
+        for (int i = 0; i < nrem; ++i)
+            for (int j = 0; j < NBuckets; ++j)
+                a[j] -= w[rem[i]][j];
+        for (int i = 0; i < nadd; ++i)
+            for (int j = 0; j < NBuckets; ++j)
+                a[j] += w[add[i]][j];
+        acc = a;
+    }
+
     template <Color perspective>
     const auto &get_accumulator() const
     {

@@ -725,6 +725,20 @@ namespace nnue
         template <Color perspective>
         void apply_pending_psqt(const PendingDiff &pd) const
         {
+            if (engine_constants::search::FusedAccUpdate)
+            {
+                const bool refresh = pd.refresh[perspective];
+                const auto &rem = pd.remove[perspective];
+                const auto &add = pd.add[perspective];
+                const int nrem = refresh ? 0 : rem.size();
+                const int nadd = add.size();
+                for (int i = 0; i < nrem; ++i)
+                    model.prefetch_psqt_feature(rem[i]);
+                for (int i = 0; i < nadd; ++i)
+                    model.prefetch_psqt_feature(add[i]);
+                model.template update_psqt_features_fused<perspective>(rem.begin(), nrem, add.begin(), nadd, refresh);
+                return;
+            }
             if (pd.refresh[perspective])
                 model.template reset_psqt_perspective<perspective>();
             else
