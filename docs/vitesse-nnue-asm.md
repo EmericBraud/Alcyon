@@ -129,6 +129,24 @@ positions du bench.
 
 **Cumul de la branche : environ +35 % sur Mac.**
 
+## Troisieme passe : quelques % de plus
+
+Profil de depart (bench 16) : accumulateur 32 %, `get_result` 26 %, deltas de
+menaces 15 %, `Eval::eval` 7 % (materialize et PSQT inlines), cache 4 %.
+
+| piste | resultat |
+|---|---|
+| fusionner les coups en attente quand `materialize` en rattrape plusieurs | **ecarte sans l'ecrire** : sur bench 13, 1,05 M rattrapages d'un seul coup contre ~41 k de plusieurs (3,5 %) ; au plus ~1 % a gagner pour une annulation de coups bien plus delicate |
+| `threat_index` inline (`FORCE_INLINE`) et par tables (base de la paire, rang de la case visee) | **+1,7 %** (16 paires) -- neutre quand la collecte dominait, utile maintenant que les deltas l'appellent sans cesse |
+| mise a jour PSQT fusionnee : l'accumulateur PSQT (8 int32 par perspective) etait relu et reecrit a chaque ligne, le compilateur ne pouvant exclure que poids et accumulateur (int32 tous deux) se chevauchent ; copie locale en registres, une ecriture par coup | **+1,9 %** (16 paires) |
+| `get_result` : valeurs des groupes non nuls compactees par `tbl` pendant le calcul de l0, pour que la boucle `sdot` les lise a la suite au lieu de relire l0 par index | 0,99 (neutre), annule |
+
+Ensemble de la passe : **+4,3 a +4,6 %** (16 paires, ecart-type 0,8 %),
+noeuds identiques aux profondeurs 13 et 16, bench 16763, 124 tests passes.
+
+**Cumul de la branche contre `main` : +42 %** de noeuds/s sur Mac (12 paires,
+1 094 k -> 1 564 k noeuds/s CPU, ecart-type 1,8 %).
+
 ## Effet attendu sur les serveurs x86
 
 - Le 1er commit s'applique aussi a AVX2 (verifie exact sous Rosetta) : meme
