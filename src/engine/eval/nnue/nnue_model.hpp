@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
+#include <cstring>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -170,6 +172,118 @@ private:
 
         pairwise_square_half(acc_us.data(), l0.data());
         pairwise_square_half(acc_them.data(), l0.data() + Half);
+    }
+
+    // compute_l0 + liste des groupes de 4 octets non nuls de l0 (entree de
+    // get_raw_sparse_list), en une seule passe vectorielle. Avant, l0 etait
+    // ecrit, recopie (memcpy de 1 Ko), puis relu groupe par groupe par une
+    // boucle scalaire de NAccumulator/4 iterations -- autant de travail que
+    // le produit creux lui-meme. Ici le masque des groupes non nuls est tire
+    // des registres qui viennent d'etre calcules, et une table donne les
+    // indices a ecrire (ecriture inconditionnelle, avance de popcount).
+    // nz doit avoir NAccumulator/4 + 8 places. Retourne le nombre de groupes.
+    static int compute_l0_nnz(
+        const std::array<std::int16_t, NAccumulator> &acc_us,
+        const std::array<std::int16_t, NAccumulator> &acc_them,
+        std::array<std::uint8_t, NAccumulator> &l0,
+        std::uint16_t *nz)
+    {
+        constexpr int Half = NAccumulator / 2;
+#if defined(__aarch64__)
+        static_assert(Half % 16 == 0);
+        // indices (dans un bloc de 4 groupes) des bits a 1 de m, m < 16
+        alignas(8) static constexpr std::uint16_t Lut4[16][4] = {
+            {0, 0, 0, 0}, {0, 0, 0, 0}, {1, 0, 0, 0}, {0, 1, 0, 0},
+            {2, 0, 0, 0}, {0, 2, 0, 0}, {1, 2, 0, 0}, {0, 1, 2, 0},
+            {3, 0, 0, 0}, {0, 3, 0, 0}, {1, 3, 0, 0}, {0, 1, 3, 0},
+            {2, 3, 0, 0}, {0, 2, 3, 0}, {1, 2, 3, 0}, {0, 1, 2, 3}};
+        const int16x8_t zero = vdupq_n_s16(0);
+        const int16x8_t c255 = vdupq_n_s16(255);
+        const uint32x4_t bits = {1, 2, 4, 8};
+        int n = 0;
+        std::uint16_t g = 0;
+        auto half = [&](const std::int16_t *acc, std::uint8_t *out)
+        {
+            for (int i = 0; i < Half; i += 16, g += 4)
+            {
+                const int16x8_t a0 = vminq_s16(vmaxq_s16(vld1q_s16(acc + i), zero), c255);
+                const int16x8_t a1 = vminq_s16(vmaxq_s16(vld1q_s16(acc + i + 8), zero), c255);
+                const int16x8_t b0 = vminq_s16(vmaxq_s16(vld1q_s16(acc + i + Half), zero), c255);
+                const int16x8_t b1 = vminq_s16(vmaxq_s16(vld1q_s16(acc + i + Half + 8), zero), c255);
+                const uint16x8_t p0 = vshrq_n_u16(vmulq_u16(vreinterpretq_u16_s16(a0), vreinterpretq_u16_s16(b0)), 9);
+                const uint16x8_t p1 = vshrq_n_u16(vmulq_u16(vreinterpretq_u16_s16(a1), vreinterpretq_u16_s16(b1)), 9);
+                const uint8x16_t v = vuzp1q_u8(vreinterpretq_u8_u16(p0), vreinterpretq_u8_u16(p1));
+                vst1q_u8(out + i, v);
+                const uint32x4_t v32 = vreinterpretq_u32_u8(v);
+                const unsigned m = vaddvq_u32(vandq_u32(vtstq_u32(v32, v32), bits));
+                vst1_u16(nz + n, vadd_u16(vld1_u16(Lut4[m]), vdup_n_u16(g)));
+                n += std::popcount(m);
+            }
+        };
+        half(acc_us.data(), l0.data());
+        half(acc_them.data(), l0.data() + Half);
+        return n;
+#elif defined(__AVX2__)
+        static_assert(Half % 32 == 0);
+        // indices des bits a 1 de m (8 bits), completes par des zeros
+        struct Lut8T
+        {
+            alignas(16) std::uint16_t v[256][8];
+        };
+        static constexpr Lut8T Lut8 = []
+        {
+            Lut8T t{};
+            for (int m = 0; m < 256; ++m)
+            {
+                int k = 0;
+                for (int b = 0; b < 8; ++b)
+                    if (m & (1 << b))
+                        t.v[m][k++] = static_cast<std::uint16_t>(b);
+            }
+            return t;
+        }();
+        const __m256i zero = _mm256_setzero_si256();
+        const __m256i c255 = _mm256_set1_epi16(255);
+        int n = 0;
+        std::uint16_t g = 0;
+        auto half = [&](const std::int16_t *acc, std::uint8_t *out)
+        {
+            for (int i = 0; i < Half; i += 32, g += 8)
+            {
+                auto ld = [](const std::int16_t *p)
+                { return _mm256_load_si256(reinterpret_cast<const __m256i *>(p)); };
+                const __m256i a0 = _mm256_min_epi16(_mm256_max_epi16(ld(acc + i), zero), c255);
+                const __m256i a1 = _mm256_min_epi16(_mm256_max_epi16(ld(acc + i + 16), zero), c255);
+                const __m256i b0 = _mm256_min_epi16(_mm256_max_epi16(ld(acc + i + Half), zero), c255);
+                const __m256i b1 = _mm256_min_epi16(_mm256_max_epi16(ld(acc + i + Half + 16), zero), c255);
+                const __m256i p0 = _mm256_srli_epi16(_mm256_mullo_epi16(a0, b0), 9);
+                const __m256i p1 = _mm256_srli_epi16(_mm256_mullo_epi16(a1, b1), 9);
+                // packus travaille par moitie de 128 bits : on remet l'ordre
+                const __m256i v = _mm256_permute4x64_epi64(_mm256_packus_epi16(p0, p1), 0xD8);
+                _mm256_storeu_si256(reinterpret_cast<__m256i *>(out + i), v);
+                const unsigned m = ~static_cast<unsigned>(_mm256_movemask_ps(
+                                       _mm256_castsi256_ps(_mm256_cmpeq_epi32(v, zero)))) & 0xFFu;
+                const __m128i idx = _mm_add_epi16(_mm_load_si128(reinterpret_cast<const __m128i *>(Lut8.v[m])),
+                                                  _mm_set1_epi16(static_cast<short>(g)));
+                _mm_storeu_si128(reinterpret_cast<__m128i *>(nz + n), idx);
+                n += std::popcount(m);
+            }
+        };
+        half(acc_us.data(), l0.data());
+        half(acc_them.data(), l0.data() + Half);
+        return n;
+#else
+        compute_l0(acc_us, acc_them, l0);
+        int n = 0;
+        for (int j = 0; j < NAccumulator / 4; ++j)
+        {
+            std::uint32_t grp;
+            std::memcpy(&grp, l0.data() + 4 * j, 4);
+            nz[n] = static_cast<std::uint16_t>(j);
+            n += grp != 0;
+        }
+        return n;
+#endif
     }
 
     // Squared-CReLU: given raw (unshifted) dense-layer output at scale
@@ -382,13 +496,22 @@ public:
         const auto &acc_us = accumulator.template get_accumulator<us>();
         const auto &acc_them = accumulator.template get_accumulator<them>();
 
-        std::array<std::uint8_t, NAccumulator> l0;
-        compute_l0(acc_us, acc_them, l0);
-
         const int bucket = bucket_for_piece_count(piece_count);
         const auto &ls = layer_stacks[bucket];
 
-        const auto raw_l1 = engine_constants::search::SparseL1 ? ls.l1.get_raw_sparse(l0) : ls.l1.get_raw(l0);
+        alignas(64) std::array<std::uint8_t, NAccumulator> l0;
+        std::array<std::int32_t, L2> raw_l1;
+        if (engine_constants::search::SparseL1)
+        {
+            alignas(16) std::uint16_t nz[NAccumulator / 4 + 8];
+            const int n = compute_l0_nnz(acc_us, acc_them, l0, nz);
+            raw_l1 = ls.l1.get_raw_sparse_list(l0, nz, n);
+        }
+        else
+        {
+            compute_l0(acc_us, acc_them, l0);
+            raw_l1 = ls.l1.get_raw(l0);
+        }
         const std::int32_t skip_raw = raw_l1[L2 - 2] - raw_l1[L2 - 1];
 
         std::array<std::uint8_t, 2 * L2> l1_out;
