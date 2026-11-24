@@ -8,6 +8,9 @@
 #include <utility>
 #include <memory>
 #include <experimental/simd>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 
 #include "core/piece/color.hpp"
 #include "common/aligned_array.hpp"
@@ -273,6 +276,75 @@ public:
         accumulators.swap(other);
     }
 
+#if defined(__aarch64__)
+    // Variante NEON : les lignes sont d'abord
+    // converties en pointeurs et triees par largeur (int8 menaces / int16
+    // HalfKA), puis chaque bloc de l'accumulateur applique les quatre listes
+    // a la suite. L'ordre des additions change, mais l'arithmetique int16 est
+    // modulo 2^16 (associative et commutative) : resultat identique bit a bit.
+    static constexpr int MaxSplitRows = 128;
+
+    void fused_split(const std::int16_t *src, std::int16_t *dst, const int *rem, int nrem, const int *add, int nadd) const
+    {
+        const std::int8_t *r8[MaxSplitRows], *a8[MaxSplitRows];
+        const std::int16_t *r16[MaxSplitRows], *a16[MaxSplitRows];
+        int nr8 = 0, nr16 = 0, na8 = 0, na16 = 0;
+        const std::int8_t *t8 = threat_weights->data()->data();
+        const std::int16_t *t16 = halfka_weights->data()->data();
+        for (int i = 0; i < nrem; ++i)
+        {
+            const int f = rem[i];
+            if (f < NThreatFeatures)
+                r8[nr8++] = t8 + std::size_t(f) * NNeurons;
+            else
+                r16[nr16++] = t16 + std::size_t(f - NThreatFeatures) * NNeurons;
+        }
+        for (int i = 0; i < nadd; ++i)
+        {
+            const int f = add[i];
+            if (f < NThreatFeatures)
+                a8[na8++] = t8 + std::size_t(f) * NNeurons;
+            else
+                a16[na16++] = t16 + std::size_t(f - NThreatFeatures) * NNeurons;
+        }
+        // NEON : 32 registres, donc 16 accumulateurs de 8 lanes (bloc de 128
+        // valeurs) ; les lignes int8 se chargent par 16 octets et s'elargissent
+        // avec saddw/saddw2 (ssubw/ssubw2) -- deux fois moins de chargements
+        // que la version generique (ldr d + saddw par 8 octets).
+        constexpr int U = 16;
+        constexpr int Block = 8 * U;
+        static_assert(NNeurons % Block == 0);
+        for (int base = 0; base < NNeurons; base += Block)
+        {
+            int16x8_t a[U];
+            for (int u = 0; u < U; ++u)
+                a[u] = vld1q_s16(src + base + 8 * u);
+            for (int i = 0; i < nr8; ++i)
+                for (int u = 0; u < U; u += 2)
+                {
+                    const int8x16_t w = vld1q_s8(r8[i] + base + 8 * u);
+                    a[u] = vsubw_s8(a[u], vget_low_s8(w));
+                    a[u + 1] = vsubw_high_s8(a[u + 1], w);
+                }
+            for (int i = 0; i < nr16; ++i)
+                for (int u = 0; u < U; ++u)
+                    a[u] = vsubq_s16(a[u], vld1q_s16(r16[i] + base + 8 * u));
+            for (int i = 0; i < na8; ++i)
+                for (int u = 0; u < U; u += 2)
+                {
+                    const int8x16_t w = vld1q_s8(a8[i] + base + 8 * u);
+                    a[u] = vaddw_s8(a[u], vget_low_s8(w));
+                    a[u + 1] = vaddw_high_s8(a[u + 1], w);
+                }
+            for (int i = 0; i < na16; ++i)
+                for (int u = 0; u < U; ++u)
+                    a[u] = vaddq_s16(a[u], vld1q_s16(a16[i] + base + 8 * u));
+            for (int u = 0; u < U; ++u)
+                vst1q_s16(dst + base + 8 * u, a[u]);
+        }
+    }
+#endif
+
     template <Color perspective>
     void update_features_fused(const int *rem, int nrem, const int *add, int nadd, bool reset)
     {
@@ -292,6 +364,13 @@ public:
 
         auto &acc = (*accumulators)[perspective];
         const std::int16_t *src = reset ? biases->data() : src_table[perspective].data();
+#if defined(__aarch64__)
+        if (nrem <= MaxSplitRows && nadd <= MaxSplitRows)
+        {
+            fused_split(src, acc.data(), rem, nrem, add, nadd);
+            return;
+        }
+#endif
         for (std::size_t base = 0; base < static_cast<std::size_t>(NNeurons); base += Block)
         {
             simd::int16_v a[U];
