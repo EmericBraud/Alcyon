@@ -203,3 +203,45 @@ Lecture : le réseau ne manquait pas de positions déséquilibrées (près de la
 données d'origine en sont déjà). Passer de ~47 % à ~58 % n'apprend rien de nouveau. L'erreur
 qui reste sur ces positions vient de la recette (fine-tunings successifs depuis v5), pas de la
 répartition des données.
+
+## Sonde à lr élevé (25/11, arrêtée)
+
+A repris à lr 5e-4 (× 0,846 par époque, 22 époques prévues), données d'origine
+(`tools/distill/run_hilr.sh`). La val loss monte à 0,00315 puis redescend à 0,00297 à
+l'époque 9 (lr 1,1e-4), le même niveau que la lignée de A à lr comparable (0,00296 au début du
+recuit de A). Arrêtée là : l'héritage de v5 ne semble pas être ce qui bloque, et le recuit
+seul ne fait presque rien baisser dans cette lignée (0,00296 → 0,00295 pour A).
+
+## Affinage sur les scores Leela BT4 (25/11)
+
+Lu dans la recette SF (`recette-sf.md`) : SF entraîne sur les mêmes parties test80, mais
+réévaluées par Leela BT4. Affinage de A sur test80 2024 mars à juin **réévalués par BT4**
+(`xushawn/test80-bt4-relabel`, versions `-histfix`, 45 Go), lr 3e-4 × 0,854 par époque,
+20 époques, lambda 1,0 (`tools/distill/run_bt4.sh`). Validation : 300 000 positions de février
+2024 BT4. Environ 2 h 15 de GPU.
+
+Val loss (scores BT4) : 0,00285 à l'époque 0, 0,00278 à l'époque 5, puis plateau vers
+0,00275. Analyse par type de position sur 973 269 positions de février, scores BT4 :
+
+| | v5 | A | SF v14 | BT4 |
+|---|---|---|---|---|
+| ensemble | 59,5 | 51,3 | 49,3 | **50,2** |
+| matériel égal | 32,4 | 28,5 | 28,7 | 27,9 |
+| écart de matériel 1-2 | 96,9 | 83,1 | 78,5 | 81,3 |
+| finales | 73,1 | 63,6 | 57,6 | 62,2 |
+| eval < 50 | 19,9 | 17,9 | 19,8 | 16,5 |
+| eval 150-400 | 74,8 | 69,1 | 59,3 | **72,5** |
+| eval ≥ 400 | 214,0 | 172,8 | 157,6 | 166,5 |
+
+Premier gain d'erreur réel (−2 % presque partout, la moitié de l'écart avec SF v14), sauf sur
+les avantages nets (eval 150-400), qui se dégradent. **Match contre A : +9,1 ± 15,7** (800
+parties, 215 V / 194 D / 391 N) : positif mais non significatif.
+
+Diagnostic sur les avantages nets : rapport médian éval du réseau / score BT4 sur les positions
+150-400 (échelle globale ajustée par réseau) : A 0,81, BT4 0,80, SF v14 0,90. Nos réseaux
+compriment les avantages nets. Ce n'est pas un facteur d'échelle global (l'échelle optimale vaut
+1,00 pour A et BT4) : c'est la forme de la courbe. Cause probable : la fonction de perte. Par
+défaut nnue-pytorch convertit l'éval du réseau avec une sigmoïde d'échelle 340 et la cible avec
+380 (décalages 270), exposant 2,5, sans asymétrie ; la recette SF utilise 295,7 / 380,0,
+décalages 285,3 / 289,1, exposant 2,43, asymétrie 0,23, une autre pondération par nombre de
+pièces et par ply, et saute les 18 premiers plies. Test en cours : `tools/distill/run_sfloss.sh`.
