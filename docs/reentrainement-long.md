@@ -244,4 +244,26 @@ compriment les avantages nets. Ce n'est pas un facteur d'échelle global (l'éch
 défaut nnue-pytorch convertit l'éval du réseau avec une sigmoïde d'échelle 340 et la cible avec
 380 (décalages 270), exposant 2,5, sans asymétrie ; la recette SF utilise 295,7 / 380,0,
 décalages 285,3 / 289,1, exposant 2,43, asymétrie 0,23, une autre pondération par nombre de
-pièces et par ply, et saute les 18 premiers plies. Test en cours : `tools/distill/run_sfloss.sh`.
+pièces et par ply, et saute les 18 premiers plies.
+
+## Affinage avec la perte de la recette SF (25/11, négatif)
+
+Réseau BT4 repris avec la perte complète de la recette SF (valeurs ci-dessus), mêmes données
+BT4, 16 époques, lr 1,5e-4 × 0,858 (`tools/distill/run_sfloss.sh`, 1 h 40 de GPU).
+
+- Erreur globale (scores BT4) : 50,5 contre 50,2 pour le réseau BT4 ; eval 150-400 : 72,6
+  (inchangé).
+- Rapport éval/cible sur 150-400 : **0,792** (BT4 : 0,80, SF v14 : 0,90). L'échelle globale
+  optimale passe à 1,08 : le réseau sort des evals plus petites, la compression ne se corrige pas.
+- **Match contre le réseau BT4 : −21,7 ± 15,1** (800 parties, 197 V / 247 D / 356 N). 19 pertes au
+  temps, 16 du réseau BT4 : sans elles l'écart serait plus défavorable encore (environ −27).
+
+L'hypothèse « la forme de la perte cause la compression » est réfutée. Lecture la plus probable :
+la compression des avantages nets est le rétrécissement classique d'un prédicteur incertain
+(quand il ne sait pas, il ramène vers 0), donc un symptôme du manque de précision et non sa
+cause. SF v14 comprime moins parce qu'il est plus précis : environ 75 fois plus de positions,
+dont des positions d'arbres de recherche réévaluées par BT4.
+
+Pertes au temps : à 10+0.1 et concurrence 30 sur ce serveur, les matchs du 25/11 en ont 15 à 19
+pour 800 parties (réparties : 8 / 7 dans BT4 contre A), contre 0 à concurrence 24 pendant le run
+long. Pour les prochains matchs : concurrence 24 au plus.
