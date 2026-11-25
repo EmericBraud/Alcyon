@@ -124,3 +124,63 @@ Environ 23 h de serveur (téléchargement, run long, recuit, mesures), soit envi
   après 11 minutes de fine-tuning Matryoshka). Un entraînement Matryoshka long à partir de ce
   réseau est le test naturel.
 - Plus de données (autres mois de test80, `leela96`, `dfrc`) pour dépasser le plateau.
+
+## Où l'erreur reste élevée (analyse du 25/11)
+
+But : savoir quelles positions cibler si on ajoute des données. Fait sur le serveur
+(`tools/distill/dump_binpack.cpp`, `err_eval.py`, `err_buckets.py`, 2 min 30 sur 64 cœurs).
+
+Méthode : 735 684 positions calmes de `val_feb` (sans échec, coup joué ni capture ni
+promotion, comme le filtre d'entraînement). Chaque position est évaluée par le moteur avec
+v5, le nouveau réseau (recuit A) et le réseau SF v14 (branche locale `sf14-test`). Erreur =
+écart au carré en probabilité de gain, sigmoïde(eval/400), entre le réseau et le score Leela,
+× 10⁴. Une échelle par réseau est ajustée (v5 0,82, A 0,98, SF v14 0,92) : les evals de v5
+sont trop grandes d'environ 20 % par rapport aux scores Leela.
+
+Ensemble : v5 58,6, A 50,7, SF v14 48,2. La colonne « part du reste » donne la part de
+l'écart A − SF v14 que porte chaque catégorie (une part négative : A fait mieux que SF v14).
+
+| catégorie | part des positions | v5 | A | SF v14 | part du reste |
+|---|---|---|---|---|---|
+| ouverture et milieu (matériel ≥ 40) | 48 % | 39,1 | 33,7 | 35,2 | −29 % |
+| milieu allégé (20-39) | 20 % | 89,8 | 78,1 | 72,6 | 43 % |
+| finale (< 20) | 32 % | 68,9 | 59,7 | 52,9 | 86 % |
+| matériel égal | 61 % | 32,4 | 28,4 | 28,4 | 1 % |
+| écart de matériel 1-2 | 36 % | 94,2 | 81,4 | 75,6 | 82 % |
+| écart de matériel ≥ 3 | 2 % | 192,5 | 158,9 | 140,9 | 17 % |
+| aucun pion passé | 66 % | 35,4 | 30,9 | 31,5 | −16 % |
+| pion passé | 24 % | 89,7 | 77,5 | 70,7 | 65 % |
+| pion passé en 6e/7e | 10 % | 134,1 | 114,9 | 102,2 | 51 % |
+| roi tranquille | 72 % | 42,5 | 37,0 | 37,0 | 1 % |
+| roi exposé (3-5 attaques sur sa zone) | 24 % | 95,6 | 82,2 | 73,8 | 80 % |
+| roi très exposé (≥ 6) | 4 % | 118,0 | 102,3 | 91,0 | 20 % |
+| eval < 150 | 70 % | 26,0 | 23,0 | 24,9 | −55 % |
+| eval 150-400 | 17 % | 72,4 | 66,7 | 56,7 | 66 % |
+| eval ≥ 400 | 13 % | 217,7 | 180,5 | 163,2 | 89 % |
+| ply < 20 | 22 % | 5,6 | 5,1 | 11,9 | −59 % |
+
+(eval < 150 regroupe les deux lignes < 50 et 50-150 de `err_buckets.py`. Sortie complète,
+y compris types de finales, tension et ply, dans `gsrv:Alcyon-serveur/erran/an.out`.)
+
+Lecture :
+
+- **Le réentraînement a gagné partout à peu près pareil** (−12 à −18 % d'erreur dans chaque
+  catégorie) : ce n'est pas un type de position qui a fait les +120 Elo.
+- **Sur les positions équilibrées, A est déjà au niveau de SF v14, voire meilleur** :
+  matériel égal, roi tranquille, pas de pion passé, eval < 150, ouverture. Il y a là un biais :
+  A est entraîné sur des données Leela de la même source que la validation, SF v14 sur
+  d'autres données. Il ne faut pas en conclure que A évalue mieux ces positions en absolu.
+- **Tout l'écart restant est dans les positions déséquilibrées** : finales (86 % du reste),
+  écart de matériel (82 %), pions passés, roi exposé (80 %), avantage net ou décisif. Ces
+  catégories se recouvrent, c'est le même groupe de positions vu sous plusieurs angles :
+  celles où un camp a un avantage concret.
+- L'écart d'erreur global entre A et SF v14 est petit (50,7 contre 48,2), alors que SF v14
+  vaut encore environ 80 Elo de plus en partie. La recherche passe beaucoup de temps dans
+  des positions déséquilibrées, plus rares dans ces données de parties Leela équilibrées :
+  c'est là que la précision paie en Elo.
+
+**Données à cibler** : des positions déséquilibrées et des finales, plutôt que d'autres mois
+de test80 (même répartition que l'actuel). Candidats : `dfrc` (Fischer aléatoire, plus de
+structures et de déséquilibres), les jeux de linrock riches en finales, ou des positions
+tirées des arbres de recherche d'Alcyon (positions réellement visitées), rescorées par
+une source forte.
