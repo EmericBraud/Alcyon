@@ -184,3 +184,22 @@ de test80 (même répartition que l'actuel). Candidats : `dfrc` (Fischer aléato
 structures et de déséquilibres), les jeux de linrock riches en finales, ou des positions
 tirées des arbres de recherche d'Alcyon (positions réellement visitées), rescorées par
 une source forte.
+
+## Test : données ciblées sur les positions déséquilibrées (25/11, aucun effet)
+
+Fine-tuning de A, 10 époques, lr 6e-5 × 0,85^k (fin à 1,4e-5, recuit comparable à A),
+lambda 1,0 (`tools/distill/run_mixdes.sh`). Mélange en positions : 74 % test80 juin 2024,
+20 % de positions de test80 2023 juillet et octobre gardées par `filt_desequilibre.cpp`
+(écart de matériel 1-4 points ou finale : 47 % des positions passent le filtre), 6 % de
+`linrock/dual-nnue/hse-v1` (90 % d'écarts ≥ 5 points, 96 % d'evals ≥ 400). Données toutes
+notées par Leela. Environ 1 h 25 de serveur.
+
+Val loss : 0,00295 (A) → 0,00293. Analyse par type de position : **aucune catégorie ne bouge
+de plus de 1 %** (matériel égal 28,4 → 28,5 ; écart 1-2 : 81,4 → 81,4 ; finales 59,7 → 59,8 ;
+eval 150-400 : 66,7 → 66,3). Pas de dérive sur les positions équilibrées, pas de gain sur les
+autres. Match contre A arrêté à 100 parties (−28 ± 44), inutile vu l'analyse.
+
+Lecture : le réseau ne manquait pas de positions déséquilibrées (près de la moitié des
+données d'origine en sont déjà). Passer de ~47 % à ~58 % n'apprend rien de nouveau. L'erreur
+qui reste sur ces positions vient de la recette (fine-tunings successifs depuis v5), pas de la
+répartition des données.

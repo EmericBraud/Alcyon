@@ -1,8 +1,10 @@
-import math, chess, numpy as np
+import math, sys, chess, numpy as np
+X=sys.argv[1] if len(sys.argv)>1 else None
+NAMES=["v5","A","sf14"]+([X] if X else [])
 from multiprocessing import Pool
 W="/workspace/erran"; V={1:1,2:3,3:3,4:5,5:9,6:0}
 def feats(l):
-    fen,sc,res,ply,a,b,c=l.split("\t"); B=chess.Board(fen); us=B.turn
+    t=l.rstrip("\n").split("\t"); fen,sc,res,ply=t[:4]; EV=[int(x) for x in t[4:]]; B=chess.Board(fen); us=B.turn
     npm={col:sum(V[p.piece_type] for p in B.piece_map().values() if p.color==col and p.piece_type not in (1,6)) for col in (0,1)}
     pw={col:len(B.pieces(1,col)) for col in (0,1)}
     tot=npm[0]+npm[1]
@@ -48,27 +50,27 @@ def feats(l):
     sc=int(sc); asc=abs(sc)
     ev="equilibre <50" if asc<50 else "leger 50-150" if asc<150 else "net 150-400" if asc<400 else "decisif >=400"
     pl=int(ply); plb="ply <20" if pl<20 else "ply 20-59" if pl<60 else "ply 60-119" if pl<120 else "ply >=120"
-    return sc,int(a),int(b),int(c),dict(phase=phase,typ=typ,finale=eg,passes=pp,tension=ten,roi=kss,eval=ev,ply=plb,
+    return sc,EV,dict(phase=phase,typ=typ,finale=eg,passes=pp,tension=ten,roi=kss,eval=ev,ply=plb,
         materiel=("materiel egal" if imb==0 else "ecart 1-2" if abs(imb)<=2 else "ecart >=3"))
 if __name__=="__main__":
-    with Pool(62) as p: R=p.map(feats,open(f"{W}/evals.tsv"),chunksize=2000)
-    sc=np.array([r[0] for r in R],float); E=np.array([[r[1],r[2],r[3]] for r in R],float)
+    with Pool(62) as p: R=p.map(feats,open(f"{W}/evals{'_'+X if X else ''}.tsv"),chunksize=2000)
+    sc=np.array([r[0] for r in R],float); E=np.array([r[1] for r in R],float); J=len(NAMES)
     sig=lambda x:1/(1+np.exp(-x))
     T=sig(sc/400)
     # echelle par reseau ajustee (l'eval moteur n'est pas forcement a l'echelle des scores Leela)
     ks=[]
-    for j in range(3):
+    for j in range(J):
         best=min(np.arange(0.5,2.01,0.02),key=lambda k:np.mean((sig(k*E[:,j]/400)-T)**2)); ks.append(best)
-    P=np.stack([sig(ks[j]*E[:,j]/400) for j in range(3)],1)
+    P=np.stack([sig(ks[j]*E[:,j]/400) for j in range(J)],1)
     err=(P-T[:,None])**2*1e4
-    print("echelles ajustees v5/A/sf14 :",[round(k,2) for k in ks])
+    print("echelles ajustees",NAMES,[round(k,2) for k in ks])
     tot_gap=(err[:,1]-err[:,2]).sum()
-    print(f"ensemble  n={len(R)}  erreur (x1e4) v5 {err[:,0].mean():.1f}  A {err[:,1].mean():.1f}  sf14 {err[:,2].mean():.1f}\n")
+    print(f"ensemble  n={len(R)}  erreur (x1e4) "+"  ".join(f"{n} {err[:,j].mean():.1f}" for j,n in enumerate(NAMES))+"\n")
     for key in ["phase","finale","materiel","typ","passes","tension","roi","eval","ply"]:
-        print(f"== {key}"); print(f"  {'categorie':30s} {'part':>6s} {'v5':>6s} {'A':>6s} {'sf14':>6s} {'gain v5->A':>10s} {'reste A-sf14':>12s} {'part du reste':>13s}")
+        print(f"== {key}"); print(f"  {'categorie':30s} {'part':>6s} {'v5':>6s} {'A':>6s} {'sf14':>6s} {'gain v5->A':>10s} {'reste A-sf14':>12s} {'part du reste':>13s}"+(f" {X:>6s} {X+' vs A':>9s}" if X else ""))
         cats={}
-        for i,r in enumerate(R): cats.setdefault(r[4][key],[]).append(i)
+        for i,r in enumerate(R): cats.setdefault(r[2][key],[]).append(i)
         for c,ix in sorted(cats.items(),key=lambda kv:-len(kv[1])):
             e=err[ix]; m=e.mean(0); g=(e[:,1]-e[:,2]).sum()/tot_gap
-            print(f"  {c:30s} {100*len(ix)/len(R):5.1f}% {m[0]:6.1f} {m[1]:6.1f} {m[2]:6.1f} {100*(1-m[1]/m[0]):9.0f}% {100*(1-m[2]/m[1]):11.0f}% {100*g:12.0f}%")
+            print(f"  {c:30s} {100*len(ix)/len(R):5.1f}% {m[0]:6.1f} {m[1]:6.1f} {m[2]:6.1f} {100*(1-m[1]/m[0]):9.0f}% {100*(1-m[2]/m[1]):11.0f}% {100*g:12.0f}%"+(f" {m[3]:6.1f} {100*(m[3]/m[1]-1):+8.1f}%" if X else ""))
         print()
