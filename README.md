@@ -48,6 +48,7 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 | v6.1 | 60s+0.2s | 428 | **99.1%** | **+44.1 ± 19.6** | **~3403** |
 | v6.2 | 60s+0.2s | 434 (partial) | **99.8%** | **+52.4 ± 21.7** | **~3411** |
 | **v6.2 + v7.nnue** ‡ | 60s+0.2s | 400 | **>99.99%** | **+134.0 ± 24.2** | **~3493** |
+| **v7** § | 60s+0.2s | 240 (partial) | **>99.99%** | **+150.7 ± 31.0** | **~3510** |
 
 v6.0 was the first version **ahead of Stockfish 8** at this time control; v6.1
 adds a learned time manager; v6.2 makes the network ~44% faster with an
@@ -69,6 +70,13 @@ measured in games.
 ‡ Measured on a rented 64-core server (concurrency 30) rather than on the Mac.
 v6.2 replayed there as a reference scored +25.2 ± 25.1, so the network alone is
 worth about +109 Elo against Stockfish 8.
+
+§ v7 = the v7 network plus the NNUE speed work below (`main` at fe9afc6). Same
+server, but at concurrency 16 while a network training ran on the same machine,
+stopped after 240 games (132 wins, 34 losses, 74 draws). All 7 time forfeits were
+Stockfish 8's, most likely a side effect of the load: counting them as draws gives
+about +139. Read it as "at least as strong as v6.2 + v7.nnue", not as a precise
+measure of the speed gain.
 
 † LOS — likelihood of superiority — is the probability that Alcyon is the
 stronger engine, from the decisive games only: `Φ((W−L)/√(2(W+L)))`. It answers
