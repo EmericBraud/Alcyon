@@ -47,11 +47,30 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 | v6.0 | 60s+0.2s | 820 | 97.7% | +27.2 ± 15.9 | ~3386 |
 | v6.1 | 60s+0.2s | 428 | **99.1%** | **+44.1 ± 19.6** | **~3403** |
 | v6.2 | 60s+0.2s | 434 (partial) | **99.8%** | **+52.4 ± 21.7** | **~3411** |
+| v6.2 ‡ | 60s+0.2s | 400 | 89.1% | +25.2 ± 25.1 | ~3384 |
+| **v6.2 + v7.nnue** ‡ | 60s+0.2s | 400 | **>99.99%** | **+134.0 ± 24.2** | **~3493** |
 
 v6.0 was the first version **ahead of Stockfish 8** at this time control; v6.1
 adds a learned time manager; v6.2 makes the network ~44% faster with an
 identical search (+46.8 ± 19.2 Elo over v6.1 in self-play, see
 [docs/vitesse-nnue.md](docs/vitesse-nnue.md)).
+
+The **v7 network** (`data/nnue/v7.nnue`) is v5 retrained for ~20 GPU hours on
+filtered Leela data (test80, five months, ~16 billion positions) and annealed. With
+the v6.2 search unchanged it scores **+134 against Stockfish 8** (204 wins, 57
+losses, 139 draws) and +123.5 ± 17.8 against v5 in direct self-play (800 games).
+See [docs/reentrainement-long.md](docs/reentrainement-long.md).
+
+`main` also includes the low-level NNUE optimisations of
+[docs/vitesse-nnue-asm.md](docs/vitesse-nnue-asm.md) (incremental threat deltas,
+NEON accumulator kernels, refresh tables): **+46 % nodes/s on Apple M-series and
++54 % on x86**, with an identical search (same bench node counts). Not yet
+measured in games.
+
+‡ Both measured on the same rented 64-core server (concurrency 30), one after the
+other, so the gap between them (+109 Elo) does not depend on the hardware. v6.2
+scored +52.4 on the Mac and +25.2 on the server: within the error bars of each
+other, which is why the reference was replayed on the same machine.
 
 † LOS — likelihood of superiority — is the probability that Alcyon is the
 stronger engine, from the decisive games only: `Φ((W−L)/√(2(W+L)))`. It answers
