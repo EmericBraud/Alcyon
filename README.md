@@ -47,7 +47,6 @@ Self-play match vs. **Stockfish 8** (single-threaded, 64MB hash, no pondering,
 | v6.0 | 60s+0.2s | 820 | 97.7% | +27.2 ± 15.9 | ~3386 |
 | v6.1 | 60s+0.2s | 428 | **99.1%** | **+44.1 ± 19.6** | **~3403** |
 | v6.2 | 60s+0.2s | 434 (partial) | **99.8%** | **+52.4 ± 21.7** | **~3411** |
-| v6.2 ‡ | 60s+0.2s | 400 | 89.1% | +25.2 ± 25.1 | ~3384 |
 | **v6.2 + v7.nnue** ‡ | 60s+0.2s | 400 | **>99.99%** | **+134.0 ± 24.2** | **~3493** |
 
 v6.0 was the first version **ahead of Stockfish 8** at this time control; v6.1
@@ -67,10 +66,9 @@ NEON accumulator kernels, refresh tables): **+46 % nodes/s on Apple M-series and
 +54 % on x86**, with an identical search (same bench node counts). Not yet
 measured in games.
 
-‡ Both measured on the same rented 64-core server (concurrency 30), one after the
-other, so the gap between them (+109 Elo) does not depend on the hardware. v6.2
-scored +52.4 on the Mac and +25.2 on the server: within the error bars of each
-other, which is why the reference was replayed on the same machine.
+‡ Measured on a rented 64-core server (concurrency 30) rather than on the Mac.
+v6.2 replayed there as a reference scored +25.2 ± 25.1, so the network alone is
+worth about +109 Elo against Stockfish 8.
 
 † LOS — likelihood of superiority — is the probability that Alcyon is the
 stronger engine, from the decisive games only: `Φ((W−L)/√(2(W+L)))`. It answers
