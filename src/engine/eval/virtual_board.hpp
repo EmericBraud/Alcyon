@@ -187,7 +187,9 @@ public:
         const Piece to_piece = move.get_to_piece();
 
         nnue::threats::FixedIntList<nnue::threats::MAX_TOUCHED_SQUARES> touched_squares;
+#ifdef ALCYON_THREAT_DELTA_CHECK
         nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> old_them_threats;
+#endif
 
         touched_squares.push_back(from_sq);
         touched_squares.push_back(to_sq);
@@ -222,15 +224,39 @@ public:
         nnue_eval.template push_halfka_piece<false, Them>(pd, them_king_sq, Us, KING, from_sq);
         nnue_eval.template push_halfka_piece<true, Them>(pd, them_king_sq, Us, KING, to_sq);
 
+#ifdef ALCYON_THREAT_DELTA_CHECK
+        const int chk_r = pd.remove[Them].size(), chk_a = pd.add[Them].size();
         nnue_eval.template collect_threats_scoped<Them>(*this, touched_squares, old_them_threats);
+#endif
+        {
+            // Deltas directs (full_threats_delta.hpp), perspective Them
+            // seulement : celle du roi qui bouge est rafraichie en entier.
+            nnue::threats::ThreatDelta<nnue::MAX_PENDING_FEATURES> td(
+                *this, Them == WHITE, Them == BLACK, pd.remove[WHITE], pd.add[WHITE], pd.remove[BLACK], pd.add[BLACK]);
+            td.remove_piece(from_sq, KING, Us);
+            if (to_piece != NO_PIECE)
+                td.remove_piece(to_sq, to_piece, Them);
+            td.add_piece(to_sq, KING, Us);
+            if (rook_from >= 0)
+            {
+                td.remove_piece(rook_from, ROOK, Us);
+                td.add_piece(rook_to, ROOK, Us);
+            }
+        }
 
         Board::play<Us>(move);
 
         nnue_eval.template collect_full_perspective<Us>(*this, pd.add[Us]);
 
-        nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> new_them_threats;
-        nnue_eval.template collect_threats_scoped<Them>(*this, touched_squares, new_them_threats);
-        nnue_eval.filter_threats_diff(old_them_threats, new_them_threats, pd.remove[Them], pd.add[Them]);
+#ifdef ALCYON_THREAT_DELTA_CHECK
+        {
+            nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> new_them_threats;
+            nnue_eval.template collect_threats_scoped<Them>(*this, touched_squares, new_them_threats);
+            nnue::threats::FixedIntList<nnue::MAX_PENDING_FEATURES> r, a;
+            nnue_eval.filter_threats_diff(old_them_threats, new_them_threats, r, a);
+            nnue::check_threat_delta(r, pd.remove[Them], chk_r, a, pd.add[Them], chk_a);
+        }
+#endif
 
         nnue_eval.commit_pending();
     }
@@ -256,7 +282,9 @@ public:
 
         constexpr Color Them = static_cast<Color>(!Us);
         nnue::threats::FixedIntList<nnue::threats::MAX_TOUCHED_SQUARES> touched_squares;
+#ifdef ALCYON_THREAT_DELTA_CHECK
         nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> old_white_threats, old_black_threats;
+#endif
 
         const int white_king_sq = king_sq[WHITE];
         const int black_king_sq = king_sq[BLACK];
@@ -291,14 +319,37 @@ public:
         // directly from the live (still pre-move) board -- no full Board
         // snapshot needed, since touched_squares only depends on `move`
         // itself. See NnueEval::collect_threats_scoped.
+#ifdef ALCYON_THREAT_DELTA_CHECK
+        const int chk_rw = pd.remove[WHITE].size(), chk_aw = pd.add[WHITE].size();
+        const int chk_rb = pd.remove[BLACK].size(), chk_ab = pd.add[BLACK].size();
         nnue_eval.collect_threats_scoped_both(*this, touched_squares, old_white_threats, old_black_threats);
+#endif
+        {
+            // Deltas directs (full_threats_delta.hpp) : le coup decompose en
+            // changements elementaires, dans l'ordre ou ils se produisent.
+            nnue::threats::ThreatDelta<nnue::MAX_PENDING_FEATURES> td(
+                *this, true, true, pd.remove[WHITE], pd.add[WHITE], pd.remove[BLACK], pd.add[BLACK]);
+            td.remove_piece(from_sq, from_piece, Us);
+            if (flags == Move::Flags::EN_PASSANT_CAP)
+                td.remove_piece((Us == WHITE) ? to_sq - 8 : to_sq + 8, PAWN, Them);
+            else if (to_piece != NO_PIECE)
+                td.remove_piece(to_sq, to_piece, Them);
+            td.add_piece(to_sq, flags == Move::Flags::PROMOTION_MASK ? move.get_promo_piece() : from_piece, Us);
+        }
 
         Board::play<Us>(move);
 
-        nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> new_white_threats, new_black_threats;
-        nnue_eval.collect_threats_scoped_both(*this, touched_squares, new_white_threats, new_black_threats);
-        nnue_eval.filter_threats_diff(old_white_threats, new_white_threats, pd.remove[WHITE], pd.add[WHITE]);
-        nnue_eval.filter_threats_diff(old_black_threats, new_black_threats, pd.remove[BLACK], pd.add[BLACK]);
+#ifdef ALCYON_THREAT_DELTA_CHECK
+        {
+            nnue::threats::FixedIntList<nnue::threats::MAX_THREAT_FEATURES> new_white_threats, new_black_threats;
+            nnue_eval.collect_threats_scoped_both(*this, touched_squares, new_white_threats, new_black_threats);
+            nnue::threats::FixedIntList<nnue::MAX_PENDING_FEATURES> rw, aw, rb, ab;
+            nnue_eval.filter_threats_diff(old_white_threats, new_white_threats, rw, aw);
+            nnue_eval.filter_threats_diff(old_black_threats, new_black_threats, rb, ab);
+            nnue::check_threat_delta(rw, pd.remove[WHITE], chk_rw, aw, pd.add[WHITE], chk_aw);
+            nnue::check_threat_delta(rb, pd.remove[BLACK], chk_rb, ab, pd.add[BLACK], chk_ab);
+        }
+#endif
 
         nnue_eval.commit_pending();
 #else

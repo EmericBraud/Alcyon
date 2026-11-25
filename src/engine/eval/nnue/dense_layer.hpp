@@ -85,34 +85,84 @@ public:
     std::array<std::int32_t, NNeurons_> get_raw_sparse(
         const std::array<std::uint8_t, NInputs_> &inputs) const
     {
-#if defined(__ARM_FEATURE_DOTPROD) && defined(__aarch64__)
-        if constexpr (NNeurons_ % 4 == 0 && NInputs_ % 4 == 0)
+        // 1) liste des groupes de 4 octets non nuls, sans branchement
+        //    (ecriture inconditionnelle, avance conditionnelle de l'indice) ;
+        // 2) parcours de la liste (get_raw_sparse_list) : plus aucun saut
+        //    imprevisible. NnueModel::compute_l0_nnz construit la meme liste
+        //    en vectoriel pendant le calcul de l0.
+        constexpr int NG = NInputs_ / 4;
+        std::uint16_t nz[NG + 8];
+        int n = 0;
+        for (int j = 0; j < NG; ++j)
         {
-            // Entrees par groupes de 4 octets : un groupe non nul se traite
-            // en NNeurons_/4 instructions sdot (4 entrees x 4 neurones). Les
-            // entrees sont <= 127, donc lisibles en int8 signe.
+            std::uint32_t g;
+            std::memcpy(&g, inputs.data() + 4 * j, 4);
+            nz[n] = static_cast<std::uint16_t>(j);
+            n += g != 0;
+        }
+        return get_raw_sparse_list(inputs, nz, n);
+    }
+
+    // Meme resultat que get_raw pour une entree dense, avec les poids
+    // regroupes [entree/4][neurone][4] : 16 entrees chargees d'un coup, puis
+    // un sdot par lane et par paquet de 4 neurones -- plus de reduction
+    // horizontale (addv) par neurone comme dans get_raw.
+    std::array<std::int32_t, NNeurons_> get_raw_grouped(
+        const std::array<std::uint8_t, NInputs_> &inputs) const
+    {
+#if defined(__ARM_FEATURE_DOTPROD) && defined(__aarch64__)
+        if constexpr (NNeurons_ % 4 == 0 && NInputs_ % 16 == 0)
+        {
             constexpr int G = NNeurons_ / 4;
             int32x4_t acc[G];
             for (int g = 0; g < G; ++g)
                 acc[g] = vld1q_s32(biases->data() + 4 * g);
             const std::int8_t *w4 = weights_g->data();
-            // 1) liste des groupes non nuls, sans branchement (ecriture
-            //    inconditionnelle, avance conditionnelle de l'indice) ;
-            // 2) parcours de la liste : plus aucun saut imprevisible.
-            constexpr int NG = NInputs_ / 4;
-            std::uint32_t grp[NG];
-            std::memcpy(grp, inputs.data(), NInputs_);
-            std::uint16_t nz[NG];
-            int n = 0;
-            for (int j = 0; j < NG; ++j)
+            for (int k = 0; k < NInputs_; k += 16)
             {
-                nz[n] = static_cast<std::uint16_t>(j);
-                n += grp[j] != 0;
+                const int8x16_t x = vreinterpretq_s8_u8(vld1q_u8(inputs.data() + k));
+                const std::int8_t *row = w4 + std::size_t(k) * NNeurons_;
+                for (int g = 0; g < G; ++g)
+                    acc[g] = vdotq_laneq_s32(acc[g], vld1q_s8(row + 16 * g), x, 0);
+                for (int g = 0; g < G; ++g)
+                    acc[g] = vdotq_laneq_s32(acc[g], vld1q_s8(row + 4 * NNeurons_ + 16 * g), x, 1);
+                for (int g = 0; g < G; ++g)
+                    acc[g] = vdotq_laneq_s32(acc[g], vld1q_s8(row + 8 * NNeurons_ + 16 * g), x, 2);
+                for (int g = 0; g < G; ++g)
+                    acc[g] = vdotq_laneq_s32(acc[g], vld1q_s8(row + 12 * NNeurons_ + 16 * g), x, 3);
             }
+            std::array<std::int32_t, NNeurons_> out;
+            for (int g = 0; g < G; ++g)
+                vst1q_s32(out.data() + 4 * g, acc[g]);
+            return out;
+        }
+#endif
+        return get_raw(inputs);
+    }
+
+    // Meme resultat que get_raw, a partir de la liste (croissante) des
+    // groupes de 4 entrees non nuls : nz[0..n).
+    std::array<std::int32_t, NNeurons_> get_raw_sparse_list(
+        const std::array<std::uint8_t, NInputs_> &inputs, const std::uint16_t *nz, int n) const
+    {
+#if defined(__ARM_FEATURE_DOTPROD) && defined(__aarch64__)
+        if constexpr (NNeurons_ % 4 == 0 && NInputs_ % 4 == 0)
+        {
+            // Un groupe non nul se traite en NNeurons_/4 instructions sdot
+            // (4 entrees x 4 neurones). Les entrees sont <= 127, donc
+            // lisibles en int8 signe.
+            constexpr int G = NNeurons_ / 4;
+            int32x4_t acc[G];
+            for (int g = 0; g < G; ++g)
+                acc[g] = vld1q_s32(biases->data() + 4 * g);
+            const std::int8_t *w4 = weights_g->data();
+            const std::uint8_t *in = inputs.data();
             for (int t = 0; t < n; ++t)
             {
                 const int j = nz[t];
-                const int8x16_t x = vreinterpretq_s8_u32(vdupq_n_u32(grp[j]));
+                std::uint32_t grp;
+                std::memcpy(&grp, in + 4 * j, 4);
+                const int8x16_t x = vreinterpretq_s8_u32(vdupq_n_u32(grp));
                 const std::int8_t *row = w4 + std::size_t(j) * NNeurons_ * 4;
                 for (int g = 0; g < G; ++g)
                     acc[g] = vdotq_s32(acc[g], vld1q_s8(row + 16 * g), x);
@@ -125,30 +175,23 @@ public:
 #elif defined(__AVX2__)
         if constexpr (NNeurons_ % 8 == 0 && NInputs_ % 4 == 0)
         {
-            // Meme principe en AVX2 : un groupe non nul de 4 entrees, diffuse
-            // dans un registre, multiplie (maddubs : u8 x i8 -> paires int16,
-            // sans saturation car entrees <= 127) puis somme par 4 (madd avec
-            // des 1) donne 8 sorties int32 par registre.
+            // Un groupe non nul de 4 entrees, diffuse dans un registre,
+            // multiplie (maddubs : u8 x i8 -> paires int16, sans saturation
+            // car entrees <= 127) puis somme par 4 (madd avec des 1) donne 8
+            // sorties int32 par registre.
             constexpr int G = NNeurons_ / 8;
             __m256i acc[G];
             for (int g = 0; g < G; ++g)
                 acc[g] = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(biases->data() + 8 * g));
             const std::int8_t *w4 = weights_g->data();
+            const std::uint8_t *in = inputs.data();
             const __m256i ones = _mm256_set1_epi16(1);
-            constexpr int NG = NInputs_ / 4;
-            std::uint32_t grp[NG];
-            std::memcpy(grp, inputs.data(), NInputs_);
-            std::uint16_t nz[NG];
-            int n = 0;
-            for (int j = 0; j < NG; ++j)
-            {
-                nz[n] = static_cast<std::uint16_t>(j);
-                n += grp[j] != 0;
-            }
             for (int t = 0; t < n; ++t)
             {
                 const int j = nz[t];
-                const __m256i x = _mm256_set1_epi32(static_cast<int>(grp[j]));
+                std::int32_t grp;
+                std::memcpy(&grp, in + 4 * j, 4);
+                const __m256i x = _mm256_set1_epi32(grp);
                 const std::int8_t *row = w4 + std::size_t(j) * NNeurons_ * 4;
                 for (int g = 0; g < G; ++g)
                 {
@@ -162,6 +205,8 @@ public:
             return out;
         }
 #endif
+        (void)nz;
+        (void)n;
         return get_raw(inputs);
     }
 

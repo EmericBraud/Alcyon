@@ -530,6 +530,7 @@ public:
             UCIOption<int>(&engine_constants::search::TtEvalCache, "tt_eval_cache", 0, 1),
             UCIOption<int>(&engine_constants::search::FusedAccUpdate, "fused_acc", 0, 1),
             UCIOption<int>(&engine_constants::search::SparseL1, "sparse_l1", 0, 1),
+            UCIOption<int>(&engine_constants::search::RefreshCache, "refresh_cache", 0, 1),
             UCIOption<int>(&engine_constants::search::TtNmpGap, "tt_nmp_gap", 0, 99),
             UCIOption<int>(&engine_constants::search::TtLmrBound, "tt_lmr_bound", 0, 7),
             UCIOption<int>(&engine_constants::search::time::NodeBase, "tm_node_base", 0, 400),

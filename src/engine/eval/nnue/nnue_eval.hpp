@@ -54,6 +54,7 @@
 #include "engine/eval/nnue/nnue_model.hpp"
 #include "engine/eval/nnue/full_threats_encoder.hpp"
 #include "engine/eval/nnue/full_threats_incremental.hpp"
+#include "engine/eval/nnue/full_threats_delta.hpp"
 #include "engine/eval/nnue/halfka_v2_hm_encoder.hpp"
 
 namespace nnue
@@ -642,10 +643,74 @@ namespace nnue
             model.template update_acc_features_fused<perspective>(rem.begin(), nrem, add.begin(), nadd, refresh);
         }
 
+        // Cache de rafraichissement (« Finny tables ») : apres un coup de son
+        // roi, une perspective repartait des biais et rajoutait toutes ses
+        // lignes (~25 HalfKA de 2 Ko + ~30 menaces). Pour chaque (perspective,
+        // bucket de roi) on garde biais + lignes HalfKA d'une position deja
+        // vue, avec ses pieces en 11 bitboards (index HalfKA orientes, donc
+        // comparables dans un bucket) : on n'applique que la difference, puis
+        // on ajoute les menaces. Sommes int16 modulo 2^16 : resultat identique.
+        struct RefreshEntry
+        {
+            alignas(64) std::array<std::int16_t, L1> acc;
+            std::array<U64, 11> planes;
+            bool valid = false;
+        };
+        mutable std::unique_ptr<RefreshEntry[]> refresh_cache = std::make_unique<RefreshEntry[]>(2 * halfka::NUM_BUCKETS);
+
+        template <Color perspective>
+        void refresh_from_cache(const threats::FixedIntList<MAX_PENDING_FEATURES> &add) const
+        {
+            int thr[MAX_PENDING_FEATURES];
+            int nthr = 0;
+            std::array<U64, 11> planes{};
+            int bucket = 0;
+            for (const int f : add)
+            {
+                if (f < NumFullThreatsFeatures)
+                    thr[nthr++] = f;
+                else
+                {
+                    const int h = f - NumFullThreatsFeatures;
+                    bucket = h / halfka::NUM_REAL_PLANES;
+                    const int r = h % halfka::NUM_REAL_PLANES;
+                    planes[r / 64] |= 1ULL << (r % 64);
+                }
+            }
+            RefreshEntry &e = refresh_cache[perspective * halfka::NUM_BUCKETS + bucket];
+            if (!e.valid)
+            {
+                std::copy(model.acc_bias_data(), model.acc_bias_data() + L1, e.acc.begin());
+                e.planes = {};
+                e.valid = true;
+            }
+            int rem[64], ins[64];
+            int nrem = 0, nins = 0;
+            const int base = NumFullThreatsFeatures + bucket * halfka::NUM_REAL_PLANES;
+            for (int p = 0; p < 11; ++p)
+            {
+                U64 gone = e.planes[p] & ~planes[p];
+                U64 come = planes[p] & ~e.planes[p];
+                while (gone)
+                    rem[nrem++] = base + p * 64 + cpu::pop_lsb(gone);
+                while (come)
+                    ins[nins++] = base + p * 64 + cpu::pop_lsb(come);
+            }
+            e.planes = planes;
+            if (nrem + nins)
+                model.acc_apply_rows(e.acc.data(), e.acc.data(), rem, nrem, ins, nins);
+            model.acc_apply_rows(e.acc.data(), model.template acc_data<perspective>(), nullptr, 0, thr, nthr);
+        }
+
         template <Color perspective, class Snap>
         void apply_pending_acc_fused(const PendingDiff &pd, const Snap &old) const
         {
             const bool refresh = pd.refresh[perspective];
+            if (refresh && engine_constants::search::RefreshCache)
+            {
+                refresh_from_cache<perspective>(pd.add[perspective]);
+                return;
+            }
             const auto &rem = pd.remove[perspective];
             const auto &add = pd.add[perspective];
             const int nrem = refresh ? 0 : rem.size();
@@ -660,6 +725,20 @@ namespace nnue
         template <Color perspective>
         void apply_pending_psqt(const PendingDiff &pd) const
         {
+            if (engine_constants::search::FusedAccUpdate)
+            {
+                const bool refresh = pd.refresh[perspective];
+                const auto &rem = pd.remove[perspective];
+                const auto &add = pd.add[perspective];
+                const int nrem = refresh ? 0 : rem.size();
+                const int nadd = add.size();
+                for (int i = 0; i < nrem; ++i)
+                    model.prefetch_psqt_feature(rem[i]);
+                for (int i = 0; i < nadd; ++i)
+                    model.prefetch_psqt_feature(add[i]);
+                model.template update_psqt_features_fused<perspective>(rem.begin(), nrem, add.begin(), nadd, refresh);
+                return;
+            }
             if (pd.refresh[perspective])
                 model.template reset_psqt_perspective<perspective>();
             else
@@ -972,4 +1051,22 @@ namespace nnue
             return {std::move(buckets[Is])...};
         }
     };
+
+#ifdef ALCYON_THREAT_DELTA_CHECK
+    // Controle de developpement : les deltas directs (full_threats_delta.hpp)
+    // doivent donner le meme ensemble que l'ancienne difference avant/apres.
+    template <class L1, class L2>
+    inline void check_threat_delta(const L1 &ref_r, const L2 &got_r, int r0, const L1 &ref_a, const L2 &got_a, int a0)
+    {
+        auto same = [](const L1 &ref, const L2 &got, int g0)
+        {
+            std::vector<int> x(ref.begin(), ref.end()), y(got.begin() + g0, got.end());
+            std::sort(x.begin(), x.end());
+            std::sort(y.begin(), y.end());
+            return x == y;
+        };
+        if (!same(ref_r, got_r, r0) || !same(ref_a, got_a, a0))
+            FATAL("threat delta mismatch");
+    }
+#endif
 }

@@ -13,6 +13,7 @@
 
 #include <array>
 #include <bit>
+#include <cstdint>
 
 #include "common/mask.hpp"
 #include "common/cpu.hpp"
@@ -127,6 +128,13 @@ namespace nnue::threats
         //   piece's whole block.
         std::array<std::array<int, 66>, 12> table{};
         int total_features = 0;
+        // Tables derivees pour threat_index (ni masque d'attaques ni popcount
+        // a recalculer a chaque feature) :
+        // pair_base[a][d] = table[a][65] + (couleur(d) * nvt(a)/2 + groupe) *
+        //   table[a][64], ou -1 si la paire n'est pas suivie ;
+        // rank[a][from][to] = rang de `to` dans les pseudo-attaques de a en from.
+        std::array<std::array<int, 12>, 12> pair_base{};
+        std::array<std::array<std::array<std::uint8_t, 64>, 64>, 12> rank{};
     };
 
     inline U64 pseudo_attacks_no_blockers(Piece type, int sq)
@@ -195,6 +203,33 @@ namespace nnue::threats
             }
 
             t.total_features = piece_offset;
+
+            for (int ap = 0; ap < 12; ++ap)
+            {
+                const Piece at = static_cast<Piece>(ap / 2);
+                const Color ac = static_cast<Color>(ap % 2);
+                for (int dp = 0; dp < 12; ++dp)
+                {
+                    const int group = threat_map[ap / 2][dp / 2];
+                    t.pair_base[ap][dp] = group < 0 ? -1
+                                                    : t.table[ap][65] + ((dp % 2) * (numvalidtargets[ap] / 2) + group) * t.table[ap][64];
+                }
+                for (int from = 0; from < 64; ++from)
+                {
+                    U64 attacks;
+                    if (at == PAWN)
+                    {
+                        attacks = pawn_attacks_no_blockers(ac, from);
+                        const int push = from + ((ac == WHITE) ? 8 : -8);
+                        if (push >= 0 && push < 64)
+                            attacks |= (1ULL << push);
+                    }
+                    else
+                        attacks = pseudo_attacks_no_blockers(at, from);
+                    for (int to = 0; to < 64; ++to)
+                        t.rank[ap][from][to] = static_cast<std::uint8_t>(std::popcount(attacks & ((1ULL << to) - 1)));
+                }
+            }
             return t;
         }();
 
@@ -223,7 +258,7 @@ namespace nnue::threats
     // -1 if this attacker/defender pair isn't tracked (or is a redundant
     // symmetric duplicate that's pruned to avoid double counting).
     template <Color perspective>
-    inline int threat_index(Piece attkr_type, Color attkr_color, int from,
+    FORCE_INLINE int threat_index(Piece attkr_type, Color attkr_color, int from,
                             int to, Piece attkd_type, Color attkd_color, int ksq)
     {
         const bool enemy = (attkr_color != attkd_color);
@@ -238,32 +273,17 @@ namespace nnue::threats
             attkd_color = !attkd_color;
         }
 
-        const int group = threat_map[attkr_type][attkd_type];
-        if (group < 0)
+        // Tables precalculees (offset_table) : meme index que la formule
+        // d'origine (base de la paire + decalage de la case + rang de `to`).
+        const auto &t = offset_table();
+        const int ap = 2 * static_cast<int>(attkr_type) + static_cast<int>(attkr_color);
+        const int dp = 2 * static_cast<int>(attkd_type) + static_cast<int>(attkd_color);
+        const int base = t.pair_base[ap][dp];
+        if (base < 0)
             return -1;
         if (attkr_type == attkd_type && (enemy || attkr_type != PAWN) && from < to)
             return -1;
-
-        U64 attacks;
-        if (attkr_type == PAWN)
-        {
-            attacks = pawn_attacks_no_blockers(attkr_color, from);
-            const int push = (attkr_color == WHITE) ? 8 : -8;
-            attacks |= (1ULL << (from + push));
-        }
-        else
-        {
-            attacks = pseudo_attacks_no_blockers(attkr_type, from);
-        }
-
-        const auto &t = offset_table();
-        const int attkr_piece = 2 * static_cast<int>(attkr_type) + static_cast<int>(attkr_color);
-        const int nvt = numvalidtargets[attkr_piece];
-
-        const U64 below_to_mask = (to == 0) ? 0ULL : ((to >= 64) ? ~0ULL : ((1ULL << to) - 1));
-        const int position_in_attacks = std::popcount(attacks & below_to_mask);
-
-        return t.table[attkr_piece][65] + (static_cast<int>(attkd_color) * (nvt / 2) + group) * t.table[attkr_piece][64] + t.table[attkr_piece][from] + position_in_attacks;
+        return base + t.table[ap][from] + t.rank[ap][from][to];
     }
 
     // Appends all active Full_Threats feature indices (from `perspective`'s
