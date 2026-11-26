@@ -401,3 +401,31 @@ Lecture :
 Conclusion : garder la condition « typ ». Pour les écarts de pions seuls, un second bloc distinct
 serait plus logique qu'une condition commune. Essai suivant : W512 « typ » entraîné deux fois plus
 longtemps (24 époques), pour mesurer ce que rapporte encore l'entraînement.
+
+## 11. Mesure dans le moteur : la condition est vraie sur ~60 % des évaluations en recherche (26/11)
+
+Mesure faite dans une copie temporaire du code (compteur dans `Eval::eval`, non versionné) : part
+des évaluations NNUE complètes pendant le bench où la condition « typ » est vraie.
+
+| bench | évaluations NNUE complètes | condition vraie |
+|---|---|---|
+| profondeur 12 | 1 263 117 | 58,1 % |
+| profondeur 14 | 3 393 162 | 60,1 % |
+
+Contre 12,8 % des positions calmes des données d'entraînement : la recherche évalue surtout des
+positions au milieu d'un échange (qsearch, captures), où les pièces sont temporairement différentes.
+
+Conséquences pour le bloc conditionnel « typ » :
+
+1. **coût** : bloc et tête large actifs sur ~60 % des évaluations, pas 13 %. Avec un bloc de 512
+   (moitié de la largeur de l'accumulateur, menaces comprises) et une première couche dense 4 fois
+   plus large, le surcoût global d'évaluation pourrait dépasser 50 %, à comparer au gain de
+   précision (−1,1 % d'erreur au total sur les positions calmes) ;
+2. **justesse** : le bloc n'a été entraîné que sur des positions calmes (déséquilibre réel) ; en
+   recherche, la plupart de ses activations porteraient sur des déséquilibres passagers jamais vus
+   à l'entraînement.
+
+Pistes si l'on poursuit : une condition qui ne s'active pas au milieu d'un échange (par exemple
+exiger que le déséquilibre existe aussi dans la position avant la dernière capture, ou n'utiliser le
+bloc qu'aux nœuds hors qsearch), ou un bloc beaucoup plus petit. Dans tous les cas, mesurer le coût
+réel dans le moteur avant tout match.
