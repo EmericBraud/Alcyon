@@ -531,3 +531,31 @@ Incident : en arrêtant la boucle séquentielle pour passer en parallèle, `tmux
 le filtrage de février en cours, puis le fichier brut a été supprimé ; février refait. Leçon : ne
 pas tuer une session qui contient un processus utile, vérifier qu'un processus est vivant avant de
 supprimer ses fichiers.
+
+## 15. WL2 : WL poursuivi sur les mêmes données neuves (26/11)
+
+Même protocole que WS2 (section 14), à partir des poids de WL (bloc de 512, 24 époques) :
+24 époques de plus sur les 2,38 milliards de positions neuves, lr 2e-4 × 0,905 (`run_condWL2.sh`),
+~30 minutes, GPU à ~88 %.
+
+Loss d'entraînement : 463,9 → ~429 (WS2 sur les mêmes données : 473,4 → ~455). Validation de
+février (bruitée, favorisée car WL2 s'entraîne sur le reste de février) : ~470 (WS2 : ~481).
+
+| | v7 | WL | WL2 |
+|---|---|---|---|
+| mars-juin, sous condition | 113,01 | 107,18 (−5,2 %) | **106,64 (−5,6 %)** |
+| mars-juin, ensemble | 50,91 | 50,13 | **50,05 (−1,7 %)** |
+| mars-juin, écart de matériel ≥ 3 | 143,90 | −4,5 % | −5,3 % |
+| mars-juin, finales | 63,69 | −2,1 % | −2,5 % |
+| février, sous condition | 118,19 | 111,56 (−5,6 %) | 110,56 (−6,5 %) |
+| février, ensemble | 51,65 | 50,80 | 50,67 |
+
+Lecture : sur la validation impartiale, les données neuves rapportent 0,4 point au bloc de 512
+(contre 0,2 au bloc de 128) : la largeur aide à absorber plus de données, mais le rendement des
+données reste faible. La loss d'entraînement baisse beaucoup plus que la validation : une partie
+de ce que le réseau apprend sur ces mois (2023, janvier-février 2024) se transfère mal à mars-juin.
+
+**Meilleur réseau à ce jour : WL2** (bloc 512, tête 128-64, condition « typ », 48 époques au total) :
+−5,6 % d'erreur sous condition sur mars-juin, −6,5 % sur février, −1,7 % au total, v7 inchangé
+ailleurs. Reste l'étape décisive : le coût dans le moteur (bloc actif sur ~60 % des évaluations en
+recherche, section 11).
