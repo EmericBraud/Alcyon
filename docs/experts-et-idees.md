@@ -86,9 +86,76 @@ expert manque de données (notre réseau est déjà limité par ses données).
 | structure de pions | change trop souvent, découpage arbitraire |
 | 15 à 20 experts | dilution des données, recalculs, mémoire (voir garde-fous) |
 
-## 3. Idées d'autres moteurs à tester
+## 3. Piste préférée : bloc d'accumulateur conditionnel (26/11)
 
-Source principale : README de Triumviratus (github.com/Tors3/Triumviratus, lu le 26/11/2026, GPLv3).
+Idée de l'auteur, discutée le 26/11. Elle corrige le défaut principal des experts : la dilution des
+données (chaque expert ne voit qu'une tranche, alors que notre réseau est déjà limité par ses données).
+
+### Principe
+
+- **Les 1024 de v7 restent communs** à toutes les positions : rien n'est découpé.
+- **Un petit bloc d'accumulateur en plus**, ~128 neurones appris, alimenté par les **mêmes entrées**
+  (roi-pièce et menaces), **actif seulement sous une condition** (déséquilibre de matériel, finale,
+  roi exposé).
+- Condition vraie : la première couche dense reçoit 512 + 64 entrées (après le produit par paires,
+  appliqué au bloc comme aux 1024). Condition fausse : 512 seulement, comme aujourd'hui.
+
+Pourquoi c'est mieux que les experts :
+
+- **Pas de dilution** : les 1024 apprennent toujours sur toutes les positions ; le bloc apprend
+  seulement la correction sur les cas difficiles. De la capacité en plus là où l'on perd, rien de
+  retiré ailleurs.
+- **Spécialisation** : le bloc ne reçoit de gradient que sur les positions où il est actif, donc il
+  ne sert pas au cas général (un simple élargissement à 1152 partout n'aurait pas cette propriété).
+- **Départ exact depuis v7** : poids du bloc vers la couche suivante à zéro.
+- **Plusieurs blocs possibles** (finales, déséquilibre, roi exposé), 64 à 128 neurones chacun, chacun
+  avec sa condition.
+
+### Partie non linéaire : trois variantes
+
+| variante | principe | pour | contre |
+|---|---|---|---|
+| **A (à faire d'abord)** | une seule tête ; les 64 entrées du bloc valent 0 quand il est inactif | gratuit à l'exécution (la couche dense saute les entrées nulles, `SparseL1`) ; la lecture des 512 entrées principales reste commune, le bloc corrige (biais de résidu) ; v7 exact au départ | la tête commune doit servir les deux régimes |
+| B | piles de couches distinctes selon la condition (8 × 2 = 16), les piles « actif » prennent 512 + 64 entrées ; « expert non linéaire » | la partie non linéaire se spécialise aussi ; têtes minuscules, coût nul | chaque pile ne voit que ses positions, réapprend à lire les 512 entrées |
+| C | tête de v7 + tête de correction (512 + 64 → sortie initialisée à 0) quand la condition est vraie | résidu le plus propre : la tête de v7 n'est jamais modifiée par les cas difficiles | une tête de plus à évaluer, le plus long à écrire (trainer et moteur) |
+
+Ordre : A ; B seulement si A montre un gain réel mais limité ; C seulement si B dégrade les
+positions normales.
+
+### Côté moteur
+
+Alcyon tient déjà l'accumulateur PSQT **à part et de façon paresseuse** (`NnueEval::materialize_psqt`).
+Le bloc suivrait la même mécanique : mis à jour seulement quand la condition est vraie, en rattrapant
+les coups manqués. À 128 de large, une mise à jour coûte ~8 fois moins que celle des 1024 ; si la
+condition reste vraie sur une ligne, ~10 % de surcoût d'accumulateur dans ces positions.
+
+### Points à soigner
+
+- **Condition simple et stable**, fondée sur le matériel : elle ne change qu'à la capture d'une
+  pièce. Sinon l'éval saute d'un coup à l'autre et le rattrapage se complique.
+- **Condition sélective** : sur nos données, ~36 % des positions ont 1-2 points d'écart de matériel
+  et ~32 % sont des finales ; à elles deux plus de la moitié. Seuils à serrer et à calibrer sur
+  l'analyse d'erreur pour que le bloc reste une spécialisation.
+
+### Test
+
+1. nnue-pytorch : second accumulateur de 128, masque calculé dans le chargeur selon la condition,
+   poids nuls au départ (~1 jour).
+2. Affinage depuis v7 sur les données BT4, quelques heures de GPU.
+3. Juge : analyse d'erreur par type de position ; baisse là où le bloc est actif, rien ne bouge
+   ailleurs. Sinon arrêt.
+4. Ensuite seulement : accumulateur paresseux dans le moteur, match contre v7.
+
+### Écarté : entrées calculées à la main
+
+Variante discutée puis écartée par l'auteur : greffer ~100 entrées calculées par du code (attaquants
+de la zone du roi, règle du carré, déséquilibre par type de pièce...). L'accumulateur apprend
+lui-même un signal plus riche ; mieux vaut lui donner de la capacité conditionnelle que des
+features faites main.
+
+## 4. Idées d'autres moteurs à tester
+
+Sources : README de Triumviratus (github.com/Tors3/Triumviratus, GPLv3) et code de GaiaChess (github.com/jromang/gaiachess, GPLv3), lus le 26/11/2026.
 Les chiffres sont ceux qu'ils publient, pas des mesures à nous. Statut : tout est « à tester ».
 
 ### Réseau
@@ -102,6 +169,10 @@ Les chiffres sont ceux qu'ils publient, pas des mesures à nous. Statut : tout e
 | bloc d'entrée `PawnPair` | Pawnocchio (aussi Stormphrax, Viridithas) | paires de pions sur la même colonne ou des colonnes voisines | moyen |
 | piles de couches selon pièces et dames | Triumviratus (32 piles dans Lex Hortensia), recette SF (`piececount:queen:...`) | choisir la pile de couches aussi selon la présence des dames, pas seulement le nombre de pièces | faible côté moteur, réentraînement |
 | features plus récentes de SF | recette SF threats.yaml | `PP_3Wide+K32H3` à la place de `HalfKAv2_hm` | élevé (depuis zéro) |
+| buckets de roi × dame adverse (K32Q2) | GaiaChess | 32 cases de roi × présence de la dame adverse : le plus petit « expert » possible (2 jeux de poids) | moyen |
+| toute la première couche en int8 | GaiaChess | roi-pièce, paires de pions et menaces en int8 | moyen |
+| relations pion-pion retirées des menaces | GaiaChess | elles passent dans le bloc paires de pions (fenêtre de 3 colonnes, 4 560 entrées) | moyen |
+| couche à porte | GaiaChess | 64 → porte g et valeur v, h = g²·v, puis sortie avec connexion directe | faible côté moteur, réentraînement |
 
 ### Données
 
@@ -109,6 +180,7 @@ Les chiffres sont ceux qu'ils publient, pas des mesures à nous. Statut : tout e
 |---|---|---|
 | scores réévalués par Leela BT4 | recette SF | testé : −2 % d'erreur, +9,1 ± 15,7 contre A |
 | positions d'arbres de recherche réévaluées par BT4 | recette SF (`xushawn/sf-searchtree-bt4`) | à tester (petit échantillon) |
+| réévaluer un corpus avec sa propre recherche | GaiaChess (`relabel.rs`) | à tester : positions des arbres de recherche d'Alcyon, scorées par une recherche d'Alcyon plus profonde (sans SF). GaiaChess : données Leela +26,7 Elo contre 6 milliards de positions maison à recette égale |
 
 ### Recherche et gestion du temps
 
@@ -123,13 +195,15 @@ Les chiffres sont ceux qu'ils publient, pas des mesures à nous. Statut : tout e
 | facteurs multiplicatifs de gestion du temps | Alexandria (cité par Triumviratus) | à lire |
 | cache de coups par nombre de nœuds, historique de captures en qsearch | Caissa (cité par Triumviratus) | à lire |
 | prefetch de la TT, termes d'ordonnancement | Reckless (cité par Triumviratus) | à lire |
+| LMR factorisée | GaiaChess (`lmr_factorized.rs`) | contexte de 9 booléens ; un poids par sous-ensemble de 1 à 3 conditions (91 termes), réglables par SPSA : un contexte rare apprend des contextes courants |
 
 Les deux premières lignes n'ont de sens qu'avec des experts.
 
-## 4. Références
+## 5. Références
 
 - Triumviratus : README et `source/consilium/` (inférence des experts). Les documents de réseau
   (`docs/networks/NETWORKS.md`, `docs/project/NOVELTIES.md`) et les recettes
   (`Tors3/Triumviratus-Networks`) ne sont pas encore lus.
+- GaiaChess : README et `src/` (github.com/jromang/gaiachess, v4.4.4, GPLv3), lus le 26/11/2026.
 - Recette SF : `docs/recette-sf.md`.
 - Nos mesures : `docs/reentrainement-long.md`.
