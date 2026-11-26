@@ -559,3 +559,42 @@ de ce que le réseau apprend sur ces mois (2023, janvier-février 2024) se trans
 −5,6 % d'erreur sous condition sur mars-juin, −6,5 % sur février, −1,7 % au total, v7 inchangé
 ailleurs. Reste l'étape décisive : le coût dans le moteur (bloc actif sur ~60 % des évaluations en
 recherche, section 11).
+
+## 16. Dans le moteur : implémentation, coût et SPRT de WS2 (26/11)
+
+**Implémentation** (branche `cond-block`, bc3d54a puis 353dddd) : `ALCYON_COND_BLOCK=B` à la
+compilation. Un seul accumulateur combiné de 1024 + B colonnes, dans l'ordre
+`[v7 0..511, bloc 0..B/2-1, v7 512..1023, bloc B/2..B-1]` pour que le produit par paires d'Alcyon
+(i avec i + L1/2) associe v7 avec v7 et bloc avec bloc. Les piles de v7 ont des poids nuls sur les
+colonnes du bloc ; les piles conditionnelles sont lues dans `<réseau>.cond.nnue`, utilisées si la
+condition « typ » est vraie (`NnueEval::cond_typ`). B = 0 : moteur standard, bench 16694 inchangé.
+Export depuis PyTorch : `tools/condnet/export_cond.py` (format nnue-pytorch, accumulateur combiné).
+
+**Vérifications** (5 000 positions de la validation mars-juin) :
+
+- export exact en flottant (0,0 cp hors condition, < 0,001 cp sous condition) ;
+- moteur avec bloc = moteur v7 à 0 cp près sur toutes les positions hors condition ;
+- sous condition, moteur vs PyTorch en **quantification simulée** : 5,2 cp d'écart moyen (v7 : 3,4) ;
+  vs PyTorch flottant : 18,4 cp (v7 : 6,6). Le modèle à bloc dépend plus de la quantification, mais
+  il a été entraîné avec la quantification simulée (défaut de nnue-pytorch) : c'est elle qui compte.
+- erreur en quantification simulée (mars-juin, sous condition) : v7 112,18, WS2 106,90 (−4,7 %),
+  WL2 105,88 (−5,6 %) : le gain survit à la quantification.
+
+**Coût** (bench 12, Mac M-series) :
+
+| version | nœuds/s | |
+|---|---|---|
+| v7 | ~1,48 M | |
+| accumulateur 1152, piles de v7 seules (`ALCYON_NO_COND=1`) | ~1,39 M | −6 % |
+| WS2 complet (tête 128-64 sous condition) | ~0,73 M | **−51 %** |
+
+Serveur x86 : 436 k → 260 k nœuds/s (−40 %). Le coût vient de la tête large (première couche dense
+4 fois plus large, deuxième 8 fois plus lourde), active sur ~60 % des évaluations en recherche ;
+l'accumulateur élargi ne coûte que 6 %.
+
+**SPRT WS2 contre v7** (10+0.1, UHO, concurrence 32, serveur) : arrêté à 156 parties,
+**−65,4 ± 31,5 Elo** (23 V / 52 D / 81 N). La tête large est abandonnée.
+
+Suite : variante B (bloc 128, piles propres de la taille de v7, coût attendu ~6 %) entraînée
+longtemps : 48 époques sur les 4,8 milliards de positions sous condition (`run_condBL.sh`).
+Piles conditionnelles configurables dans le moteur (`ALCYON_COND_L2/L3`, 32-32 par défaut).
