@@ -254,3 +254,31 @@ entrées des 32 neurones de la première couche dense ; toute la partie non lin�
 v7. Les essais coûtent ~10 minutes : variantes à tester ensuite, du plus probable au moins
 probable : B (piles de couches propres aux positions sous condition, copies entraînables de v7),
 bloc plus large (256, 512), dégel des seules couches denses de v7.
+
+## 7. Résultats : variante B (26/11)
+
+Même bloc, même condition, mêmes données ; en plus, pour les positions sous condition, des **piles
+de couches propres** (8 copies entraînables des piles de v7, `cond_stacks`), la sortie du bloc
+branchée sur leur première couche. v7 (accumulateur et piles) toujours figé. 11,4 M paramètres
+entraînés, lr 5e-4 × 0,774 par époque sur 12 époques, ~100 it/s, ~12 minutes de GPU
+(`tools/condnet/run_condB.sh`, `make_cond.py ... typ B`).
+
+| | part | v7 | A | B |
+|---|---|---|---|---|
+| ensemble | 100 % | 51,65 | 51,46 | 51,34 (−0,6 %) |
+| condition fausse | 87,2 % | 41,87 | 41,87 | 41,87 (0,0 %) |
+| **condition vraie** | 12,8 % | 118,19 | 116,66 (−1,3 %) | **115,80 (−2,0 %)** |
+| milieu allégé | 20,2 % | 77,70 | 77,35 | 76,98 (−0,9 %) |
+| eval 150-400 | 16,5 % | 68,90 | 69,57 | 69,78 (+1,3 %) |
+
+B fait un peu mieux que A (−2,0 % contre −1,3 % sous condition), mais reste loin des 10 à 13 % de
+SF v14 sur ces positions, et dégrade encore les avantages nets (eval 150-400).
+
+Loss d'entraînement moyenne par époque **plate dès la première époque** pour A comme pour B
+(~4,6e-3, oscillations selon les blocs de données) : le bloc atteint tout de suite ce qu'il peut
+apprendre. Pour comparaison, l'affinage BT4 du réseau entier (100 M paramètres libres, 25/11)
+n'avait gagné que 1 à 2 % sur ces mêmes positions. Hypothèse : l'erreur restante sur ces positions
+n'est pas une question de capacité mais de données (prévisibilité des scores, volume
+d'entraînement de SF ~1 000 fois le nôtre). Test qui tranche : une tête plus large (64-128
+neurones) sur les positions sous condition ; si la loss d'entraînement reste plate, la limite est
+dans les données.
