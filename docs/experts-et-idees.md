@@ -474,28 +474,60 @@ hasard dans la partie **jamais lue** des fichiers de mars à juin (au-delà de l
 filtre plafonné, + 3 % de marge), 3 par mois : 4,77 M positions, 2,92 M positions calmes. Tous les
 réseaux réévalués, aucun réentraînement (`run_valtail.sh`).
 
-| | v7 | A | B | W | W512 | **WS** | WL | D |
+| | v7 | A | B | W | W512 | WS | **WL** | D |
 |---|---|---|---|---|---|---|---|---|
-| ensemble | 50,91 | 50,65 | 50,56 | 50,42 | 50,28 | **50,13** | 50,25 | 50,39 |
-| condition vraie (13,4 %) | 113,01 | −1,7 % | −2,3 % | −3,3 % | −4,1 % | **−5,2 %** | −4,4 % | −1,5 % |
+| ensemble | 50,91 | 50,65 | 50,56 | 50,42 | 50,28 | 50,25 | **50,13** | 50,39 |
+| condition vraie (13,4 %) | 113,01 | −1,7 % | −2,3 % | −3,3 % | −4,1 % | −4,4 % | **−5,2 %** | −1,5 % |
 | condition fausse | 41,29 | 0 | 0 | 0 | 0 | 0 | 0 | −0,8 % |
-| écart de matériel ≥ 3 | 143,90 | −1,3 % | −1,7 % | −2,8 % | −3,8 % | −4,5 % | −4,4 % | −1,0 % |
-| finales | 63,69 | −0,6 % | −0,7 % | −1,2 % | −1,4 % | −2,1 % | −1,8 % | −1,4 % |
+| écart de matériel ≥ 3 | 143,90 | −1,3 % | −1,7 % | −2,8 % | −3,8 % | −4,4 % | −4,5 % | −1,0 % |
+| finales | 63,69 | −0,6 % | −0,7 % | −1,2 % | −1,4 % | −1,8 % | −2,1 % | −1,4 % |
 | eval 150-400 | 68,67 | +0,9 % | +1,1 % | +0,9 % | +0,7 % | +0,9 % | +0,9 % | +3,8 % |
+
+**Correction (26/11, 13 h 45)** : la première version de ce tableau inversait les colonnes WS et WL
+(`run_valtail.sh` passait les réseaux dans l'ordre « …, WL, WS, … » à `eval_fens.py` mais les noms
+dans l'ordre « …, WS, WL, … » à `an2.py`). Repéré grâce à l'évaluation suivante, où WS donne de
+nouveau 108,06. Valeurs corrigées ci-dessus.
 
 (A, B, W, W512 : 12 époques ; WS, WL : 24 époques ; D : condition « deseq », 12 époques.)
 
 Lecture :
 
 - l'ordre A < B < W < W512 et l'effet de l'entraînement long se confirment ;
-- **WS (bloc de 128) passe devant WL (bloc de 512)** sur cette validation (−5,2 % contre −4,4 %),
-  alors que c'était l'inverse sur février (−4,4 % contre −5,6 %). L'écart entre les deux est
-  dans la variabilité entre validations : **le bloc de 512 n'est pas clairement meilleur** une
-  fois les deux entraînés longtemps. L'entraînement long compte plus que la largeur du bloc ;
+- **WL (bloc de 512) reste devant WS (bloc de 128)** sur les deux validations : −5,2 % contre
+  −4,4 % ici, −5,6 % contre −4,4 % sur février. Le bloc large garde son avantage une fois les deux
+  entraînés longtemps ;
 - le gain total reste modeste (−1,5 % au mieux) et les avantages nets (150-400) restent
   légèrement dégradés partout.
 
-Choix pratique : **WS (bloc de 128, tête 128-64, condition « typ »)**, 4 fois moins cher que le
-bloc de 512 dans le moteur, au moins aussi bon. Prochaine étape nécessaire avant tout match :
+Choix pratique : à trancher selon le coût dans le moteur : WL (bloc de 512) est le plus précis,
+WS (bloc de 128) obtient ~80 % de son gain pour un bloc 4 fois moins cher. Prochaine étape nécessaire avant tout match :
 mesurer son coût réel dans le moteur, sachant que la condition est vraie sur ~60 % des évaluations
 en recherche (section 11).
+
+
+## 14. WS2 : WS poursuivi sur des données neuves (26/11)
+
+Données : test80 2024 janvier et février (`-histfix`, 5 M premières positions de février sautées :
+la validation de février en vient), 2023 octobre et décembre (BT4, non `-histfix` : réévalués
+depuis la position seule), filtrées sur la condition « typ » (`filt_typ2.cpp`) : 2,38 milliards de
+positions, toutes neuves pour WS. Préparation en parallèle (téléchargement, filtrage, suppression du
+brut, un mois par processus). WS2 repart des poids de WS (24 époques) : 24 époques de plus, lr 2e-4
+× 0,905 par époque (fin ~2e-5) (`run_condWS2.sh`), ~25 minutes.
+
+| | v7 | WS | WS2 |
+|---|---|---|---|
+| fin vierge de mars-juin, sous condition | 113,01 | 108,06 (−4,4 %) | 107,77 (**−4,6 %**) |
+| fin vierge de mars-juin, ensemble | 50,91 | 50,25 | 50,21 |
+| février, sous condition | 118,19 | 112,97 (−4,4 %) | 112,12 (−5,1 %) |
+| février, ensemble | 51,65 | 50,98 | 50,87 |
+
+Lecture : sur la validation impartiale (mars-juin, mois que WS2 n'a pas revus), 2,4 milliards de
+positions neuves ne rapportent que 0,2 point au bloc de 128. Sur février le gain est plus grand
+(0,7 point), mais WS2 s'est entraîné sur le reste de février. **Le bloc de 128 plafonne vers −4,5 %** :
+plus de données ne l'aide plus, sa capacité limite (cohérent avec sa dimension saturée). Le bloc de
+512 sur 24 époques (WL) reste meilleur (−5,2 % / −5,6 %).
+
+Incident : en arrêtant la boucle séquentielle pour passer en parallèle, `tmux kill-session` a tué
+le filtrage de février en cours, puis le fichier brut a été supprimé ; février refait. Leçon : ne
+pas tuer une session qui contient un processus utile, vérifier qu'un processus est vivant avant de
+supprimer ses fichiers.
