@@ -207,3 +207,50 @@ Les deux premières lignes n'ont de sens qu'avec des experts.
 - GaiaChess : README et `src/` (github.com/jromang/gaiachess, v4.4.4, GPLv3), lus le 26/11/2026.
 - Recette SF : `docs/recette-sf.md`.
 - Nos mesures : `docs/reentrainement-long.md`.
+
+## 6. Résultats : bloc conditionnel, phase 1 (26/11)
+
+Code : `tools/condnet/` (modèle `cond_model.py` à copier dans nnue-pytorch 4289208 avec
+`patch_np.py`). Serveur RTX 5090.
+
+Configuration : v7 figé (89,1 M paramètres), bloc de 128 neurones par perspective (11,1 M
+paramètres entraînés : accumulateur du bloc et `l1_extra`, ses poids vers la première couche
+dense, paramètre séparé initialisé à zéro), condition « typ » (les deux camps n'ont pas les mêmes
+pièces). Données : test80 2024 mars à juin réévalués par BT4 (`-histfix`), filtrés sur la
+condition (18,6 % des positions, 3,2 milliards), 12 époques de 100 M, lr 8e-4 × 0,742 par époque,
+lambda 1,0. **116 it/s** (contre 14-16 pour un entraînement complet : le gel supprime la
+rétropropagation dans l'accumulateur principal) : 11 minutes de GPU.
+
+Deux pièges rencontrés :
+
+- **Bloc mort avec une initialisation aléatoire** : activations trop faibles, nulles après
+  quantification et produit par paires, donc aucun gradient. Corrigé en initialisant le bloc comme
+  une copie de 64 paires de neurones de v7.
+- **Gel et ranger21** : un paramètre figé laissé dans l'optimiseur dériverait par la décroissance
+  des poids. Les paramètres figés sont retirés des groupes (`patch_np.py`) ; contrôle : écart nul
+  sur les poids de v7 après entraînement.
+
+Vérifications de départ : comptage des pièces depuis les indices = `piece_count` du chargeur ;
+condition vraie sur ~21 % des positions de validation (12,8 % des positions calmes) ; modèle de
+départ = v7 à 0,0 cp près.
+
+Analyse d'erreur (validation de février BT4, 973 269 positions calmes, même échelle pour les deux
+réseaux) :
+
+| | part | v7 | bloc | écart |
+|---|---|---|---|---|
+| ensemble | 100 % | 51,65 | 51,46 | −0,4 % |
+| condition fausse | 87,2 % | 41,87 | 41,87 | **0,0 %** (gel vérifié) |
+| **condition vraie** | 12,8 % | 118,19 | 116,66 | **−1,3 %** |
+| écart de matériel ≥ 3 | 2,3 % | 158,31 | 156,92 | −0,9 % |
+| finales | 30,4 % | 64,39 | 64,09 | −0,5 % |
+
+Val loss sur les positions sous condition : 0,00509 (v7) → ~0,00502 (moyenne des 8 dernières
+époques, bruitée de ±0,00004).
+
+Lecture : gain réel mais petit, environ un dixième de l'écart avec SF v14 sur ces positions
+(10 à 13 % d'erreur en moins chez SF v14). Hypothèse : en phase 1 le bloc ne fait que décaler les
+entrées des 32 neurones de la première couche dense ; toute la partie non linéaire reste celle de
+v7. Les essais coûtent ~10 minutes : variantes à tester ensuite, du plus probable au moins
+probable : B (piles de couches propres aux positions sous condition, copies entraînables de v7),
+bloc plus large (256, 512), dégel des seules couches denses de v7.

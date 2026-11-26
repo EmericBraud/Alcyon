@@ -1,0 +1,170 @@
+"""Bloc d'accumulateur conditionnel (Alcyon, variante A, phase 1 : v7 fige).
+
+Le modele de base (v7) est garde tel quel. On ajoute :
+  - `cond_input` : un second transformeur de features, etroit (BLOCK neurones par perspective,
+    produit par paires -> BLOCK/2), alimente par les memes entrees que v7 ;
+  - `layer_stacks.l1_extra` : la contribution de ce bloc a la premiere couche dense, dans un
+    parametre SEPARE de la couche de v7, initialise a zero, sans biais.
+Premiere couche dense = l1 de v7 (entrees v7) + l1_extra (sortie du bloc x masque), le masque
+valant 1 quand la position remplit la condition. Au depart, le modele donne exactement les evals
+de v7. Avec `freeze_base`, seuls `cond_input` et `l1_extra` sont entraines : les positions ou la
+condition est fausse gardent exactement les evals de v7.
+
+A l'export, l1_extra se fusionne avec l1 en une seule couche plus large.
+
+Conditions (calculees depuis les indices HalfKAv2_hm de la perspective blanche) :
+  - "typ" : les deux camps n'ont pas les memes pieces (dames, tours ou pieces legeres en
+    nombre different). ~13 % des positions, ~66 % de l'ecart d'erreur avec SF v14.
+"""
+import torch
+from torch import nn
+
+from .model import NNUEModel
+from .modules import ComposedFeatureTransformer, get_feature_cls
+from .modules.layer_stacks import LayerStacks
+from .modules.stacked_linear import StackedLinear
+
+THREAT_INPUTS = 60720  # Full_Threats precede HalfKAv2_hm^ dans l'indice combine
+HALFKA_PLANES = 768    # 12 types de pieces x 64 cases
+
+
+def piece_counts(white_indices: torch.Tensor) -> torch.Tensor:
+    """(batch, 6 types, 2 couleurs) depuis les indices de la perspective blanche."""
+    h = white_indices.long() - THREAT_INPUTS
+    valid = h >= 0
+    p_idx = torch.where(valid, (h % HALFKA_PLANES) // 64, torch.zeros_like(h))
+    onehot = torch.nn.functional.one_hot(p_idx, 12) * valid.unsqueeze(-1)
+    counts = onehot.sum(dim=1)  # (batch, 12) ; p_idx = (type-1)*2 + (couleur != blanc)
+    return counts.view(-1, 6, 2)
+
+
+def cond_mask(white_indices: torch.Tensor, cond: str) -> torch.Tensor:
+    c = piece_counts(white_indices)
+    if cond == "typ":
+        q = c[:, 4, 0] != c[:, 4, 1]
+        r = c[:, 3, 0] != c[:, 3, 1]
+        minor = (c[:, 1, 0] + c[:, 2, 0]) != (c[:, 1, 1] + c[:, 2, 1])
+        return q | r | minor
+    raise ValueError(f"condition inconnue : {cond}")
+
+
+class CondLayerStacks(LayerStacks):
+    """LayerStacks dont la premiere couche recoit en plus la sortie du bloc (l1_extra)."""
+
+    def forward(self, x, xb, ls_indices, fake_quantize_acts=True, fake_quantize_weights=True):
+        l1c_ = self.l1(x, ls_indices, fake_quantize_weights) + self.l1_extra(xb, ls_indices, fake_quantize_weights)
+
+        l1x_out = l1c_[:, -2].view(-1, 1) - l1c_[:, -1].view(-1, 1)
+        l1x_ = l1c_
+        l1_sqr = torch.pow(l1x_, 2.0)
+        if fake_quantize_acts:
+            l1_sqr = self.quantization.fake_quantize_ls_act(l1_sqr)
+        l1_sqr = l1_sqr * (self.quantization.sqr_crelu_correction_factor)
+        if fake_quantize_acts:
+            l1x_ = self.quantization.fake_quantize_ls_act(l1x_)
+        l1x_ = torch.cat([l1_sqr, l1x_], dim=1)
+        l1x_ = self.quantization.clip_ls_act(l1x_)
+
+        l2c_ = self.l2(l1x_, ls_indices, fake_quantize_weights)
+        l2x_ = l2c_
+        l2_sqr = torch.pow(l2x_, 2.0)
+        if fake_quantize_acts:
+            l2_sqr = self.quantization.fake_quantize_ls_act(l2_sqr)
+        l2_sqr = l2_sqr * (self.quantization.sqr_crelu_correction_factor)
+        if fake_quantize_acts:
+            l2x_ = self.quantization.fake_quantize_ls_act(l2x_)
+        l2x_ = torch.cat([l2_sqr, l2x_], dim=1)
+        l2x_ = self.quantization.clip_ls_act(l2x_)
+
+        l3_input = torch.cat([l1x_, l2x_], dim=1)
+        l3c_ = self.output(l3_input, ls_indices, fake_quantize_weights)
+        if fake_quantize_acts:
+            l1x_out = self.quantization.fake_quantize_skip_act(l1x_out)
+        l3x_ = l3c_ + l1x_out
+        if fake_quantize_acts:
+            l3x_ = self.quantization.fake_quantize_output(l3x_)
+        return l3x_
+
+
+class CondNNUEModel(NNUEModel):
+    """NNUEModel + bloc conditionnel. Construit par `make_cond` a partir d'un modele existant."""
+
+    def forward(
+        self,
+        us,
+        them,
+        white_indices,
+        black_indices,
+        piece_count,
+        fake_quantize_acts: bool = True,
+        fake_quantize_weights: bool = True,
+    ):
+        psqt_indices, layer_stack_indices = self.calculate_buckets(piece_count)
+        l0_, wpsqt, bpsqt = self.forward_ft(
+            us, them, white_indices, black_indices, psqt_indices,
+            fake_quantize_acts, fake_quantize_weights,
+        )
+        lb, _, _ = self.cond_input(
+            us, them, white_indices, black_indices, torch.zeros_like(psqt_indices),
+            fake_quantize_acts, fake_quantize_weights,
+        )
+        m = cond_mask(white_indices, self.cond_name).to(lb.dtype).unsqueeze(1)
+        out = self.layer_stacks(l0_, lb * m, layer_stack_indices, fake_quantize_acts, fake_quantize_weights)
+        return out + (wpsqt - bpsqt) * (us - 0.5)
+
+    @torch.no_grad()
+    def clip_weights(self, include_input):
+        super().clip_weights(include_input)
+        if include_input:
+            self.cond_input.clip_weights(self.quantization)
+        w = self.layer_stacks.l1_extra.linear.weight
+        lim = self.quantization.max_hidden_weight[0]
+        w.clamp_(-lim, lim)
+
+    @torch.no_grad()
+    def zero_virtual_weights(self) -> None:
+        super().zero_virtual_weights()
+        self.cond_input.zero_virtual_weights()
+
+
+@torch.no_grad()
+def make_cond(model: NNUEModel, feature_name: str, block: int = 128, cond: str = "typ", freeze_base: bool = True) -> NNUEModel:
+    """Transforme un NNUEModel en CondNNUEModel (en place) en gardant ses poids."""
+    feature_cls = get_feature_cls(feature_name)
+    model.cond_input = ComposedFeatureTransformer(feature_cls, block, 1, model.quantization)
+    model.cond_input.init_weights()
+    # Initialisation par copie de block/2 paires de neurones de v7 (le produit par paires associe
+    # i et i + L1/2). Une init aleatoire donne des activations si faibles qu'elles tombent a 0 a la
+    # quantification : bloc mort, aucun gradient (constate le 26/11).
+    L1 = model.input.l1_size
+    half = block // 2
+    g = torch.Generator().manual_seed(1)
+    sel = torch.randperm(L1 // 2, generator=g)[:half]
+    src = torch.cat([sel, sel + L1 // 2])
+    dst = torch.arange(block)
+    for fc, fm in zip(model.cond_input.features, model.input.features):
+        fc.weight[:, dst] = fm.weight[:, src]
+        fc.weight[:, block:] = 0.0
+        if hasattr(fc, "virtual_weight"):
+            fc.virtual_weight[:, dst] = fm.virtual_weight[:, src]
+            fc.virtual_weight[:, block:] = 0.0
+    model.cond_input.bias[dst] = model.input.bias[src]
+    model.cond_input.bias[block:] = 0.0
+    model.cond_name = cond
+    model.cond_block = block
+
+    ls = model.layer_stacks
+    extra = StackedLinear(block, ls.l1.out_features, ls.count, model.quantization, "ls_l1")
+    extra.linear.weight.zero_()
+    extra.linear.bias.zero_()
+    extra.linear.bias.requires_grad_(False)
+    ls.l1_extra = extra
+    ls.__class__ = CondLayerStacks
+
+    model.freeze_base = freeze_base
+    if freeze_base:
+        for name, p in model.named_parameters():
+            p.requires_grad_(name.startswith("cond_input.") or name == "layer_stacks.l1_extra.linear.weight")
+
+    model.__class__ = CondNNUEModel
+    return model
