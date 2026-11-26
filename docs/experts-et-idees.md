@@ -598,3 +598,60 @@ l'accumulateur élargi ne coûte que 6 %.
 Suite : variante B (bloc 128, piles propres de la taille de v7, coût attendu ~6 %) entraînée
 longtemps : 48 époques sur les 4,8 milliards de positions sous condition (`run_condBL.sh`).
 Piles conditionnelles configurables dans le moteur (`ALCYON_COND_L2/L3`, 32-32 par défaut).
+
+## 17. Un juge qui prédit l'Elo : positions des arbres de recherche d'Alcyon notées par BT4 (26/11)
+
+Constat de départ : sur les parties Leela (validation habituelle), SF v14 ne fait que ~4 % d'erreur
+de moins que v7 alors qu'il vaut ~80 Elo de plus, et nos gains de 1 à 5 % d'erreur ne rapportaient
+rien en partie. La mesure ne prédisait pas l'Elo.
+
+**Positions** (branche `searchtree-data`, ea8eb10) : `ALCYON_DUMP_DIR` fait écrire par Alcyon la FEN
+d'une évaluation NNUE complète sur `ALCYON_DUMP_RATE` (200) pendant la recherche (pas les positions
+en échec, ni les évals relues en TT, ni les évals PSQT seules). Auto-jeu fastchess de v7, 200 000
+nœuds par coup, ouvertures UHO_4060_v2, 60 parties en parallèle pendant ~6 minutes (68 parties
+commencées) : 11,0 M FEN, 10,8 M uniques (1,8 % de doublons), converties en binpack de positions
+isolées (`fen2binpack.cpp` : score 0, ply 9999, résultat 0, coup calme arbitraire, comme
+`xushawn/sf-searchtree-bt4`). Répartition : 9 % à 25-32 pièces, 38 % à 17-24, 44 % à 9-16, 9 % à ≤ 8 ;
+39 % de positions « pièces différentes ». Limite : seulement 68 parties.
+
+**Notes BT4** : outil de réévaluation de xu-shawn (fork lc0, commit 3f83fab, celui des données SF),
+réseau BT4-tf13tune (347 Mo), compilé avec CUDA 13.2 pour sm_120. Débit **~9 000 positions/s**, GPU
+à 97 % et 400 W, CPU de lc0 à 73 % : limité par le GPU (≈ 19 Gflop par position, ≈ 170 Tflops, près
+du maximum fp16 de la 5090) ; plusieurs processus n'y changent rien. 3 M positions tirées au hasard
+notées en ~6 minutes ; 1,7 M ont un score < 10 000 cp.
+
+**Moteurs** : v5, v7, WS2 et le réseau SF v14 (repère uniquement, branche locale `sf14-test`,
+réseau converti par un script privé non versionné : SF écrit les PSQT de toutes les features en un
+bloc LEB128 après les poids roi-pièce, Alcyon attend un bloc par segment ; version 0x7AF32F20 →
+0x6A448AFA). Évals par la commande `eval` (`judge_eval.py`), analyse `judge_an.py`.
+
+Sur **toutes** les positions, l'erreur est ~10 fois celle des parties Leela et dominée par la
+tactique (pièces en prise que BT4 voit et que l'éval statique ne voit pas : c'est le rôle de la
+qsearch). Sur les **positions calmes** (aucune pièce en prise pour les deux camps, |BT4| < 1500 ;
+615 673 positions) :
+
+| | erreur | écart | Elo connu |
+|---|---|---|---|
+| v5 | 147,38 | | |
+| v7 | 131,24 | −11,0 % / v5 | +123 / v5 |
+| SF v14 | 121,12 | −7,7 % / v7 | ≈ +82 / v7 (+205 / v5) |
+| WS2 | 131,29 | 0,0 % / v7 | précision ≈ 0 Elo (SPRT −65 pour −40 % de vitesse) |
+
+**Environ 11 Elo par point d'erreur** de v5 à v7, 10,6 de v7 à SF v14 : le juge est cohérent avec les
+écarts d'Elo connus, contrairement à la validation Leela. Et WS2, −4,7 % sur Leela, ne gagne rien ici.
+
+| positions calmes | part | v5 | v7 | SF v14 | WS2 |
+|---|---|---|---|---|---|
+| pièces identiques | 87 % | 138,20 | 124,00 | 113,86 (−8,2 %) | 124,00 |
+| pièces différentes | 13 % | 211,27 | 181,60 | 171,64 (−5,5 %) | 182,02 |
+| 17-32 pièces | 51 % | 157,22 | 142,25 | 132,07 (−7,2 %) | 142,20 |
+| ≤ 16 pièces | 49 % | 137,28 | 119,93 | 109,88 (−8,4 %) | 120,09 |
+
+Lecture : sur les positions que la recherche rencontre vraiment, l'avance de SF v14 est **surtout
+sur les positions ordinaires** (pièces identiques), pas sur les déséquilibres : le bloc
+conditionnel visait la mauvaise cible. Désormais, juger tout réseau candidat sur ce juge (positions
+calmes) avant tout match.
+
+Suites : plus de parties et un échantillonnage plus rare pour un juge et un jeu d'entraînement plus
+variés ; noter par BT4 seulement les positions calmes (≈ 36 %) pour économiser le GPU (~100 M par
+3 heures) ; puis affiner v7 avec une part de ces positions.
