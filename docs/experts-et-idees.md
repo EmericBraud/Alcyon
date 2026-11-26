@@ -455,3 +455,47 @@ condition). Sous condition, −5,6 %, environ la moitié de l'écart avec SF v14
 (10 à 13 %). Pour comparaison, l'affinage BT4 du réseau entier (25/11) faisait −1 à −2 % sur ces
 positions et −2,1 % au total, en 2 h 15. Essai suivant lancé : bloc de 128 entraîné 24 époques
 (`run_condWS.sh`), pour situer le compromis coût / précision.
+
+## 13. Bloc de 128 sur 24 époques, et nouvelle validation (26/11)
+
+### WS : bloc de 128, tête large, 24 époques (`run_condWS.sh`)
+
+Validation de février, positions fixes : **−4,4 % sous condition** (W, 12 époques : −3,0 % ; WL,
+bloc de 512, 24 époques : −5,6 %), −1,3 % au total. La val loss pendant l'entraînement semblait
+plate (487-494) : elle est tirée différemment à chaque époque et bruitée de ±5 points. **Ne plus
+juger un plafond sur la val loss d'entraînement, seulement sur l'analyse à positions fixes.**
+
+### Validation tirée des mois d'entraînement (`make_val_tail.py`)
+
+Doutes sur février : fichier `-histfix` de février peut-être traité autrement (la fiche du dépôt
+annonce « histfix » à partir de mars), réseaux Leela différents d'un mois à l'autre, et un seul bloc
+corrélé de 1,6 M positions (quelques milliers de parties). Nouvelle validation : 12 chunks tirés au
+hasard dans la partie **jamais lue** des fichiers de mars à juin (au-delà de la part lue par le
+filtre plafonné, + 3 % de marge), 3 par mois : 4,77 M positions, 2,92 M positions calmes. Tous les
+réseaux réévalués, aucun réentraînement (`run_valtail.sh`).
+
+| | v7 | A | B | W | W512 | **WS** | WL | D |
+|---|---|---|---|---|---|---|---|---|
+| ensemble | 50,91 | 50,65 | 50,56 | 50,42 | 50,28 | **50,13** | 50,25 | 50,39 |
+| condition vraie (13,4 %) | 113,01 | −1,7 % | −2,3 % | −3,3 % | −4,1 % | **−5,2 %** | −4,4 % | −1,5 % |
+| condition fausse | 41,29 | 0 | 0 | 0 | 0 | 0 | 0 | −0,8 % |
+| écart de matériel ≥ 3 | 143,90 | −1,3 % | −1,7 % | −2,8 % | −3,8 % | −4,5 % | −4,4 % | −1,0 % |
+| finales | 63,69 | −0,6 % | −0,7 % | −1,2 % | −1,4 % | −2,1 % | −1,8 % | −1,4 % |
+| eval 150-400 | 68,67 | +0,9 % | +1,1 % | +0,9 % | +0,7 % | +0,9 % | +0,9 % | +3,8 % |
+
+(A, B, W, W512 : 12 époques ; WS, WL : 24 époques ; D : condition « deseq », 12 époques.)
+
+Lecture :
+
+- l'ordre A < B < W < W512 et l'effet de l'entraînement long se confirment ;
+- **WS (bloc de 128) passe devant WL (bloc de 512)** sur cette validation (−5,2 % contre −4,4 %),
+  alors que c'était l'inverse sur février (−4,4 % contre −5,6 %). L'écart entre les deux est
+  dans la variabilité entre validations : **le bloc de 512 n'est pas clairement meilleur** une
+  fois les deux entraînés longtemps. L'entraînement long compte plus que la largeur du bloc ;
+- le gain total reste modeste (−1,5 % au mieux) et les avantages nets (150-400) restent
+  légèrement dégradés partout.
+
+Choix pratique : **WS (bloc de 128, tête 128-64, condition « typ »)**, 4 fois moins cher que le
+bloc de 512 dans le moteur, au moins aussi bon. Prochaine étape nécessaire avant tout match :
+mesurer son coût réel dans le moteur, sachant que la condition est vraie sur ~60 % des évaluations
+en recherche (section 11).
