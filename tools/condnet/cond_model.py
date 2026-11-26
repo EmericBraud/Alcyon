@@ -113,7 +113,7 @@ class CondNNUEModel(NNUEModel):
         )
         mb = cond_mask(white_indices, self.cond_name).unsqueeze(1)
         m = mb.to(lb.dtype)
-        if getattr(self, "variant", "A") == "B":
+        if getattr(self, "variant", "A") in ("B", "W"):
             # Variante B : piles de couches propres aux positions sous condition (copies de v7
             # entrainables), v7 inchange ailleurs.
             base = self.layer_stacks(l0_, layer_stack_indices, fake_quantize_acts, fake_quantize_weights)
@@ -129,7 +129,7 @@ class CondNNUEModel(NNUEModel):
         if include_input:
             self.cond_input.clip_weights(self.quantization)
         lim = self.quantization.max_hidden_weight[0]
-        if getattr(self, "variant", "A") == "B":
+        if getattr(self, "variant", "A") in ("B", "W"):
             self.cond_stacks.l1_extra.linear.weight.clamp_(-lim, lim)
             # memes bornes que les piles de v7 (voir NNUEModel.clip_weights)
             for group in self.quantization.generate_weight_clipping_config(SimpleNamespace(layer_stacks=self.cond_stacks)):
@@ -148,8 +148,45 @@ class CondNNUEModel(NNUEModel):
     def zero_virtual_weights(self) -> None:
         super().zero_virtual_weights()
         self.cond_input.zero_virtual_weights()
-        if getattr(self, "variant", "A") == "B":
+        if getattr(self, "variant", "A") in ("B", "W"):
             self.cond_stacks.zero_virtual_weights()
+
+
+@torch.no_grad()
+def widen_stacks(old: LayerStacks, quantization, L2n: int, L3n: int) -> LayerStacks:
+    """Copie de `old` avec une premiere couche de L2n neurones et une deuxieme de L3n, qui donne
+    exactement les memes sorties : les poids de v7 sont recopies, les nouveaux neurones ont des
+    poids d'entree aleatoires (init par defaut) et des poids de sortie nuls. Les deux derniers
+    neurones de la premiere couche (connexion directe vers la sortie) restent les deux derniers."""
+    L2, L3, cnt = old.L2, old.L3, old.count
+    new = LayerStacks(cnt, SimpleNamespace(L1=old.L1, L2=L2n, L3=L3n), quantization)
+    m1 = lambda o: o if o < L2 - 2 else L2n - (L2 - o)          # neurones de l1
+    for s in range(cnt):
+        for o in range(L2):
+            new.l1.linear.weight[s * L2n + m1(o)] = old.l1.linear.weight[s * L2 + o]
+            new.l1.linear.bias[s * L2n + m1(o)] = old.l1.linear.bias[s * L2 + o]
+    new.l1.factorized_linear.weight.zero_(); new.l1.factorized_linear.bias.zero_()
+    for o in range(L2):
+        new.l1.factorized_linear.weight[m1(o)] = old.l1.factorized_linear.weight[o]
+        new.l1.factorized_linear.bias[m1(o)] = old.l1.factorized_linear.bias[o]
+    # l2 : entrees = [carre(L2), lineaire(L2)] -> [carre(L2n), lineaire(L2n)]
+    c2 = [part * L2n + m1(o) for part in (0, 1) for o in range(L2)]
+    w2 = new.l2.linear.weight.view(cnt, L3n, 2 * L2n)
+    w2[:, :, :] = 0.0 * w2  # colonnes nouvelles nulles
+    nw = torch.randn(cnt, L3n - L3, 2 * L2n) * (1.0 / (2 * L2n) ** 0.5)
+    w2[:, L3:, :] = nw                                             # nouveaux neurones de l2 : entrees aleatoires
+    ow2 = old.l2.linear.weight.view(cnt, L3, 2 * L2)
+    w2[:, :L3, c2] = ow2
+    b2 = new.l2.linear.bias.view(cnt, L3n)
+    b2[:, :L3] = old.l2.linear.bias.view(cnt, L3)
+    b2[:, L3:] = 0.0
+    # sortie : entrees = [carre(L2n), lineaire(L2n), carre(L3n), lineaire(L3n)]
+    c3 = c2 + [2 * L2n + part * L3n + j for part in (0, 1) for j in range(L3)]
+    w3 = new.output.linear.weight.view(cnt, 1, 2 * L2n + 2 * L3n)
+    w3.zero_()
+    w3[:, :, c3] = old.output.linear.weight.view(cnt, 1, 2 * L2 + 2 * L3)
+    new.output.linear.bias.copy_(old.output.linear.bias)
+    return new
 
 
 @torch.no_grad()
@@ -180,8 +217,10 @@ def make_cond(model: NNUEModel, feature_name: str, block: int = 128, cond: str =
     model.cond_block = block
 
     model.variant = variant
-    if variant == "B":
+    if variant in ("B", "W"):
         model.cond_stacks = copy.deepcopy(model.layer_stacks)
+        if variant == "W":
+            model.cond_stacks = widen_stacks(model.cond_stacks, model.quantization, 128, 64)
         ls = model.cond_stacks
         prefix = "cond_stacks."
     else:
@@ -197,7 +236,7 @@ def make_cond(model: NNUEModel, feature_name: str, block: int = 128, cond: str =
     model.freeze_base = freeze_base
     if freeze_base:
         for name, p in model.named_parameters():
-            if variant == "B":
+            if variant in ("B", "W"):
                 train = name.startswith("cond_input.") or (name.startswith("cond_stacks.") and name != "cond_stacks.l1_extra.linear.bias")
             else:
                 train = name.startswith("cond_input.") or name == "layer_stacks.l1_extra.linear.weight"

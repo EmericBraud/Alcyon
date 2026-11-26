@@ -282,3 +282,41 @@ n'est pas une question de capacité mais de données (prévisibilité des scores
 d'entraînement de SF ~1 000 fois le nôtre). Test qui tranche : une tête plus large (64-128
 neurones) sur les positions sous condition ; si la loss d'entraînement reste plate, la limite est
 dans les données.
+
+## 8. Résultats : tête large (W) et utilisation du bloc (26/11)
+
+**W** = B avec des piles propres plus larges : première couche 128 neurones (au lieu de 32),
+deuxième 64 (au lieu de 32), v7 recopié dans les neurones existants (connexion directe conservée sur
+les deux derniers), nouveaux neurones à entrées aléatoires et sorties nulles (départ = v7 à 0,0 cp).
+12,5 M paramètres entraînés, ~98 it/s, ~13 minutes (`run_condW.sh`, `make_cond.py ... typ W`).
+
+Loss d'entraînement par époque (× 1e-5, mêmes données dans le même ordre, donc comparables
+époque par époque) : W − B = +0,2, −0,2, −0,8, −2,1, −2,8, −3,9, −3,3, −4,0, −4,5, −4,7, −5,2, −5,0.
+L'écart grandit régulièrement : gain de capacité. Val loss finale : A 503, B 499, W 493.
+
+Analyse d'erreur (validation de février BT4, positions calmes, même échelle) :
+
+| | part | v7 | A | B | W |
+|---|---|---|---|---|---|
+| ensemble | 100 % | 51,65 | 51,46 | 51,34 | **51,20 (−0,9 %)** |
+| condition fausse | 87,2 % | 41,87 | 41,87 | 41,87 | 41,87 |
+| **condition vraie** | 12,8 % | 118,19 | 116,66 | 115,80 | **114,65 (−3,0 %)** |
+| écart de matériel ≥ 3 | 2,3 % | 158,31 | 156,92 | 156,81 | 155,28 (−1,9 %) |
+| finales | 30,4 % | 64,39 | 64,09 | 63,98 | 63,72 (−1,0 %) |
+| eval 150-400 | 16,5 % | 68,90 | 69,57 | 69,78 | 69,63 (+1,1 %) |
+
+**Utilisation du bloc entraîné de B** (`block_usage.py`, 124 680 positions calmes sous condition) :
+
+- erreur v7 118,19 ; B 115,80 ; **B avec le bloc éteint (piles propres gardées) 117,85** : le gain de
+  B vient surtout du bloc (2,05 sur 2,39), peu des piles réentraînées seules ;
+- 0 neurone mort sur 128 ; activité médiane 16,5 % des positions ;
+- **la variance des 128 sorties est très étalée** : 19 composantes pour 50 %, 83 pour 90 %, 119
+  pour 99 %. Le bloc utilise presque toute sa dimension ;
+- apport des neurones (extinction un par un) : les 10 premiers portent 51 % du gain, 28 neurones
+  coûtent chacun plus de 1 % de l'apport total.
+
+Lecture : contrairement à l'hypothèse « tout vient des données », la capacité limite : élargir la
+tête donne un gain qui grandit pendant l'entraînement et se généralise (validation), et le bloc de
+128 utilise presque toute sa dimension. Prochain test logique : W avec un bloc plus large (256 ou
+512). Restent à surveiller : les avantages nets (eval 150-400) se dégradent légèrement dans toutes
+les variantes, et le coût en partie d'une tête 4 fois plus large sur ~13 % des positions.
