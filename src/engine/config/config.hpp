@@ -50,6 +50,9 @@ namespace engine_constants
         // 1 = premiere couche dense creuse (entrees nulles sautees).
         PARAM_SPECIFIER int SparseL1 = 1;
         PARAM_SPECIFIER int RefreshCache = 1;
+        // Echelle de l'eval NNUE en pourcents (reseau complet et tete PSQT).
+        // v7 evalue ~18 % plus bas que v5, pour qui les marges ont ete reglees.
+        PARAM_SPECIFIER int EvalScale = 100;
         PARAM_SPECIFIER int TtNmpGap = 99;
         // Ajustement LMR par borne TT (masque) : 1 +1 si borne haute <= alpha,
         // 2 +1 si borne basse >= beta, 4 -1 si borne basse >= beta.

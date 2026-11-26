@@ -15,7 +15,7 @@ namespace Eval
         // function's contract (matching the HCE eval and eval_relative<Us> in
         // pos_eval.hpp) is to return a WHITE-relative absolute score, so flip
         // the sign back for black to move.
-        const int score = board.get_nnue_eval().evaluate_abs(board);
+        const int score = board.get_nnue_eval().evaluate_abs(board) * engine_constants::search::EvalScale / 100;
         return board.get_side_to_move() == WHITE ? score : -score; // @TODO create a templated version of it OR delete this statement (sign is flipped twice)
     }
 }

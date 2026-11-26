@@ -153,7 +153,8 @@ namespace Eval
     {
 #ifdef NNUE_EVAL
         const int piece_count = std::popcount(board.get_occupancy<NO_COLOR>());
-        const int score = board.get_nnue_eval().evaluate_psqt_abs(board.get_side_to_move(), piece_count);
+        const int score = board.get_nnue_eval().evaluate_psqt_abs(board.get_side_to_move(), piece_count) *
+                          engine_constants::search::EvalScale / 100;
         return Us == board.get_side_to_move() ? score : -score;
 #else
         const EvalState &state = board.get_eval_state();
