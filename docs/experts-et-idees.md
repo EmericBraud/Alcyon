@@ -363,3 +363,41 @@ par mois, 1,2 milliard, 12 Go) (`run_condD.sh`).
 
 Disque (serveur 120 Go) : les données filtrées « typ » (31 Go) ont été supprimées pour faire de la
 place (régénérables en ~13 minutes avec `filt_typ`) ; les fichiers filtrés sont désormais plafonnés.
+
+### Utilisation du bloc de W512 (`block_usage.py`)
+
+0 neurone mort sur 512 ; 64 composantes pour 50 % de la variance, 324 pour 90 % (63 % de la
+dimension, contre 65 % pour le bloc de 128), 472 pour 99 %. Apport très réparti (les 10 premiers
+neurones : 22 % du gain). Bloc éteint, piles larges gardées : erreur 125,85, **pire que v7**
+(118,19) : les piles larges se sont construites autour du bloc et n'ont pas de sens sans lui.
+
+## 10. Résultats : condition élargie « deseq » (26/11)
+
+W512, condition « deseq » = pièces différentes ou nombre de pions différent (41 % des positions de
+février, 41 % des positions calmes : 12,8 % « pièces différentes » + 28,2 % « seulement pions
+différents »). Données : 1,2 milliard de positions sous condition (300 M par mois). 12 époques,
+~77 it/s.
+
+| | part | v7 | W512 (« typ ») | D (« deseq ») |
+|---|---|---|---|---|
+| ensemble | 100 % | 51,65 | 51,07 (−1,1 %) | 51,06 (−1,1 %) |
+| matériel identique | 59,0 % | 25,55 | 25,55 | 25,55 |
+| seulement pions différents | 28,2 % | 75,96 | 75,96 | 74,61 (−1,8 %) |
+| pièces différentes | 12,8 % | 118,19 | 113,68 (−3,8 %) | 116,53 (−1,4 %) |
+| finales | 30,4 % | 64,39 | 63,57 | 63,28 (−1,7 %) |
+| eval 150-400 | 16,5 % | 68,90 | 69,49 (+0,9 %) | 71,41 (+3,6 %) |
+
+Lecture :
+
+- **même gain total** (−1,1 %) que W512 « typ », mais réparti sur 41 % des positions au lieu de
+  13 % : le bloc se dilue (les positions « pièces différentes » ne font plus qu'un tiers de ses
+  données) ;
+- en partie, « typ » est donc **3 fois moins cher** pour le même gain (bloc actif sur 13 % des
+  positions au lieu de 41 %) ;
+- « deseq » dégrade nettement les avantages nets (+3,6 %) ;
+- la loss d'entraînement de D baisse encore régulièrement en fin de run (378,6 → 355,6) : il
+  n'était pas convergé (une seule passe sur ses données).
+
+Conclusion : garder la condition « typ ». Pour les écarts de pions seuls, un second bloc distinct
+serait plus logique qu'une condition commune. Essai suivant : W512 « typ » entraîné deux fois plus
+longtemps (24 époques), pour mesurer ce que rapporte encore l'entraînement.
