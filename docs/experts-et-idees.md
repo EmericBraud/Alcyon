@@ -320,3 +320,46 @@ tête donne un gain qui grandit pendant l'entraînement et se généralise (vali
 128 utilise presque toute sa dimension. Prochain test logique : W avec un bloc plus large (256 ou
 512). Restent à surveiller : les avantages nets (eval 150-400) se dégradent légèrement dans toutes
 les variantes, et le coût en partie d'une tête 4 fois plus large sur ~13 % des positions.
+
+## 9. Résultats : bloc de 512 (W512) (26/11)
+
+W (tête 128-64) avec un bloc de 512 au lieu de 128 (initialisé avec 256 paires de neurones de v7).
+46 M paramètres entraînés, ~80 it/s, ~17 minutes (`run_condW5.sh`, `make_cond.py ... 512 typ W`).
+
+Loss par époque (× 1e-5) :
+
+| | 0 | 3 | 6 | 9 | 11 (fin) |
+|---|---|---|---|---|---|
+| entraînement B | 464,8 | 469,6 | 453,3 | 463,9 | 460,9 |
+| entraînement W | 465,0 | 467,5 | 450,0 | 459,2 | 455,9 |
+| entraînement W512 | 464,9 | 465,0 | 446,2 | 452,3 | **449,9** |
+| validation B | 510,3 | 514,8 | 502,5 | 495,8 | 498,6 |
+| validation W | 510,2 | 513,8 | 498,1 | 489,7 | 493,0 |
+| validation W512 | 508,3 | 505,9 | 494,1 | 484,8 | **487,3** |
+
+Analyse d'erreur (février BT4, positions calmes, même échelle) :
+
+| | part | v7 | B | W | W512 |
+|---|---|---|---|---|---|
+| ensemble | 100 % | 51,65 | 51,34 | 51,20 | **51,07 (−1,1 %)** |
+| condition fausse | 87,2 % | 41,87 | 41,87 | 41,87 | 41,87 |
+| **condition vraie** | 12,8 % | 118,19 | 115,80 | 114,65 | **113,68 (−3,8 %)** |
+| écart de matériel ≥ 3 | 2,3 % | 158,31 | 156,81 | 155,28 | 153,50 (−3,0 %) |
+| finales | 30,4 % | 64,39 | 63,98 | 63,72 | 63,57 (−1,3 %) |
+| eval 150-400 | 16,5 % | 68,90 | 69,78 | 69,63 | 69,49 (+0,9 %) |
+
+Lecture : la largeur du bloc paie aussi, mais le rendement baisse : bloc ×4 → −0,8 point
+(W → W512), contre −1,0 point pour la tête ×4 (B → W). Sous condition, on est à −3,8 %, environ un
+tiers de l'écart avec SF v14 sur ces positions. La dégradation des avantages nets diminue avec la
+capacité (+1,3 % → +0,9 %).
+
+Coût prévisible en partie : un bloc de 512 = la moitié de la largeur de l'accumulateur principal,
+mis à jour sur les positions sous condition (~13 % des positions calmes), plus une tête 4 fois plus
+large sur ces positions. À mesurer dans le moteur avant tout match.
+
+Essai suivant lancé : condition élargie **« deseq »** (pièces différentes ou nombre de pions
+différent : 41 % des positions de février), W512, données filtrées `filt_deseq.cpp` (300 M positions
+par mois, 1,2 milliard, 12 Go) (`run_condD.sh`).
+
+Disque (serveur 120 Go) : les données filtrées « typ » (31 Go) ont été supprimées pour faire de la
+place (régénérables en ~13 minutes avec `filt_typ`) ; les fichiers filtrés sont désormais plafonnés.

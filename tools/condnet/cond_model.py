@@ -15,6 +15,7 @@ A l'export, l1_extra se fusionne avec l1 en une seule couche plus large.
 Conditions (calculees depuis les indices HalfKAv2_hm de la perspective blanche) :
   - "typ" : les deux camps n'ont pas les memes pieces (dames, tours ou pieces legeres en
     nombre different). ~13 % des positions, ~66 % de l'ecart d'erreur avec SF v14.
+  - "deseq" : "typ" ou nombre de pions different (tout desequilibre de materiel).
 """
 import copy
 from types import SimpleNamespace
@@ -48,6 +49,13 @@ def cond_mask(white_indices: torch.Tensor, cond: str) -> torch.Tensor:
         r = c[:, 3, 0] != c[:, 3, 1]
         minor = (c[:, 1, 0] + c[:, 2, 0]) != (c[:, 1, 1] + c[:, 2, 1])
         return q | r | minor
+    if cond == "deseq":
+        # pieces differentes OU nombre de pions different : tout desequilibre de materiel
+        q = c[:, 4, 0] != c[:, 4, 1]
+        r = c[:, 3, 0] != c[:, 3, 1]
+        minor = (c[:, 1, 0] + c[:, 2, 0]) != (c[:, 1, 1] + c[:, 2, 1])
+        pawns = c[:, 0, 0] != c[:, 0, 1]
+        return q | r | minor | pawns
     raise ValueError(f"condition inconnue : {cond}")
 
 
