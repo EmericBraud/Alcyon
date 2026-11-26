@@ -71,8 +71,16 @@ namespace nnue
     constexpr int L1 = 1024 + CondBlock;
     constexpr int L2 = 32;
     constexpr int L3 = 32;
-    constexpr int CondL2 = 128;
-    constexpr int CondL3 = 64;
+#ifndef ALCYON_COND_L2
+#define ALCYON_COND_L2 32
+#endif
+#ifndef ALCYON_COND_L3
+#define ALCYON_COND_L3 32
+#endif
+    // Largeur des piles conditionnelles : 32-32 (variante B, taille de v7) par defaut ; la tete large
+    // 128-64 (variante W) a perdu en partie (-65 +- 31 Elo, 26/11) a cause de son cout.
+    constexpr int CondL2 = ALCYON_COND_L2;
+    constexpr int CondL3 = ALCYON_COND_L3;
     constexpr int NumPsqtBuckets = 8;
     constexpr int NumLsBuckets = 8;
     constexpr int NumFullThreatsFeatures = threats::NUM_INPUTS;      // 60,720
