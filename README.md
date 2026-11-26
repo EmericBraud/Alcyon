@@ -153,6 +153,7 @@ I want to thank the [chessprogramming.org](https://www.chessprogramming.org/) co
 Thanks to the [OpenBench](https://github.com/andygrant/openbench) creators for sharing such an amazing SPSA tuning tool.
 I also greatly used [lichess-bot](https://github.com/lichess-bot-devs/lichess-bot) to connect my UCI engine to lichess.org.
 The [Texel](https://github.com/peterosterlund2/texel) tuning technique also greatly helped me improve the HCE function.
+Alcyon's networks are trained on positions from [Leela Chess Zero](https://lczero.org/)'s self-play games: many thanks to the Lc0 project and its contributors for releasing their [training data](https://storage.lczero.org/files/training_data/) openly, and to [linrock](https://huggingface.co/linrock) for filtering and converting it into the test80 binpacks used to train the v7 network. The networks are trained with [nnue-pytorch](https://github.com/official-stockfish/nnue-pytorch).
 Finally, thanks to the [Stockfish](https://github.com/official-stockfish/stockfish) and [Ethereal](https://github.com/AndyGrant/Ethereal) communities for developing and sharing such performant chess engines.
 
 ## 👨‍💻 Author
