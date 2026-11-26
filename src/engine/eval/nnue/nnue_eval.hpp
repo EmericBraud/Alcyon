@@ -35,6 +35,7 @@
 #include "engine/config/config.hpp"
 #include <array>
 #include <bit>
+#include <cstdlib>
 #include <cstdint>
 #include <fstream>
 #include <memory>
@@ -59,9 +60,19 @@
 
 namespace nnue
 {
-    constexpr int L1 = 1024;
+#ifndef ALCYON_COND_BLOCK
+#define ALCYON_COND_BLOCK 0
+#endif
+    // Bloc conditionnel (branche cond-block) : largeur du bloc ajoute a l'accumulateur de v7 (0 =
+    // reseau standard). Les colonnes du bloc vivent dans le meme accumulateur (L1 = 1024 + bloc) ;
+    // les piles de v7 ont des poids nuls dessus, les piles conditionnelles (CondL2, CondL3) les
+    // lisent sur les positions ou la condition est vraie (voir cond_typ).
+    constexpr int CondBlock = ALCYON_COND_BLOCK;
+    constexpr int L1 = 1024 + CondBlock;
     constexpr int L2 = 32;
     constexpr int L3 = 32;
+    constexpr int CondL2 = 128;
+    constexpr int CondL3 = 64;
     constexpr int NumPsqtBuckets = 8;
     constexpr int NumLsBuckets = 8;
     constexpr int NumFullThreatsFeatures = threats::NUM_INPUTS;      // 60,720
@@ -117,7 +128,7 @@ namespace nnue
     class NnueEval
     {
     public:
-        using Model = NnueModel<NumFeatures, NumFullThreatsFeatures, L1, NumPsqtBuckets, NumLsBuckets, L2, L3>;
+        using Model = NnueModel<NumFeatures, NumFullThreatsFeatures, L1, NumPsqtBuckets, NumLsBuckets, L2, L3, CondL2, CondL3>;
 
     private:
         // Lazy apply: play() no longer touches the accumulator at all.
@@ -360,9 +371,27 @@ namespace nnue
             // buckets, so both halves must be caught up.
             materialize();
             materialize_psqt();
+            if constexpr (CondBlock > 0)
+            {
+                static const bool no_cond = std::getenv("ALCYON_NO_COND") != nullptr; // mesure de cout
+                if (!no_cond && cond_typ(board))
+                    return board.get_side_to_move() == WHITE
+                               ? model.template get_result_cond<WHITE>(piece_count)
+                               : model.template get_result_cond<BLACK>(piece_count);
+            }
             return board.get_side_to_move() == WHITE
                        ? model.template get_result<WHITE>(piece_count)
                        : model.template get_result<BLACK>(piece_count);
+        }
+
+        // Condition "typ" du bloc conditionnel : les deux camps n'ont pas les memes pieces (dames,
+        // tours, ou pieces legeres en nombre different). Meme definition qu'a l'entrainement
+        // (tools/condnet/cond_model.py, branche experts).
+        static bool cond_typ(const Board &board)
+        {
+            auto c = [&](Color col, int p) { return std::popcount(board.get_piece_bitboard(col, p)); };
+            return c(WHITE, QUEEN) != c(BLACK, QUEEN) || c(WHITE, ROOK) != c(BLACK, ROOK) ||
+                   c(WHITE, KNIGHT) + c(WHITE, BISHOP) != c(BLACK, KNIGHT) + c(BLACK, BISHOP);
         }
 
         // PSQT-only fast eval (see NnueModel::get_psqt_result): the trained
@@ -911,8 +940,64 @@ namespace nnue
             std::lock_guard<std::mutex> lock(cache_mutex);
             auto it = cache.find(path);
             if (it == cache.end())
-                it = cache.emplace(path, load_model(path)).first;
+            {
+                Model m = load_model(path);
+                if constexpr (CondBlock > 0)
+                {
+                    std::string cp = path;
+                    cp.replace(cp.rfind(".nnue"), 5, ".cond.nnue");
+                    m.set_cond_stacks(load_cond_stacks(cp));
+                }
+                it = cache.emplace(path, std::move(m)).first;
+            }
             return it->second;
+        }
+
+        // Piles conditionnelles : fichier au meme format, meme accumulateur (saute), piles de largeur
+        // CondL2/CondL3 (tools/condnet/export_cond.py, branche experts).
+        static std::shared_ptr<const typename Model::CondStacks> load_cond_stacks(const std::string &path)
+        {
+            std::ifstream file(path, std::ios::binary);
+            if (!file)
+                FATAL("Could not open conditional stacks file: " + path);
+            std::uint32_t version = 0, hash = 0, description_len = 0, ft_hash = 0;
+            read_binary(file, version);
+            if (version != VERSION)
+                FATAL("cond stacks: unexpected version");
+            read_binary(file, hash);
+            read_binary(file, description_len);
+            file.seekg(description_len, std::ios::cur);
+            read_binary(file, ft_hash);
+            const std::size_t ft_bytes = static_cast<std::size_t>(L1) * 2 +
+                                         static_cast<std::size_t>(NumFullThreatsFeatures) * L1 +
+                                         static_cast<std::size_t>(NumFullThreatsFeatures) * NumPsqtBuckets * 4 +
+                                         static_cast<std::size_t>(NumHalfkaFeatures) * L1 * 2 +
+                                         static_cast<std::size_t>(NumHalfkaFeatures) * NumPsqtBuckets * 4;
+            file.seekg(static_cast<std::streamoff>(ft_bytes), std::ios::cur);
+            check(file, "cond stacks: feature transformer skip");
+            std::vector<typename Model::CondBucket> buckets;
+            buckets.reserve(NumLsBuckets);
+            for (int b = 0; b < NumLsBuckets; ++b)
+            {
+                std::uint32_t fc_hash = 0;
+                read_binary(file, fc_hash);
+                check(file, "cond fc_hash bucket " + std::to_string(b));
+                auto l1 = read_dense_layer<typename Model::CondL1Layer, L1, CondL2>(file, "cond l1 bucket " + std::to_string(b));
+                auto l2 = read_dense_layer<typename Model::CondL2Layer, 2 * CondL2, CondL3>(file, "cond l2 bucket " + std::to_string(b));
+                auto out = read_dense_layer<typename Model::CondOutputLayer, 2 * CondL2 + 2 * CondL3, 1>(file, "cond output bucket " + std::to_string(b));
+                buckets.emplace_back(std::move(l1), std::move(l2), std::move(out));
+            }
+            file.peek();
+            if (!file.eof())
+                FATAL("cond stacks: trailing bytes in " + path);
+            return std::make_shared<const typename Model::CondStacks>(
+                make_cond_array(buckets, std::make_index_sequence<NumLsBuckets>{}));
+        }
+
+        template <std::size_t... Is>
+        static typename Model::CondStacks make_cond_array(std::vector<typename Model::CondBucket> &buckets, std::index_sequence<Is...>)
+        {
+            return {std::move(buckets[Is])...};
         }
 
         static Model load_model(const std::string &path)

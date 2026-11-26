@@ -328,7 +328,7 @@ void SearchWorker::iterative_deepening()
     static const bool l0_log = std::getenv("ALCYON_TM_L0") != nullptr;
     if (l0_log && thread_id == 0)
     {
-        std::array<std::uint8_t, 1024> l0;
+        std::array<std::uint8_t, nnue::L1> l0;
         board.nnue_l0(l0);
         static const char *hex = "0123456789abcdef";
         std::string line = "L0 ";

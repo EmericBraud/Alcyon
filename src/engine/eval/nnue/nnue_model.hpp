@@ -38,7 +38,8 @@
 #include "engine/eval/nnue/psqt_accumulator_layer.hpp"
 #include "engine/eval/nnue/dense_layer.hpp"
 
-template <int NFeatures, int NThreatFeatures, int NAccumulator = 1024, int NumPsqtBuckets = 8, int NumLsBuckets = 8, int L2 = 32, int L3 = 32>
+template <int NFeatures, int NThreatFeatures, int NAccumulator = 1024, int NumPsqtBuckets = 8, int NumLsBuckets = 8, int L2 = 32, int L3 = 32,
+          int CL2 = 128, int CL3 = 64>
 class NnueModel
 {
     static_assert(NAccumulator % 2 == 0, "NAccumulator must be even (split in half for the L0 pairwise square)");
@@ -61,22 +62,36 @@ public:
     using L2Layer = DenseLayer<2 * L2, L3, WeightScaleBitsL2>;
     using OutputLayer = DenseLayer<2 * L2 + 2 * L3, 1>;
 
-    struct LayerStackBucket
+    // Pile de couches de largeurs A (premiere couche dense) et Bw (deuxieme).
+    template <int A, int Bw>
+    struct StackT
     {
-        L1Layer l1;
-        L2Layer l2;
-        OutputLayer output;
+        static constexpr int SL2 = A;
+        static constexpr int SL3 = Bw;
+        DenseLayer<NAccumulator, A, WeightScaleBitsL1> l1;
+        DenseLayer<2 * A, Bw, WeightScaleBitsL2> l2;
+        DenseLayer<2 * A + 2 * Bw, 1> output;
 
-        LayerStackBucket(L1Layer &&l1_, L2Layer &&l2_, OutputLayer &&output_)
+        StackT(DenseLayer<NAccumulator, A, WeightScaleBitsL1> &&l1_, DenseLayer<2 * A, Bw, WeightScaleBitsL2> &&l2_,
+               DenseLayer<2 * A + 2 * Bw, 1> &&output_)
             : l1(std::move(l1_)), l2(std::move(l2_)), output(std::move(output_))
         {
         }
     };
+    using LayerStackBucket = StackT<L2, L3>;
+    // Bloc conditionnel (docs/experts-et-idees.md, branche experts) : piles propres aux positions
+    // sous condition, lues sur l'accumulateur combine (v7 + bloc).
+    using CondBucket = StackT<CL2, CL3>;
+    using CondL1Layer = DenseLayer<NAccumulator, CL2, WeightScaleBitsL1>;
+    using CondL2Layer = DenseLayer<2 * CL2, CL3, WeightScaleBitsL2>;
+    using CondOutputLayer = DenseLayer<2 * CL2 + 2 * CL3, 1>;
+    using CondStacks = std::array<CondBucket, NumLsBuckets>;
 
 private:
     AccumulatorLayer<NFeatures, NAccumulator, NThreatFeatures> accumulator;
     PsqtAccumulatorLayer<NFeatures, NumPsqtBuckets> psqt_accumulator;
     std::array<LayerStackBucket, NumLsBuckets> layer_stacks;
+    std::shared_ptr<const CondStacks> cond_stacks;
 
     // Snapshot stacks backing push_acc_state()/push_psqt_state() (see
     // below): each entry is a full copy of both perspectives' state (~4KB
@@ -324,7 +339,8 @@ public:
     NnueModel(const NnueModel &other)
         : accumulator(other.accumulator),
           psqt_accumulator(other.psqt_accumulator),
-          layer_stacks(other.layer_stacks)
+          layer_stacks(other.layer_stacks),
+          cond_stacks(other.cond_stacks)
     {
         copy_snapshots_from(other);
     }
@@ -336,6 +352,7 @@ public:
             accumulator = other.accumulator;
             psqt_accumulator = other.psqt_accumulator;
             layer_stacks = other.layer_stacks;
+            cond_stacks = other.cond_stacks;
             copy_snapshots_from(other);
         }
         return *this;
@@ -503,22 +520,39 @@ public:
                    accumulator.template get_accumulator<!perspective>(), l0);
     }
 
+    void set_cond_stacks(std::shared_ptr<const CondStacks> s) { cond_stacks = std::move(s); }
+    bool has_cond_stacks() const { return static_cast<bool>(cond_stacks); }
+
     // piece_count: total number of pieces on the board (both colors, kings
     // included) -- selects both the PSQT bucket and the layer-stack bucket.
     template <Color perspective>
     std::int32_t get_result(int piece_count) const
     {
+        const int bucket = bucket_for_piece_count(piece_count);
+        return run_stack<perspective>(layer_stacks[bucket], bucket);
+    }
+
+    // Meme calcul avec les piles conditionnelles (bloc conditionnel).
+    template <Color perspective>
+    std::int32_t get_result_cond(int piece_count) const
+    {
+        const int bucket = bucket_for_piece_count(piece_count);
+        return run_stack<perspective>((*cond_stacks)[bucket], bucket);
+    }
+
+    template <Color perspective, class Stack>
+    std::int32_t run_stack(const Stack &ls, int bucket) const
+    {
+        constexpr int SL2 = Stack::SL2;
+        constexpr int SL3 = Stack::SL3;
         constexpr Color us = perspective;
         constexpr Color them = !perspective;
 
         const auto &acc_us = accumulator.template get_accumulator<us>();
         const auto &acc_them = accumulator.template get_accumulator<them>();
 
-        const int bucket = bucket_for_piece_count(piece_count);
-        const auto &ls = layer_stacks[bucket];
-
         alignas(64) std::array<std::uint8_t, NAccumulator> l0;
-        std::array<std::int32_t, L2> raw_l1;
+        std::array<std::int32_t, SL2> raw_l1;
         if (engine_constants::search::SparseL1)
         {
             alignas(16) std::uint16_t nz[NAccumulator / 4 + 8];
@@ -530,14 +564,14 @@ public:
             compute_l0(acc_us, acc_them, l0);
             raw_l1 = ls.l1.get_raw(l0);
         }
-        const std::int32_t skip_raw = raw_l1[L2 - 2] - raw_l1[L2 - 1];
+        const std::int32_t skip_raw = raw_l1[SL2 - 2] - raw_l1[SL2 - 1];
 
-        std::array<std::uint8_t, 2 * L2> l1_out;
-        squared_crelu<L2, WeightScaleBitsL1>(raw_l1, l1_out);
+        std::array<std::uint8_t, 2 * SL2> l1_out;
+        squared_crelu<SL2, WeightScaleBitsL1>(raw_l1, l1_out);
 
         const auto raw_l2 = ls.l2.get_raw_grouped(l1_out);
-        std::array<std::uint8_t, 2 * L3> l2_out;
-        squared_crelu<L3, WeightScaleBitsL2>(raw_l2, l2_out);
+        std::array<std::uint8_t, 2 * SL3> l2_out;
+        squared_crelu<SL3, WeightScaleBitsL2>(raw_l2, l2_out);
 
         const std::int32_t output_raw = ls.output.get_result_split(l1_out, l2_out);
 
