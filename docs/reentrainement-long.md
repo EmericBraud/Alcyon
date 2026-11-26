@@ -267,3 +267,13 @@ dont des positions d'arbres de recherche réévaluées par BT4.
 Pertes au temps : à 10+0.1 et concurrence 30 sur ce serveur, les matchs du 25/11 en ont 15 à 19
 pour 800 parties (réparties : 8 / 7 dans BT4 contre A), contre 0 à concurrence 24 pendant le run
 long. Pour les prochains matchs : concurrence 24 au plus.
+
+## Échelle de l'éval de v7 (26/11, neutre)
+
+L'analyse d'erreur ajuste une échelle par réseau : 0,82 pour v5, 1,00 pour v7. v7 évalue donc
+environ 18 % plus bas que v5, pour qui toutes les marges en centipions (RFP, futilité, NMP,
+delta pruning, aspiration) et les entrées de score de la gestion du temps ont été réglées.
+Option `eval_scale` ajoutée (pourcents, build SPSA, 100 par défaut, appliquée au réseau complet
+et à la tête PSQT). SPRT `eval_scale=122` contre v7 (10+0.1, UHO, concurrence 12, Mac) :
+**+1,0 ± 14,0 sur 718 parties** (158 V / 156 D / 404 N), LLR −0,10, arrêté. Les marges de v5
+tolèrent l'échelle de v7 ; l'échelle par défaut est conservée.
