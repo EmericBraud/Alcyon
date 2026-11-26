@@ -429,3 +429,29 @@ Pistes si l'on poursuit : une condition qui ne s'active pas au milieu d'un écha
 exiger que le déséquilibre existe aussi dans la position avant la dernière capture, ou n'utiliser le
 bloc qu'aux nœuds hors qsearch), ou un bloc beaucoup plus petit. Dans tous les cas, mesurer le coût
 réel dans le moteur avant tout match.
+
+## 12. Résultats : W512 entraîné deux fois plus longtemps (24 époques) (26/11)
+
+Données « typ » régénérées avec plafond (`filt_typ_cap.cpp`, 600 M positions par mois, 2,4
+milliards, 23 Go). W512, 24 époques, lr 5e-4 × 0,885 par époque (fin ~3e-5), ~35 minutes
+(`run_condWL.sh`).
+
+Loss (× 1e-5) : entraînement 465,7 → 422,7 (W512 12 époques : 449,9) ; validation 509,7 →
+~478-485 à partir de l'époque 12 (W512 12 époques : 487,3). La validation plafonne dans la seconde
+moitié pendant que l'entraînement continue de baisser : début de surapprentissage, ou plafond de ce
+que la recette tire de ces données.
+
+| | part | v7 | W512 (12 ép.) | WL (W512, 24 ép.) |
+|---|---|---|---|---|
+| ensemble | 100 % | 51,65 | 51,07 (−1,1 %) | **50,80 (−1,6 %)** |
+| condition fausse | 87,2 % | 41,87 | 41,87 | 41,87 |
+| **condition vraie** | 12,8 % | 118,19 | 113,68 (−3,8 %) | **111,56 (−5,6 %)** |
+| écart de matériel ≥ 3 | 2,3 % | 158,31 | 153,50 | 151,50 (−4,3 %) |
+| finales | 30,4 % | 64,39 | 63,57 | 63,10 (−2,0 %) |
+| eval 150-400 | 16,5 % | 68,90 | 69,49 (+0,9 %) | 69,40 (+0,7 %) |
+
+Lecture : l'entraînement plus long rapporte autant que le passage de 128 à 512 (−1,8 point sous
+condition). Sous condition, −5,6 %, environ la moitié de l'écart avec SF v14 sur ces positions
+(10 à 13 %). Pour comparaison, l'affinage BT4 du réseau entier (25/11) faisait −1 à −2 % sur ces
+positions et −2,1 % au total, en 2 h 15. Essai suivant lancé : bloc de 128 entraîné 24 époques
+(`run_condWS.sh`), pour situer le compromis coût / précision.
